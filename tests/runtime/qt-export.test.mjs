@@ -5,7 +5,11 @@ import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {QtStudioService} from '../../apps/qt-studio/service.mjs';
 const stable=view=>Object.fromEntries(['revision','dirty','undo','redo','draftVersion','diskVersion','documents'].map(key=>[key,view[key]]));
-async function hashes(root){const result={};async function visit(dir){for(const e of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,e.name);if(e.isDirectory())await visit(file);else result[path.relative(root,file)]=createHash('sha256').update(await readFile(file)).digest('hex');}}await visit(root);return result;}
+// Draft recovery is intentional local metadata; authored files and other journals stay unchanged.
+async function hashes(root){const result={};async function visit(dir){for(const e of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,e.name);if(path.relative(root,file).split(path.sep).join('/')==='.studio/recovery')continue;if(e.isDirectory())await visit(file);else result[path.relative(root,file)]=createHash('sha256').update(await readFile(file)).digest('hex');}}await visit(root);return result;}
+// Only successful publication may persist the exact chosen target. Failed
+// operations below still compare every local metadata file without exclusions.
+async function unchangedAfterExport(root,before,target){const key=path.join('.studio','release','settings.json');assert.deepEqual(JSON.parse(await readFile(path.join(root,key),'utf8')),{version:1,target});const actual=await hashes(root),expected={...before};delete actual[key];delete expected[key];assert.deepEqual(actual,expected);}
 async function fixture(){
  await mkdir('.cache/qt-export-tests',{recursive:true});const work=await mkdtemp(path.resolve('.cache/qt-export-tests/run-'));
  const root=path.join(work,'project'),runtime=path.join(work,'runtime');await cp('examples/academy-visual',root,{recursive:true});await mkdir(runtime);
@@ -26,9 +30,27 @@ test('Qt export includes the dirty draft in both targets and preserves source di
   assert.equal(path.resolve(reply.exported.directory),destination);assert.equal(reply.exported.target,target);assert.equal(reply.exported.contentFingerprint,snapshot.snapshot.contentFingerprint);assert.equal(reply.exported.assetCount,snapshot.snapshot.assets.length);
   const bundle=JSON.parse(await readFile(path.join(destination,'game.json'),'utf8'));assert.deepEqual(bundle.content,snapshot.snapshot);assert.equal(bundle.content.project.title,'Unsaved export');
   for(const asset of Object.values(bundle.assets))await access(path.join(destination,asset));
-  assert.deepEqual(stable(reply.view),before);assert.deepEqual(await hashes(root),disk);
+  assert.deepEqual(stable(reply.view),before);await unchangedAfterExport(root,disk,target);
  }
- editor.edit({type:'redo'},editor.revision);assert.equal(editor.documents.find(d=>d.kind==='project').data.title,'Redo remains');editor.edit({type:'undo'},editor.revision);assert.equal(editor.documents.find(d=>d.kind==='project').data.title,'Unsaved export');assert.deepEqual(await hashes(root),disk);
+ editor.edit({type:'redo'},editor.revision);assert.equal(editor.documents.find(d=>d.kind==='project').data.title,'Redo remains');editor.edit({type:'undo'},editor.revision);assert.equal(editor.documents.find(d=>d.kind==='project').data.title,'Unsaved export');await unchangedAfterExport(root,disk,'web');
+});
+
+test('player export rejects private runtime files and keeps the authored project unchanged',async()=>{
+ const {root,work,service}=await fixture(),runtime=path.join(work,'runtime');
+ const before=stable(service.editor.view()),disk=await hashes(root);
+ for(const [index,name] of ['.env.local','.git/config','.studio/recovery/private.json','Project-backup.zip','keys/Signing.P12'].entries()){
+  const file=path.join(runtime,name);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,'private fixture');
+  const destination=path.join(work,'blocked-'+index);
+  await assert.rejects(service.handle({method:'export',params:{revision:service.editor.revision,target:'windows',destination}}),/non-distributable/);await assert.rejects(access(destination));
+  assert.deepEqual(stable(service.editor.view()),before);assert.deepEqual(await hashes(root),disk);assert.equal(await readFile(file,'utf8'),'private fixture');
+  await unlink(file);
+  // Empty private directories must also be rejected, so remove this fixture tree.
+  const top=name.split('/')[0];if(top!==name){const {rm}=await import('node:fs/promises');await rm(path.join(runtime,top),{recursive:true});}
+  assert.ok(!(await readdir(work)).some(entry=>entry.startsWith('.raising-export-')));
+ }
+ await writeFile(path.join(root,'author-private-notes.txt'),'never a game asset');
+ const destination=path.join(work,'clean');const reply=await service.handle({method:'export',params:{revision:service.editor.revision,target:'windows',destination}});
+ assert.ok(reply.exported,reply.error);await assert.rejects(access(path.join(destination,'author-private-notes.txt')));
 });
 
 test('Qt export rejects invalid targets, relative/existing destinations, stale revisions and invalid content without losing edits',async()=>{
@@ -56,7 +78,7 @@ test('Qt export rejects a changed revision before publication and retries the sa
  const before=stable(editor.view());
  await service.handle({method:'export',params:{revision:editor.revision,target:'windows',destination}});
  assert.equal(JSON.parse(await readFile(path.join(destination,'game.json'),'utf8')).content.project.title,'Concurrent newer draft');
- assert.deepEqual(stable(editor.view()),before);assert.deepEqual(await hashes(root),disk);
+ assert.deepEqual(stable(editor.view()),before);await unchangedAfterExport(root,disk,'windows');
 });
 
 test('Qt export disk conflicts and packaging failures leave no output and permit same-path retry',async()=>{
@@ -74,6 +96,6 @@ test('Qt export disk conflicts and packaging failures leave no output and permit
   await assert.rejects(request());await assert.rejects(access(destination),{code:'ENOENT'});
   assert.deepEqual((await readdir(work)).filter(name=>name.startsWith('.raising-export-')),[]);
   await unlink(collision);await request();await access(path.join(destination,'game.json'));
-  assert.deepEqual(stable(editor.view()),before);assert.deepEqual(await hashes(root),disk);
+  assert.deepEqual(stable(editor.view()),before);await unchangedAfterExport(root,disk,target);
  }
 });

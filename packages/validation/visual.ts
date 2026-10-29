@@ -1,3 +1,5 @@
+import {controlStyleReferences} from '../visual/control-styles.js';
+import {checkResumeContext} from './resume-context.js';
 import type { ProjectDocument, JsonObject } from './model.js';
 import { objectItems, type SemanticContext } from './context.js';
 import { checkDataUi } from './data-ui.js';
@@ -5,6 +7,7 @@ import { checkHierarchy } from './hierarchy.js';
 import { resolveScreenElements } from '../visual/components.js';
 import type { ReadonlyDesign } from '../visual/model.js';
 import { checkUiComposition } from './ui-composition.js';
+import { checkReadableLayout } from './readable-layout.js';
 import { checkDirection } from './direction.js';
 import { checkScreenBinding } from './screen-binding.js';
 import { checkTimelines } from './timeline.js';
@@ -13,7 +16,9 @@ import { applyElementContext } from '../visual/context.js';
 import type { Element } from '../visual/model.js';
 import {resolveCollectionRow} from '../visual/data-ui.js';
 export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonObject):void {
+  checkResumeContext(ctx,doc,visual);
   checkDirection(ctx,doc,visual);
+  checkReadableLayout(ctx,doc,visual);
   checkUiComposition(ctx,doc,visual);
   checkDataUi(ctx,doc,visual);
   checkTimelines(ctx,doc,visual);
@@ -21,6 +26,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   const checkStyle=(style:JsonObject,p:string)=>{if(style.fontAssetId){const asset=ctx.resolve(ctx.assets,String(style.fontAssetId),doc,p+'/fontAssetId','폰트');if(asset&&asset.data.kind!=='font')ctx.report(doc,p+'/fontAssetId','UI_FONT_KIND','폰트 에셋을 선택하세요.');}};
   checkStyle((visual.defaultStyle??{}) as JsonObject,'/visual/defaultStyle');
   for(const [i,s] of objectItems(visual.styles).entries()){if(styleIds.has(String(s.id)))ctx.report(doc,`/visual/styles/${i}/id`,'UI_STYLE_DUPLICATE','공통 스타일 ID가 중복되었습니다.');styleIds.add(String(s.id));checkStyle(s,`/visual/styles/${i}`);}
+  for(const ref of controlStyleReferences(visual))if(!styleIds.has(ref.styleId))ctx.report(doc,ref.pointer,'UI_CONTROL_STYLE_REFERENCE','The named style for generated controls does not exist.');
   const allScreens=new Set(objectItems(visual.screens).map(s=>s.id));
   const root=doc.data as JsonObject;
   const gameplay=(root.gameplay??{}) as JsonObject;
@@ -35,6 +41,30 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
   refs.nodeId=new Set(objectItems(systems.expeditions).flatMap(x=>objectItems(x.nodes).map(node=>node.id)));
   const checkElement=(e:JsonObject,ep:string,width:number,height:number,boundFields=new Set<string>())=>{
       checkStyle(e,ep);
+      if(e.resultLayout==='growth'&&e.kind!=='result')ctx.report(doc,ep+'/resultLayout','UI_GROWTH_KIND','Per-activity growth requires a result widget.');
+      if(e.activityBoard!==undefined){
+        if(e.kind!=='schedule'||e.scheduleLayout!=='activity-board')ctx.report(doc,ep+'/activityBoard','UI_ACTIVITY_BOARD_OPTIONS_KIND','Activity board options require an activity-board schedule widget.');
+        const options=e.activityBoard as JsonObject;
+        for(const [i,id]of ((options.summaryAttributeIds??[]) as string[]).entries())ctx.resolve(ctx.attributes,id,doc,`${ep}/activityBoard/summaryAttributeIds/${i}`,'능력·자원');
+        if(options.forecast==='inline'&&e.showPhaseForecast!==true)ctx.report(doc,ep+'/activityBoard/forecast','UI_ACTIVITY_BOARD_FORECAST','Enable phase forecasts before displaying an inline forecast.');
+      }
+      if(e.action==='openPlanner'){
+        if(e.kind!=='button')ctx.report(doc,ep+'/action','UI_PLANNER_ACTION_KIND','Open planner requires a button.');
+        if(!visual.routing)ctx.report(doc,ep+'/action','UI_ROUTING_REQUIRED','Configure screen routing before opening a planner.');
+        const screen=objectItems(visual.screens).find(s=>s.id===e.screenId&&!s.modal);
+        let board:JsonObject|undefined;try{board=screen&&resolveScreenElements(visual as unknown as ReadonlyDesign,String(screen.id)).find(item=>item.id===e.plannerElementId&&item.kind==='schedule'&&item.scheduleLayout==='activity-board') as unknown as JsonObject|undefined;}catch{/* Expansion diagnostics are reported separately. */}
+        if(!board)ctx.report(doc,ep+'/plannerElementId','UI_PLANNER_TARGET','Choose an activity board on an ordinary screen.');
+        if(e.plannerGroupId!==undefined&&board&&!objectItems(board.scheduleGroups).some(g=>g.id===e.plannerGroupId))ctx.report(doc,ep+'/plannerGroupId','UI_PLANNER_GROUP','The chosen category does not exist on the target activity board.');
+        if(e.plannerGroupId!==undefined&&e.plannerActivityId!==undefined&&board){const group=objectItems(board.scheduleGroups).find(g=>g.id===e.plannerGroupId);if(group&&!((group.activityIds??[]) as string[]).includes(String(e.plannerActivityId)))ctx.report(doc,ep+'/plannerActivityId','UI_PLANNER_ACTIVITY_GROUP','Choose an activity in the selected planner category.');}
+        if(e.plannerActivityId!==undefined)ctx.resolve(ctx.activities,String(e.plannerActivityId),doc,ep+'/plannerActivityId','활동');
+      } else if(['plannerElementId','plannerGroupId','plannerActivityId'].some(key=>e[key]!==undefined))ctx.report(doc,ep+'/action','UI_PLANNER_ACTION_REQUIRED','Planner targets require the Open planner action.');
+
+      if(e.scheduleLayout==='activity-board'){
+        if(e.kind!=='schedule')ctx.report(doc,ep+'/scheduleLayout','UI_ACTIVITY_BOARD_KIND','Activity boards require a schedule widget.');
+        if(root.roster)ctx.report(doc,ep+'/scheduleLayout','UI_ACTIVITY_BOARD_ROSTER','Activity boards currently support single-character schedules. Choose another schedule layout for a roster project.');
+      }
+      if(e.action==='resumeContext'&&!visual.resumeContext)ctx.report(doc,ep+'/action','UI_RESUME_CONTEXT_REQUIRED','Configure current reminders in project settings before connecting this action.');
+      if(e.action==='readingHistory'&&!visual.readingHistory)ctx.report(doc,ep+'/action','UI_READING_HISTORY_REQUIRED','Enable recent reading in project settings before connecting this action.');
       if(e.activityIcons!==undefined){
         if(e.kind!=='schedule')ctx.report(doc,ep+'/activityIcons','UI_SCHEDULE_ICONS_KIND','활동 아이콘은 일정 요소에 연결하세요.');
         const assigned=new Set<string>();
@@ -84,14 +114,15 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       if(e.imageAssetId){const asset=ctx.resolve(ctx.assets,String(e.imageAssetId),doc,ep+'/imageAssetId','이미지');if(asset&&asset.data.kind!=='image')ctx.report(doc,ep+'/imageAssetId','UI_IMAGE_KIND','이미지 에셋을 선택하세요.');}
       if(e.styleId&&!styleIds.has(String(e.styleId)))ctx.report(doc,ep+'/styleId','UI_STYLE_REFERENCE','연결된 공통 스타일이 없습니다.');
       for(const [a,id] of ((e.attributeIds??[]) as string[]).entries())ctx.resolve(ctx.attributes,id,doc,`${ep}/attributeIds/${a}`,'능력·자원');
-      for(const field of ['frameAssetId','entryFrameAssetId'])if(e[field])ctx.resolve(ctx.assets,String(e[field]),doc,`${ep}/${field}`,'이미지');
+      for(const field of ['frameAssetId','entryFrameAssetId'])if(e[field]){const asset=ctx.resolve(ctx.assets,String(e[field]),doc,`${ep}/${field}`,'이미지');if(asset&&asset.data.kind!=='image')ctx.report(doc,`${ep}/${field}`,'UI_IMAGE_KIND','이미지 에셋을 선택하세요.');}
+      if(e.scheduleGroups!==undefined&&e.kind!=='schedule')ctx.report(doc,ep+'/scheduleGroups','UI_SCHEDULE_GROUPS_KIND','Activity groups require a schedule widget.');
       const groupIds=new Set<string>();
       for(const [g,group] of objectItems(e.scheduleGroups).entries()) {
         const gp=`${ep}/scheduleGroups/${g}`;
         if(groupIds.has(String(group.id)))ctx.report(doc,`${gp}/id`,'UI_SCHEDULE_GROUP_DUPLICATE','일정 분류 ID가 중복되었습니다.');
         groupIds.add(String(group.id));
         for(const [a,id] of ((group.activityIds??[]) as string[]).entries())ctx.resolve(ctx.activities,id,doc,`${gp}/activityIds/${a}`,'활동');
-        if(group.iconAssetId)ctx.resolve(ctx.assets,String(group.iconAssetId),doc,`${gp}/iconAssetId`,'이미지');
+        if(group.iconAssetId){const asset=ctx.resolve(ctx.assets,String(group.iconAssetId),doc,`${gp}/iconAssetId`,'이미지');if(asset&&asset.data.kind!=='image')ctx.report(doc,`${gp}/iconAssetId`,'UI_IMAGE_KIND','이미지 에셋을 선택하세요.');}
       }
       if(e.scheduleLayout==='menu'&&!objectItems(e.scheduleGroups).length)ctx.report(doc,`${ep}/scheduleGroups`,'UI_SCHEDULE_GROUP_REQUIRED','분류 메뉴에는 활동 분류를 추가하세요.');
       const systemActions=['acceptQuest','claimQuest','equip','unequip','moveExpedition','returnFromExpedition','battleAction'];
@@ -133,7 +164,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
     checkHierarchy(ctx,doc,objectItems(component.elements),cp+'/elements');
     for(const [j,child] of objectItems(component.elements).entries()) {
       const ep=`${cp}/elements/${j}`;
-      if(!['panel','text','image','button','meter','group','input','component'].includes(String(child.kind)))ctx.report(doc,ep+'/kind','UI_COMPONENT_CHILD_KIND','재사용 UI 안에는 패널·텍스트·이미지·버튼·게이지·그룹만 배치할 수 있습니다. 중첩 구성은 지원하지 않습니다.');
+      if(!['panel','text','image','button','meter','group','input','component','schedule','stats','result'].includes(String(child.kind)))ctx.report(doc,ep+'/kind','UI_COMPONENT_CHILD_KIND','This widget is not supported in a reusable component.');
       if(ids.has(String(child.id)))ctx.report(doc,ep+'/id','UI_ELEMENT_DUPLICATE','재사용 UI 안의 요소 ID가 중복되었습니다.');
       ids.add(String(child.id));
       const boundFields=componentBindings.get(id)?.get(String(child.id));

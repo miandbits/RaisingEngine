@@ -34,6 +34,8 @@ for(const entry of await readdir(qt,{withFileTypes:true})){
 await writeFile(join(out,'qt.conf'),'[Paths]\nPlugins=.\n');
 await copy('native/studio/fonts','fonts');
 await copy('apps/qt-studio','engine/apps/qt-studio');
+await copy('config/native-dependencies.json','engine/config/native-dependencies.json');
+await copy('scripts/lib/ios-project.mjs','engine/scripts/lib/ios-project.mjs');
 await copy('dist/packages','engine/dist/packages');
 await copy('packages/schema','engine/packages/schema');
 await copy('packages/plugin-host','engine/packages/plugin-host');
@@ -61,6 +63,7 @@ await copy('docs/getting-started/first-game.md','FIRST-GAME.md');
 for(const doc of ['getting-started/first-game.md','development/platform-support.md','development/platform-capabilities.json','development/public-assets.md','development/qt-preview-release.md'])await copy('docs/'+doc,'engine/docs/'+doc);
 await copy('LICENSE','engine/LICENSE');await copy('THIRD_PARTY_NOTICES.md','engine/THIRD_PARTY_NOTICES.md');
 await copy(join(windows,'licenses'),'licenses/player');await copy(join(windows,'fonts/OFL.txt'),'licenses/NotoSansKR-OFL.txt');
+await copy(join(windows,'fonts/OFL-NotoSansJP.txt'),'licenses/NotoSansJP-OFL.txt');
 await copy('native/vendor/LICENSE.MIT','licenses/nlohmann-json.txt');
 await copy('native/player/assets/OFL.txt','engine/dist/web/licenses/NotoSansKR-OFL.txt');
 await copy('native/vendor/LICENSE.MIT','engine/dist/web/licenses/nlohmann-json.txt');
@@ -79,7 +82,7 @@ async function dependency(name,from=join(root,'package.json')){
  await copy(dirname(file),'engine/node_modules/'+name);
  for(const child of Object.keys(p.dependencies||{}))await dependency(child,file);
 }
-for(const name of ['ajv','jsonc-parser','yauzl'])await dependency(name);
+for(const name of ['ajv','jsonc-parser','yauzl','resedit'])await dependency(name);
 // Retain licenses for JS code embedded in the Web runtime as well as Node services.
 for(const name of ['react','react-dom','scheduler']){
  const p=join(root,'node_modules',name);await copy(join(p,'LICENSE'),'engine/dist/web/licenses/'+name+'.txt');

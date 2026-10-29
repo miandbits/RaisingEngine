@@ -72,7 +72,7 @@ bool installEditorLanguage(QApplication &app, const QString &requested) {
   if (language.isEmpty()) return false;
   auto qt = new QTranslator(&app);
   const auto translations = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
-  if (qt->load("qtbase_" + language, QCoreApplication::applicationDirPath() + "/translations") ||
+  if (qt->load("qtbase_" + language, studioResourceRoot() + "/translations") ||
       qt->load("qtbase_" + language, translations))
     app.installTranslator(qt);
   else delete qt;
@@ -86,7 +86,7 @@ bool installEditorLanguage(QApplication &app, const QString &requested) {
   auto font = app.font();
   const auto fontId=QFontDatabase::addApplicationFont(studioEngineRoot()+"/dist/native-player-app/fonts/NotoSansKR.ttf");
   const auto bundledFonts=QFontDatabase::applicationFontFamilies(fontId);
-  auto jpPath=QCoreApplication::applicationDirPath()+"/fonts/NotoSansJP.ttf";
+  auto jpPath=studioResourceRoot()+"/fonts/NotoSansJP.ttf";
   if(!QFile::exists(jpPath))jpPath=studioEngineRoot()+"/native/studio/fonts/NotoSansJP.ttf";
   const auto japaneseFonts=QFontDatabase::applicationFontFamilies(QFontDatabase::addApplicationFont(jpPath));
   QStringList families=language == "ja" ? QStringList{"Yu Gothic UI", "Meiryo", "Noto Sans CJK JP"}

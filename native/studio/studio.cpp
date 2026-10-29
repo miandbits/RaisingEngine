@@ -1,12 +1,16 @@
+#include "calendar.hpp"
 #include <QObject>
 #include "save-migration.hpp"
 #include "studio.hpp"
+#include "control-style-editor.hpp"
 #include "canvas-state.hpp"
 #include "project-environment.hpp"
 #include "component-preview.hpp"
 #include "tabular-input.hpp"
 #include "table-logic.hpp"
 #include "tool-search.hpp"
+#include "creator-tasks.hpp"
+#include "authoring-labels.hpp"
 #include "toolbar-access.hpp"
 #include "editor-input.hpp"
 #include <QShortcut>
@@ -14,6 +18,7 @@
 #include "hierarchy-tree.hpp"
 #include "hierarchy-lock.hpp"
 #include "inspector-wheel.hpp"
+#include "wrapping-button.hpp"
 #include "logic-editor.hpp"
 #include <QTreeWidgetItemIterator>
 #include "renderer-preview.hpp"
@@ -167,6 +172,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   auto routingAction=screensMenu->addAction(tr("화면 전환 연결…"),this,&StudioWindow::editScreenRouting);
   routingAction->setObjectName("screenRouting");
   screensMenu->addAction(tr("화면 설정…"),this,&StudioWindow::editScreenSettings)->setObjectName("screenSettings");
+  screensMenu->addAction(tr("읽기 편한 배치…"),this,&StudioWindow::editReadableLayout)->setObjectName("readableLayout");
   newScreenAction = screensMenu->addAction(tr("＋ 새 화면…"), this,
                                            [this] { createScreen(); });
   newScreenAction->setObjectName("newScreen");
@@ -190,10 +196,15 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   designMenu->addAction(tr("완결 샘플 제작…"),this,&StudioWindow::createBenchmark)->setObjectName("createBenchmark");
   designMenu->addAction(tr("제작 시험 검증…"),this,&StudioWindow::runAssuranceDialog)->setObjectName("runAssurance");
   designMenu->addAction(tr("목표 경로 기록 · 회귀 검사…"),this,&StudioWindow::goalRoutesDialog)->setObjectName("goalRoutes");
+  designMenu->addAction(tr("저장 검사 진행 · 결과…"),this,&StudioWindow::goalSaveChecksDialog)->setObjectName("goalSaveChecks");
+  designMenu->addAction(tr("기준 기록 일괄 등록…"),this,[this]{goalBaselineBatchDialog();})->setObjectName("goalBaselineBatch");
   designMenu->addAction(tr("저장 기준 비교 결과…"),this,[this]{goalImpactDialog();})->setObjectName("goalImpact");
   designMenu->addAction(tr("GitHub Actions · CI 경로 검토…"),this,[this]{goalCiDialog();})->setObjectName("goalCiOpen");
   designMenu->addAction(tr("연출 작업실…"),this,&StudioWindow::editDirection)->setObjectName("editDirection");
   designMenu->addAction(tr("다인 전투 · 탐험 · 성장…"),this,&StudioWindow::editTactics)->setObjectName("editTactics");
+  designMenu->addAction(tr("육성 게임 화면 흐름 만들기…"),this,&StudioWindow::createRaisingScreenFlow)->setObjectName("raisingScreenFlow");
+  designMenu->addAction(tr("화면 영역을 여러 화면에 공유…"),this,&StudioWindow::shareScreenSection)->setObjectName("shareScreenSection");
+  designMenu->addAction(tr("활동 · 조건 · 연출 함께 편집…"),this,[this]{editActivityWorkflow();})->setObjectName("activityWorkflow");
   designMenu->addAction(tr("UI 조합 · 중첩 / 배치 / 선택 / 모달…"),this,&StudioWindow::editUiComposition)->setObjectName("editUiComposition");
   designMenu->addAction(tr("제작 작업실 · 데이터 / 행동 / 진행…"),this,&StudioWindow::showAuthoringWorkspace)->setObjectName("showAuthoringWorkspace");
   designMenu->addAction(tr("선택 요소 연결 따라가기…"),this,&StudioWindow::followSelectedElement)->setObjectName("followSelectedElement");
@@ -310,10 +321,10 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   previewSizeField->addItem(tr("설계 크기 · 배치 가능"),0.0);previewSizeField->addItem(tr("16:9 미리보기"),16.0/9);previewSizeField->addItem(tr("4:3 미리보기"),4.0/3);previewSizeField->addItem(tr("9:16 미리보기"),9.0/16);canvasTools->addWidget(previewSizeField);
   previewSizeField->setToolTip(tr("미리보기에서는 배치를 잠급니다. 위치·크기는 기준 설계 좌표로 편집하세요."));
   connect(previewSizeField,qOverload<int>(&QComboBox::activated),this,[this]{refresh(true);});
-  auto conditions=canvasTools->addAction(tr("조건 보기…"),this,[this]{editConditionPreview();});
+  auto conditions=canvasTools->addAction(tr("조건 보기…"),this,[this]{if(canvasState)canvasState->showAllElements();editConditionPreview();});
   conditions->setObjectName("conditionPreviewAction");
   conditions->setToolTip(tr("게임 데이터를 바꾸지 않고 임시 값으로 표시 조건을 검사합니다."));
-  auto allElements=canvasTools->addAction(tr("전체 요소"),this,[this]{conditionPreview={};refresh();});
+  auto allElements=canvasTools->addAction(tr("전체 요소"),this,[this]{conditionPreview={};if(canvasState)canvasState->showAllElements();refresh();});
   allElements->setObjectName("conditionPreviewClear");
   canvasTools->addAction(tr("화면 맞춤"), this,
                          [this] { canvas->fitCanvas(); });
@@ -381,6 +392,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
       dock(tr("계층"), "hierarchyDock", treePanel, Qt::LeftDockWidgetArea);
   treeDock->setMinimumWidth(320);
   auto scroll = new QScrollArea;
+  scroll->setObjectName("inspectorScroll");
   scroll->setWidgetResizable(true);
   scroll->setMinimumWidth(310);
   scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -392,9 +404,9 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   selectedTitle = new QLabel(tr("요소를 선택하세요"));
   selectedTitle->setStyleSheet("font-size:16px;font-weight:600");
   selectedTitle->setWordWrap(true);
-  auto batch=new QPushButton(tr("선택 요소 일괄 편집 · 정렬…"));batch->setObjectName("selectionBatch");formLayout->addWidget(batch);connect(batch,&QPushButton::clicked,this,&StudioWindow::editSelectedElements);
-  auto source=new QPushButton(tr("부품 원본 편집 · 모든 배치에 반영…"));source->setObjectName("componentSource");formLayout->addWidget(source);connect(source,&QPushButton::clicked,this,&StudioWindow::openComponentSource);
-  auto followLinks=new QPushButton(tr("데이터 · 행동 · 후속 사건 따라가기…"));
+  auto batch=new WrappingButton(tr("선택 요소 일괄 편집 · 정렬…"));batch->setObjectName("selectionBatch");formLayout->addWidget(batch);connect(batch,&QPushButton::clicked,this,&StudioWindow::editSelectedElements);
+  auto source=new WrappingButton(tr("부품 원본 편집 · 모든 배치에 반영…"));source->setObjectName("componentSource");formLayout->addWidget(source);connect(source,&QPushButton::clicked,this,&StudioWindow::openComponentSource);
+  auto followLinks=new WrappingButton(tr("데이터 · 행동 · 후속 사건 따라가기…"));
   followLinks->setObjectName("elementConnections");
   connect(followLinks,&QPushButton::clicked,this,&StudioWindow::followSelectedElement);
   auto group = [formLayout](QString name) {
@@ -411,6 +423,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
         "text-align:left;padding:7px;background:#303741;font-weight:600");
     auto body = new QWidget;
     auto f = new QFormLayout(body);
+    f->setRowWrapPolicy(QFormLayout::WrapLongRows);
     f->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     f->setContentsMargins(4, 3, 4, 6);
     f->setSpacing(7);
@@ -467,7 +480,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   for(auto p:QList<QPair<QString,QString>>{{QObject::tr("위"),"top"},{QObject::tr("가운데"),"center"},{QObject::tr("아래"),"bottom"},{QObject::tr("상하 늘이기"),"stretch"}})anchorYField->addItem(p.first,p.second);
   pairRow(tr("앵커 가로 / 세로"),anchorXField,anchorYField);
   for(auto p:{qMakePair(anchorXField,QString("anchorX")),qMakePair(anchorYField,QString("anchorY"))})connect(p.first,qOverload<int>(&QComboBox::activated),this,[this,p]{if(!filling)updateElement([p](QJsonObject&e){e[p.second]=p.first->currentData().toString();});});
-  auto instanceSettings=new QPushButton(tr("부품 문구·행동 덮어쓰기…"));instanceSettings->setObjectName("componentOverrides");
+  auto instanceSettings=new WrappingButton(tr("부품 문구·행동 덮어쓰기…"));instanceSettings->setObjectName("componentOverrides");
   basic->addRow(instanceSettings);connect(instanceSettings,&QPushButton::clicked,this,&StudioWindow::editComponentInstance);
   lockedField = new QCheckBox(tr("배치 잠금"));
   lockedField->setObjectName("elementLocked");
@@ -475,10 +488,10 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   hiddenField->setObjectName("elementHidden");
   layout->addRow(lockedField);
   layout->addRow(hiddenField);
-  visibleConditionField = new QPushButton(tr("표시 조건 편집…"));
+  visibleConditionField = new WrappingButton(tr("표시 조건 편집…"));
   visibleConditionField->setObjectName("elementVisibleCondition");
   visibleConditionField->setToolTip(tr("능력·자원·플래그 조건을 만족할 때 표시합니다. 부모 조건·게임에서 숨김·실행 단계 설정도 함께 적용됩니다."));
-  clearVisibleConditionField = new QPushButton(tr("표시 조건 해제"));
+  clearVisibleConditionField = new WrappingButton(tr("표시 조건 해제"));
   clearVisibleConditionField->setObjectName("elementVisibleConditionClear");
   clearVisibleConditionField->setToolTip(tr("이 요소의 수치·플래그 조건만 제거합니다. 부모 조건·숨김·실행 단계 설정은 유지합니다."));
   layout->addRow(visibleConditionField);
@@ -491,7 +504,14 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   styleField = new QComboBox;
   styleField->setObjectName("elementStyle");
   appearance->addRow(tr("공통 스타일"), styleField);
-  auto inherit = new QPushButton(tr("개별 모양 지우고 스타일 상속"));
+  controlStyleField=new QComboBox;controlStyleField->setObjectName("elementControlStyle");
+  auto controlStyleLabel=new QLabel(tr("컨트롤 색 스타일"));controlStyleLabel->setObjectName("elementControlStyleLabel");
+  appearance->addRow(controlStyleLabel,controlStyleField);
+  auto controlHelp=new QLabel(controlStyleHelp());controlHelp->setObjectName("elementControlStyleHelp");controlHelp->setWordWrap(true);appearance->addRow(controlHelp);
+  connect(controlStyleField,qOverload<int>(&QComboBox::activated),this,[this]{
+    if(!filling)updateElement([this](QJsonObject& e){if(!supportsControlStyle(e.value("kind").toString()))return;const auto id=controlStyleField->currentData().toString();if(id.isEmpty())e.remove("controlStyleId");else e["controlStyleId"]=id;});
+  });
+  auto inherit = new WrappingButton(tr("개별 모양 지우고 스타일 상속"));
   inherit->setObjectName("inheritStyle");
   appearance->addRow(inherit);
   connect(styleField, qOverload<int>(&QComboBox::activated), this, [this] {
@@ -515,9 +535,11 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   appearance->addRow(tr("배경 색"), fillField);
   appearance->addRow(tr("문자 색"), colorField);
   appearance->addRow(tr("글자 크기"), fontField);
+  auto surfaceButton=new WrappingButton(tr("배경 표면…"));surfaceButton->setObjectName("elementSurface");appearance->addRow(surfaceButton);connect(surfaceButton,&QPushButton::clicked,this,&StudioWindow::editSelectedSurface);
   auto dataForm = group(tr("이미지 · 데이터 연결"));
-  auto dataBindingButton=new QPushButton(tr("표시할 데이터 찾기 · 연결…"));dataBindingButton->setObjectName("dataBindingPicker");dataForm->addRow(dataBindingButton);connect(dataBindingButton,&QPushButton::clicked,this,&StudioWindow::editDataBinding);
-  auto variantsButton=new QPushButton(tr("조건별 표현 · 이미지·동작 연결…"));variantsButton->setObjectName("presentationVariants");dataForm->addRow(variantsButton);connect(variantsButton,&QPushButton::clicked,this,&StudioWindow::editPresentationVariants);
+  dataForm->setObjectName("elementDataForm");
+  auto dataBindingButton=new WrappingButton(tr("표시할 데이터 찾기 · 연결…"));dataBindingButton->setObjectName("dataBindingPicker");dataForm->addRow(dataBindingButton);connect(dataBindingButton,&QPushButton::clicked,this,&StudioWindow::editDataBinding);
+  auto variantsButton=new WrappingButton(tr("조건별 표현 · 이미지·동작 연결…"));variantsButton->setObjectName("presentationVariants");dataForm->addRow(variantsButton);connect(variantsButton,&QPushButton::clicked,this,&StudioWindow::editPresentationVariants);
   imageField = new QComboBox;
   imageField->setObjectName("imageAsset");
   bindingField = new QComboBox;
@@ -582,9 +604,10 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   auto bindingHint = new QLabel(
       tr("표시 형식: {label} · {value}\n관계의 {delta}: 최근 변화량 (+3 / -1 / 0)\n에셋 더블클릭으로 이미지 배치"));
   bindingHint->setWordWrap(true);
+  bindingHint->setObjectName("bindingHint");
   dataForm->addRow(bindingHint);
-  auto batchBinding=new QPushButton(tr("다른 화면에 이 텍스트 연결 적용…"));batchBinding->setObjectName("textBindingBatch");dataForm->addRow(batchBinding);connect(batchBinding,&QPushButton::clicked,this,&StudioWindow::applyTextBindingBatch);
-  auto widgetSettings = new QPushButton(tr("위젯 구성 · 분류 / 표시 항목"));
+  auto batchBinding=new WrappingButton(tr("다른 화면에 이 텍스트 연결 적용…"));batchBinding->setObjectName("textBindingBatch");dataForm->addRow(batchBinding);connect(batchBinding,&QPushButton::clicked,this,&StudioWindow::applyTextBindingBatch);
+  auto widgetSettings = new WrappingButton(tr("위젯 구성 · 분류 / 표시 항목"));
   widgetSettings->setObjectName("widgetSettings");
   connect(widgetSettings, &QPushButton::clicked, this, &StudioWindow::editWidgetSettings);
   connect(imageField, qOverload<int>(&QComboBox::activated), this, [this] {
@@ -654,10 +677,13 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   actionField = new QComboBox;
   actionField->setObjectName("buttonAction");
   actionField->addItem(tr("화면 이동"), "navigate");
+  actionField->addItem(tr("활동 계획 열기 · 위젯 구성에서 대상 선택"), "openPlanner");
   actionField->addItem(tr("상점 열기 · 장소 이동"), "shop");
   actionField->addItem(tr("장소 이동"), "visit");
   actionField->addItem(tr("게임 저장"), "save");
   actionField->addItem(tr("게임 불러오기"), "load");
+  actionField->addItem(tr("최근 읽은 내용 열기"), "readingHistory");
+  actionField->addItem(tr("현재 알림 열기"), "resumeContext");
   actionField->addItem(tr("새 게임 시작"), "start");
   actionField->addItem(tr("진행 · 대화 / 결과 확인"), "advance");
   actionField->addItem(tr("월 계획 확정 · 자동 진행 시작"), "commitPlan");
@@ -691,12 +717,13 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   targetField = new QComboBox;
   targetField->setObjectName("actionTarget");
   action->addRow(tr("행동"), actionField);
+  action->parentWidget()->parentWidget()->setObjectName("elementActionGroup");
   action->addRow(tr("대상"), targetField);
   actionHelp = new QLabel;
   actionHelp->setWordWrap(true);
   actionHelp->setStyleSheet("color:#a9bbc9");
   action->addRow(actionHelp);
-  auto openTarget = new QPushButton(tr("대상 화면 열기"));
+  auto openTarget = new WrappingButton(tr("대상 화면 열기"));
   openTarget->setObjectName("openActionTarget");
   action->addRow(openTarget);
   connect(openTarget, &QPushButton::clicked, this, [this] {
@@ -724,7 +751,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   pluginPropsField->setObjectName("pluginProps");
   pluginPropsField->setToolTip(tr("플러그인이 정의한 표시 속성 · 예: {\"scale\":1,\"flipX\":false}"));
   pluginForm->addRow(tr("속성 JSON"), pluginPropsField);
-  pluginEditButton = new QPushButton(tr("편집…"));
+  pluginEditButton = new WrappingButton(tr("편집…"));
   pluginEditButton->setObjectName("pluginEdit");
   pluginForm->addRow(pluginEditButton);
   connect(pluginRefField, qOverload<int>(&QComboBox::activated), this, [this] {
@@ -735,6 +762,11 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   connect(pluginPropsField, &QLineEdit::editingFinished, this, &StudioWindow::editPluginProps);
   connect(pluginEditButton, &QPushButton::clicked, this, &StudioWindow::editPluginElement);
   pluginGroup->hide();
+  // Item names and translated options must not determine the dock's width.
+  for(auto combo:inspector->findChildren<QComboBox*>()){
+    combo->setMinimumContentsLength(8);combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    combo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+  }
   formLayout->addStretch();
   scroll->setWidget(inspector);
   new InspectorWheelGuard(inspector, scroll);
@@ -847,7 +879,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   editSelectedContent->setEnabled(false);
   contentLayout->addWidget(editSelectedContent);
   connect(editSelectedContent, &QPushButton::clicked, this, &StudioWindow::editContent);
-  connect(contentList, &QListWidget::currentItemChanged, this, [editSelectedContent](QListWidgetItem *item) { editSelectedContent->setEnabled(item != nullptr); });
+  connect(contentList, &QListWidget::currentItemChanged, this, [this,editSelectedContent](QListWidgetItem *item) { editSelectedContent->setEnabled(item && !item->isHidden() && !bridge.busy()); });
   contentLayout->addWidget(contentList);
   for (auto key : {Qt::Key_Return, Qt::Key_Enter}) {
     auto shortcut = new QShortcut(QKeySequence(key), contentList);
@@ -863,6 +895,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
               auto item = contentList->item(i);
               item->setHidden(!(item->text()+" "+item->data(Qt::UserRole).toString()).contains(q, Qt::CaseInsensitive));
             }
+            ensureVisibleContentSelection();
           });
   auto contentMenu = menuBar()->addMenu(tr("콘텐츠"));
   contentMenu->addAction(tr("이야기 제작 · 인물 → 활동 → 만남…"),this,&StudioWindow::editStoryFlow)->setObjectName("storyFlowMenuAction");
@@ -870,6 +903,10 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
 #include "narrative-table.inc"
 #include "gameplay-table.inc"
 #include "layout-table.inc"
+  auto firstGameAction = contentMenu->addAction(tr("My first raising game · checklist"), this, &StudioWindow::showFirstGameChecklist);
+  firstGameAction->setObjectName("showFirstGameChecklist");
+  contentMenu->addAction(tr("Recover unsaved work..."), this, &StudioWindow::showDraftRecovery)->setObjectName("showDraftRecovery");
+  toolbar->addAction(firstGameAction);
   contentMenu->addAction(tr("처음 만드는 게임 · 제작 순서…"),this,&StudioWindow::showGettingStarted)->setObjectName("showGettingStarted");
   contentMenu->addAction(tr("기본 플레이 화면 생성…"),this,&StudioWindow::initializeStarterScreens)->setObjectName("initializeStarterScreens");
   contentMenu->addAction(tr("관계 표시 배치…"),this,&StudioWindow::addRelationshipDisplay)->setObjectName("addRelationshipDisplay");
@@ -933,12 +970,14 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   connect(pluginHealth, &QPushButton::clicked, this, &StudioWindow::showPluginManager);
   status = new QLabel;
   statusBar()->addPermanentWidget(status);
+  setupGoalSaveChecks();
   resizeDocks({treeDock, propertiesDock}, {210, 330}, Qt::Horizontal);
   resizeDocks({bottomDock}, {180}, Qt::Vertical);
   rendererPreview=new RendererPreviewDock(this);
   canvasState=new CanvasStateBar(canvas,this);
   centerLayout->insertWidget(2,canvasState);
   canvasState->busy=[this]{return bridge.busy();};
+  canvasState->snapshotBusy=[this]{return bridge.busy()||bridge.backgroundBusy();};
   connect(canvasState,&CanvasStateBar::playRequested,this,[this](QJsonObject params){
     request("preview",params,[this](QJsonObject reply){
       if(!reply.value("error").toString().isEmpty()||!reply.contains("play")){canvasState->failPlay(reply.value("error").toString(tr("미리보기를 준비할 수 없습니다.")));return;}
@@ -946,8 +985,15 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
     });
   });
   connect(canvasState,&CanvasStateBar::snapshotRequested,this,[this]{
-    auto renderer=canvasState->renderer();
-    request("preview",renderer->previewRequest(),[renderer](QJsonObject reply){
+    auto renderer=QPointer<RendererPreviewDock>(canvasState->renderer());
+    const auto previewRoot=view.value("root"),previewRevision=view.value("revision");const auto previewKey=renderer->currentKey();
+    auto params=renderer->previewRequest();params["revision"]=previewRevision;
+    // Passive canvas refresh must not disable controls or drop an accepted
+    // dialog edit. The service serializes this snapshot before any queued edit;
+    // its old reply is never applied as the editor's current view.
+    bridge.requestBackground("preview",params,[this,renderer,previewRoot,previewRevision,previewKey](QJsonObject reply){
+      if(!renderer)return;
+      if(view.value("root")!=previewRoot||view.value("revision")!=previewRevision||renderer->currentKey()!=previewKey){renderer->fail(tr("준비 중 프로젝트 버전이 변경되었습니다. 다시 렌더링하세요."));return;}
       if(!reply.value("error").toString().isEmpty()||!reply.contains("play")){renderer->fail(reply.value("error").toString(tr("미리보기를 준비할 수 없습니다.")));return;}
       renderer->launch(reply.value("play").toObject());
     });
@@ -957,6 +1003,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   viewMenu->addAction(rendererPreview->toggleViewAction());
   auto inspectRender=toolbar->addAction(tr("실제 렌더러 검사"),this,[this]{rendererPreview->show();rendererPreview->raise();rendererPreview->begin();});
   inspectRender->setObjectName("inspectRenderer");
+  inspectRender->setToolTip(tr("배치 진단: 휴대전화, 글자 확대, 잘림, 터치 영역과 대비를 실제 렌더러로 검사합니다."));
   screenOnlyActions << inspectRender;
   connect(rendererPreview,&RendererPreviewDock::snapshotRequested,this,[this]{
     if(bridge.busy()){rendererPreview->fail(tr("현재 편집 처리가 끝난 뒤 다시 렌더링하세요."));return;}
@@ -965,6 +1012,10 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   connect(rendererPreview,&RendererPreviewDock::elementPicked,this,[this](QString id){
     for(auto e:currentScreen()["elements"].toArray()){auto element=e.toObject();const auto candidate=element["id"].toString();if(candidate==id||(element["kind"]=="component"&&id.startsWith(candidate+"__"))){selectElement(candidate);break;}}
   });
+  auto tasks=new QAction(tr("작업 선택…"),this);tasks->setObjectName("creatorTasks");
+  connect(tasks,&QAction::triggered,this,[this]{showCreatorTasks(this,[this]{return !projectData().isEmpty()&&!busy();},[this]{return projectData().isEmpty()?QString():projectData().value("title").toString()+" · "+authoringLabel(currentScreen())+(selection.isEmpty()?QString():" · "+authoringLabel(currentElement()));});});
+  toolbar->insertAction(toolbar->actions().value(0),tasks);
+  viewMenu->addAction(tasks);
   defaultLayout = saveState(1);
   QSettings settings;
   if (!qEnvironmentVariableIsSet("RAISING_QT_TEST")) {
@@ -1068,7 +1119,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
     QString target = targetField->currentData().toString();
     updateElement([action, target](QJsonObject &e) {
       for (auto key :
-           {"screenId", "locationId", "shopId", "itemId", "interactionId", "battleAction", "battleTarget", "actionId", "entryId", "galleryFilter"})
+           {"plannerElementId", "plannerGroupId", "plannerActivityId", "screenId", "locationId", "shopId", "itemId", "interactionId", "battleAction", "battleTarget", "actionId", "entryId", "galleryFilter"})
         e.remove(key);
       e["action"] = action == "shop" ? "visit" : action;
       if (action == "executeAction") {e["actionId"]=target;e["quantity"]=1;}
@@ -1125,6 +1176,16 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
 StudioWindow::~StudioWindow() {
   // Plugin deactivate() may still query the window; run it before members die.
   plugins->unloadAll();
+  // QWidget's base destructor can hide a focused child and emit editingFinished
+  // after our JSON members have died. Retire owned signals and asynchronous
+  // replies while those members still exist; normal close/save runs beforehand.
+  for(auto timer:findChildren<QTimer*>())timer->stop();
+  for(auto child:findChildren<QObject*>())QObject::disconnect(child,nullptr,this,nullptr);
+  if(auto focused=QApplication::focusWidget();focused&&isAncestorOf(focused)){
+    const QSignalBlocker silence(focused);focused->clearFocus();
+  }
+  player.disconnect(this);
+  bridge.shutdown();
 }
 
 QJsonObject StudioWindow::projectData() const {
@@ -1181,12 +1242,18 @@ void StudioWindow::request(QString method, QJsonObject params,
     if(reply.contains("localizationSources"))view["localizationSources"]=reply["localizationSources"];
     if (reply.contains("assets"))
       assets = reply["assets"].toArray();
+    if (reply.contains("firstGame")) firstGameState = reply.value("firstGame").toObject();
+    if (reply.contains("releaseCompatibility")) releaseCompatibility = reply.value("releaseCompatibility").toObject();
+    if (reply.contains("recovery")) recoveryState = reply.value("recovery").toObject();
     lastError = reply["error"].toString();
     // An old service sends views without `plugins`: treat that as "no plugins".
     // `plugins:null` (status itself failed) keeps the last known state.
     const bool pluginReply = reply.value("plugins").isObject() || (!reply.contains("plugins") && reply.contains("view"));
     if (pluginReply) plugins->setState(reply.value("plugins").toObject());
     if ((method == "open" || method == "create") && lastError.isEmpty()) {
+      goalSaveCheckRoot=view.value("root").toString();lastGoalSaveCheck={};goalSaveCheckReportedId.clear();goalSaveCheckCancelId.clear();goalSaveCheckPolling->stop();lastGoalBaselineBatch={};
+      if(auto dialog=findChild<QDialog*>("goalSaveChecksDialog"))dialog->close();
+      firstGameObserved.clear();
       ProjectManager::remember(view.value("root").toString());
       if(recordingRoot!=view.value("root").toString()){lastRecording.clear();lastGoalReport={};lastGoalImpact={};recordingRoot=view.value("root").toString();if(auto dialog=findChild<QDialog*>("goalRoutesDialog"))dialog->close();}
       conditionPreview={};
@@ -1196,9 +1263,11 @@ void StudioWindow::request(QString method, QJsonObject params,
       const auto screens =
           projectData()["visual"].toObject()["screens"].toArray();
       screenId.clear();
-      for (auto s : screens)
-        if (s.toObject()["id"] == "home")
-          screenId = "home";
+      const auto routing=projectData().value("visual").toObject().value("routing").toObject();
+      QStringList entryScreens;
+      for(auto phase:routing.value("phases").toArray())if(phase.toObject().value("phase")=="title")entryScreens<<phase.toObject().value("screenId").toString();
+      entryScreens<<"title"<<routing.value("defaultScreenId").toString()<<"home";
+      for(const auto& id:entryScreens){if(id.isEmpty())continue;for(auto value:screens)if(value.toObject().value("id")==id){screenId=id;break;}if(!screenId.isEmpty())break;}
       if (screenId.isEmpty() && !screens.isEmpty())
         screenId = screens[0].toObject()["id"].toString();
       if (!screenId.isEmpty())
@@ -1216,12 +1285,15 @@ void StudioWindow::request(QString method, QJsonObject params,
     }
     if (done)
       done(reply);
-    if(reply.value("goalImpact").isObject()&&method=="save")acceptGoalImpact(reply.value("goalImpact").toObject());
+    if(method=="save"&&reply.contains("goalSaveCheck"))acceptGoalSaveCheck(reply.value("goalSaveCheck").toObject());
     // Loading runs after the caller's continuation so a plugin's activate()
     // request cannot pre-empt a chained editor request.
     if (pluginReply) applyPluginState(plugins->state());
     else plugins->notifyViewChanged();
     emit updated();
+    if (method == "open" && lastError.isEmpty()) for(const auto v:reply["recoveries"].toArray())if(!v.toObject()["current"].toBool()){ statusBar()->showMessage(tr("Unsaved work is available. Use Authoring tools > Recover unsaved work."), 15000); break; }
+    if ((method == "open" || method == "create") && lastError.isEmpty() && !firstGameState.isEmpty())
+      QTimer::singleShot(0, this, &StudioWindow::showFirstGameChecklist);
   });
 }
 void StudioWindow::openProject(const QString &root) {
@@ -1269,10 +1341,9 @@ void StudioWindow::refresh(bool fit) {
     }
   for (auto s : screens) {
     auto screen = s.toObject();
-    auto item = new QListWidgetItem(screen["label"].toString() + "  ·  " +
-                                        screen["id"].toString(),
-                                    projectList);
+    auto item = new QListWidgetItem(authoringLabel(screen),projectList);
     item->setData(Qt::UserRole, screen["id"].toString());
+    item->setToolTip(screen["id"].toString());
     if (screen["id"].toString() == (screenId.isEmpty() ? managedId : screenId))
       projectList->setCurrentItem(item);
   }
@@ -1505,6 +1576,9 @@ void StudioWindow::updateInspector() {
   styleField->clear();styleField->addItem(tr("프로젝트 기본"),QString());
   for(auto s:projectData()["visual"].toObject()["styles"].toArray())styleField->addItem(s.toObject()["label"].toString(),s.toObject()["id"].toString());
   styleField->setCurrentIndex(qMax(0,styleField->findData(e["styleId"].toString())));
+  const bool hasControlStyle=supportsControlStyle(e.value("kind").toString());
+  fillControlStyles(controlStyleField,projectData()["visual"].toObject(),e.value("controlStyleId").toString());
+  controlStyleField->setVisible(hasControlStyle);findChild<QLabel*>("elementControlStyleLabel")->setVisible(hasControlStyle);findChild<QLabel*>("elementControlStyleHelp")->setVisible(hasControlStyle);
   const auto effective=resolvedStyle(projectData()["visual"].toObject(),e);
   fontField->setValue(e["fontSize"].toInt(9));
   fontField->setToolTip(tr("적용 값: %1 px").arg(effective["fontSize"].toInt(20)));
@@ -1596,6 +1670,20 @@ void StudioWindow::updateInspector() {
   setText(valueFormatField, e["valueFormat"].toString("{label}: {value}"));
   valueFormatField->setEnabled(e["kind"] == "text" &&
                                (binding.endsWith("value")||binding=="user-field"));
+  // Only show rows relevant to the selected kind/binding. Hiding never writes
+  // values, so switching elements cannot erase advanced or imported settings.
+  auto dataForm=findChild<QFormLayout*>("elementDataForm");
+  if(dataForm){
+    dataForm->setRowVisible(imageField,e["kind"]=="image");
+    dataForm->setRowVisible(bindingField,e["kind"]=="text");
+    dataForm->setRowVisible(userFieldField,e["kind"]=="input"||(e["kind"]=="text"&&binding=="user-field"));
+    dataForm->setRowVisible(attributeField,e["kind"]=="text"&&binding=="attribute-value");
+    dataForm->setRowVisible(relationshipField,e["kind"]=="text"&&binding=="relationship-value");
+    dataForm->setRowVisible(valueFormatField,e["kind"]=="text"&&(binding.endsWith("value")||binding=="user-field"));
+    dataForm->setRowVisible(findChild<QLabel*>("bindingHint"),e["kind"]=="text"&&(binding.endsWith("value")||binding=="user-field"));
+    dataForm->setRowVisible(findChild<QPushButton*>("textBindingBatch"),e["kind"]=="text");
+  }
+  findChild<QWidget*>("elementActionGroup")->setVisible(e["kind"]=="button");
   visibilityField->setCurrentIndex(
       visibilityField->findData(e["visibleWhen"].toString("always")));
   updatePluginInspector(e);
@@ -1792,6 +1880,7 @@ void StudioWindow::receivePlayer() {
       continue;
     auto ui = event["view"].toObject();
     auto state = ui["state"].toObject();
+    observeFirstGamePlay(state);
     auto attrs = state["attributes"].toObject();
     auto inventory = state["gameplay"].toObject()["inventory"].toObject();
     QMap<QString, QString> names;
@@ -1874,7 +1963,7 @@ bool StudioWindow::mayDiscard() {
   QMessageBox dialog(QMessageBox::Warning,tr("저장되지 않은 변경"),tr("프로젝트에 저장하지 않은 변경이 있습니다. 저장하고 계속하시겠습니까?"),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel,this);
   dialog.setObjectName("unsavedChangesDialog");dialog.setDefaultButton(QMessageBox::Save);dialog.setEscapeButton(QMessageBox::Cancel);
   dialog.button(QMessageBox::Save)->setText(tr("저장하고 계속"));dialog.button(QMessageBox::Discard)->setText(tr("저장하지 않고 계속"));dialog.button(QMessageBox::Cancel)->setText(tr("취소"));
-  const auto choice=dialog.exec();if(choice==QMessageBox::Cancel)return false;if(choice==QMessageBox::Discard)return true;
+  const auto choice=dialog.exec();if(choice==QMessageBox::Cancel)return false;if(choice==QMessageBox::Discard){request("discardDraftRecovery");return waitForPendingEdits()&&lastError.isEmpty();}
   request("save");
   return waitForPendingEdits()&&lastError.isEmpty()&&!view.value("dirty").toBool();
 }

@@ -1,0 +1,15 @@
+{
+  "formatVersion": "0.1.0",
+  "flags": [
+    {
+      "id": "garden-visited",
+      "label": "Visited the garden",
+      "initial": false
+    },
+    {
+      "id": "invitation-accepted",
+      "label": "Accepted Mira’s invitation",
+      "initial": false
+    }
+  ]
+}

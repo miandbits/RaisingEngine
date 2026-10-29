@@ -10,6 +10,7 @@ const studio: StudioBridge = {
   exportGame: (target, revision) => ipcRenderer.invoke('studio:export', target, revision),
 };
 const player: PlayerBridge = {
+  forecastPhase: (ids,version) => ipcRenderer.invoke('preview:forecast-phase',ids,version),
   view: () => ipcRenderer.invoke('preview:view'), newRun: (version, userValues) => ipcRenderer.invoke('preview:new', version, userValues),
   act: (action, version) => ipcRenderer.invoke('preview:act', action, version),
   save: version => ipcRenderer.invoke('preview:save', version), load: version => ipcRenderer.invoke('preview:load', version), openProject: () => ipcRenderer.invoke('preview:view'),

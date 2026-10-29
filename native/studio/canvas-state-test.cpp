@@ -7,6 +7,40 @@
 class CanvasStateTest : public QObject {
   Q_OBJECT
 private slots:
+  void runtimeSelectionMatchesRenderedPixels_data(){
+    QTest::addColumn<QSize>("pixels");QTest::addColumn<QRectF>("presentation");QTest::addColumn<QSize>("output");QTest::addColumn<QRectF>("expected");
+    QTest::newRow("retina")<<QSize(1280,720)<<QRectF(0,0,1280,720)<<QSize(1280,720)<<QRectF(100,80,200,60);
+    QTest::newRow("letterbox")<<QSize(1600,1000)<<QRectF(160,140,1280,720)<<QSize(1600,1000)<<QRectF(144,108,160,43.2);
+    QTest::newRow("small-raster")<<QSize(320,180)<<QRectF(0,0,320,180)<<QSize(320,180)<<QRectF(100,80,200,60);
+    QTest::newRow("sdl-cropped-letterbox")<<QSize(1280,720)<<QRectF(100,0,1280,720)<<QSize(1480,720)<<QRectF(100,80,200,60);
+  }
+  void runtimeSelectionMatchesRenderedPixels(){
+    QFETCH(QSize,pixels);QFETCH(QRectF,presentation);QFETCH(QSize,output);QFETCH(QRectF,expected);
+    ScreenCanvas canvas;canvas.resize(800,500);canvas.show();
+    QJsonObject element{{"id","value"},{"kind","text"},{"text","design"},{"x",10},{"y",20},{"width",120},{"height",40}};
+    QJsonObject screen{{"id","home"},{"elements",QJsonArray{element}}};
+    canvas.setScreen(QJsonObject{{"visual",QJsonObject{{"width",640},{"height",360}}}},screen,{},"value",true);
+    QImage image(pixels,QImage::Format_ARGB32);image.fill(Qt::black);
+    QJsonObject node{{"id","value"},{"x",100},{"y",80},{"width",200},{"height",60},{"visible",true},{"rendered",true}};
+    QJsonObject ui{{"screenId","home"},{"viewport",QJsonObject{{"width",640},{"height",360}}},
+      {"presentation",QJsonObject{{"x",presentation.x()},{"y",presentation.y()},{"width",presentation.width()},{"height",presentation.height()},{"pixelWidth",output.width()},{"pixelHeight",output.height()}}},{"nodes",QJsonArray{node}}};
+    canvas.setRuntimePreview(ui,image);
+    auto scene=static_cast<QGraphicsView&>(canvas).scene();auto item=scene->selectedItems().value(0);QVERIFY(item);
+    QCOMPARE(item->mapRectToScene(item->shape().boundingRect()),expected);
+    canvas.select({});QTest::mouseClick(canvas.viewport(),Qt::LeftButton,Qt::NoModifier,canvas.mapFromScene(expected.center()));
+    QCOMPARE(canvas.selectedIds(),QStringList{"value"});
+    QSignalSpy edits(&canvas,&ScreenCanvas::geometryEdited);canvas.setFocus();QTest::keyClick(&canvas,Qt::Key_Right);
+    QCOMPARE(edits.size(),1);QCOMPARE(edits.first().at(1).toRect(),QRect(11,20,120,40));
+    // A 10-by-5 logical drag must retain the authored geometry even when the
+    // rendered node has a different size or the screenshot is letterboxed.
+    const QPointF scale(expected.width()/200,expected.height()/60);
+    const auto from=canvas.mapFromScene(expected.center()),to=canvas.mapFromScene(expected.center()+QPointF(10*scale.x(),5*scale.y()));
+    QTest::mousePress(canvas.viewport(),Qt::LeftButton,Qt::NoModifier,from);QTest::mouseMove(canvas.viewport(),to);QTest::mouseRelease(canvas.viewport(),Qt::LeftButton,Qt::NoModifier,to);
+    QCOMPARE(edits.size(),2);const auto moved=edits.last().at(1).toRect();QVERIFY(qAbs(moved.x()-20)<=1&&qAbs(moved.y()-25)<=1);QCOMPARE(moved.size(),QSize(120,40));
+    canvas.setRuntimePreview(ui,image);QSignalSpy moves(&canvas,&ScreenCanvas::selectionMoved);canvas.startSelectionDrag();canvas.previewSelectionDrag(QPoint(qRound(10*scale.x()),qRound(10*scale.y())));canvas.finishSelectionDrag();QCOMPARE(moves.size(),1);QCOMPARE(moves.first().first().toPoint(),QPoint(10,10));
+    canvas.clearRuntimePreview();QCOMPARE(canvas.selectedIds(),QStringList{"value"});
+    QCOMPARE(scene->selectedItems().first()->mapRectToScene(scene->selectedItems().first()->shape().boundingRect()),QRectF(10,20,120,40));
+  }
   void runtimeGeometryKeepsAuthoredCoordinates(){
     ScreenCanvas canvas;canvas.resize(800,500);canvas.show();
     QJsonObject element{{"id","value"},{"kind","text"},{"text","design"},{"x",10},{"y",20},{"width",120},{"height",40}};

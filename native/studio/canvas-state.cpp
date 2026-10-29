@@ -12,7 +12,7 @@ static std::unique_ptr<QSettings> canvasPreferences(){
 
 CanvasStateBar::CanvasStateBar(ScreenCanvas* view,QMainWindow* window):QWidget(window),canvas(view){
   setObjectName("canvasStateBar");auto rows=new QVBoxLayout(this);rows->setContentsMargins(6,3,6,3);auto layout=new QHBoxLayout;rows->addLayout(layout);
-  enabled=new QCheckBox(tr("플레이 상태"));enabled->setObjectName("canvasStateEnabled");layout->addWidget(enabled);
+  enabled=new QCheckBox(tr("게임 상태 보기"));enabled->setObjectName("canvasStateEnabled");enabled->setToolTip(tr("현재 화면을 격리된 초기 상태 또는 검증한 저장으로 표시합니다. 해제하면 숨겨진 요소도 모두 편집합니다."));layout->addWidget(enabled);
   auto configure=new QPushButton(tr("상태 선택…"));configure->setObjectName("canvasStateConfigure");layout->addWidget(configure);
   actor=new QComboBox;actor->setObjectName("canvasStateActor");actor->setMinimumContentsLength(8);actor->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);layout->addWidget(actor);
   auto retry=new QPushButton(tr("갱신"));retry->setObjectName("canvasStateRefresh");layout->addWidget(retry);
@@ -26,7 +26,7 @@ CanvasStateBar::CanvasStateBar(ScreenCanvas* view,QMainWindow* window):QWidget(w
   editButton=new QPushButton(tr("편집으로"));editButton->setObjectName("canvasStop");playback->addWidget(editButton);
   auto note=new QLabel(tr("격리된 재생 · 본편 저장 유지"));note->setMinimumWidth(0);note->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);note->setToolTip(note->text());playback->addWidget(note,1);
   connect(playButton,&QPushButton::clicked,this,[this]{
-    if(preparingPlay||preview->running()||(busy&&busy()))return;
+    if(preparingPlay||(busy&&busy()))return;
     preparingPlay=true;playKey=preview->currentKey();debounce.stop();playButton->setEnabled(false);editButton->setEnabled(true);status->setText(tr("캔버스 재생 준비 중…"));emit playRequested(preview->interactiveRequest());
   });
   connect(pauseButton,&QPushButton::clicked,this,[this]{player->pause(!player->paused());});
@@ -48,13 +48,15 @@ CanvasStateBar::CanvasStateBar(ScreenCanvas* view,QMainWindow* window):QWidget(w
   connect(retry,&QPushButton::clicked,this,[this]{enabled->setChecked(true);canvas->clearRuntimePreview();status->setText(tr("플레이 상태 갱신 중…"));debounce.start();});
   connect(reasons,&QPushButton::clicked,this,[this]{preview->show();preview->raise();});
   connect(preview,&RendererPreviewDock::snapshotReady,this,[this](bool ok){
-    if(!enabled->isChecked())return;
+    if(!enabled->isChecked()||player->active()||preparingPlay)return;
     if(key!=preview->currentKey()||(!preview->snapshotCurrent()&&ok)){changed();return;}
     if(ok)applySnapshot();
     else {canvas->clearRuntimePreview();status->setText(tr("상태 적용 실패 · 설계 화면"));}
     if(!ok)status->setToolTip(preview->message());
   });
 }
+void CanvasStateBar::showAllElements(){enabled->setChecked(false);}
+void CanvasStateBar::showGameState(){enabled->setChecked(true);}
 void CanvasStateBar::remember(){
   if(filling||root.isEmpty())return;
   auto settings=canvasPreferences();const auto prefix="canvasPreview/"+QString(QCryptographicHash::hash(root.toUtf8(),QCryptographicHash::Sha256).toHex());
@@ -62,7 +64,9 @@ void CanvasStateBar::remember(){
 }
 void CanvasStateBar::applySnapshot(){
   canvas->setRuntimePreview(preview->result(),preview->snapshotImage());
-  status->setText(preview->explanation().value("modified").toBool()?tr("가상 검사 상태 · 배치 편집 가능"):tr("플레이 상태 적용 · 배치 편집 가능"));
+  const auto explanation=preview->explanation();
+  const auto source=explanation.value("source")=="validated-save"?tr("검증한 저장 상태"):tr("새 게임 초기 상태");
+  status->setText(source+(explanation.value("modified").toBool()?tr(" · 가상 값 변경됨"):QString()));
   status->setToolTip(preview->explanation().value("notice").toString());
 }
 void CanvasStateBar::updateContext(QJsonObject view,QString screen,QString locale,QSize viewport){
@@ -70,7 +74,7 @@ void CanvasStateBar::updateContext(QJsonObject view,QString screen,QString local
   const bool other=root!=view.value("root").toString();root=view.value("root").toString();
   preview->setDocuments(view.value("documents").toArray());preview->setContext(project,screen,{},view.value("revision").toInt(),root,locale);
   preview->setCanvasViewport(viewport);
-  if(other){auto settings=canvasPreferences();const auto prefix="canvasPreview/"+QString(QCryptographicHash::hash(root.toUtf8(),QCryptographicHash::Sha256).toHex());preview->setScenarioSettings(QJsonDocument::fromJson(settings->value(prefix+"/scenario").toByteArray()).object());enabled->setChecked(settings->value(prefix+"/enabled",false).toBool());attempted.clear();}
+  if(other){auto settings=canvasPreferences();const auto prefix="canvasPreview/"+QString(QCryptographicHash::hash(root.toUtf8(),QCryptographicHash::Sha256).toHex());preview->setScenarioSettings(QJsonDocument::fromJson(settings->value(prefix+"/scenario").toByteArray()).object());enabled->setChecked(settings->value(prefix+"/enabled",true).toBool());attempted.clear();}
   const auto selected=preview->scenarioSettings().value("actorId").toString();actor->clear();actor->addItem(tr("기존 대상 유지"),"");
   QSet<QString> members;for(auto member:project.value("roster").toObject().value("members").toArray())members.insert(member.toObject().value("characterId").toString());
   for(auto value:view.value("documents").toArray()){const auto doc=value.toObject(),data=doc.value("data").toObject();if(doc.value("kind")=="character"&&members.contains(data.value("id").toString()))actor->addItem(data.value("name").toString(),data.value("id").toString());}
@@ -80,14 +84,14 @@ void CanvasStateBar::changed(){
   if(filling)return;
   const auto next=preview->currentKey();
   if(player->active()||preparingPlay){if(playKey==next)return;preparingPlay=false;player->stop();}
-  if(!enabled->isChecked()){debounce.stop();canvas->clearRuntimePreview();status->setText(tr("설계 화면"));return;}
+  if(!enabled->isChecked()){debounce.stop();canvas->clearRuntimePreview();status->setText(tr("전체 요소 · 조건과 관계없이 배치 편집"));return;}
   if(next!=key){canvas->clearRuntimePreview();key=next;attempted.clear();}
   if(preview->snapshotCurrent()){applySnapshot();return;}
   if(attempted!=key){status->setText(tr("플레이 상태 갱신 중…"));debounce.start();}
 }
 void CanvasStateBar::refresh(){
   if(!enabled->isChecked()||!isEnabled()||player->active()||preparingPlay)return;
-  if(preview->running()||(busy&&busy())){debounce.start();return;}
+  if(preview->running()||(snapshotBusy?snapshotBusy():(busy&&busy()))){debounce.start();return;}
   attempted=key;preview->begin();
 }
 void CanvasStateBar::launchPlay(QJsonObject descriptor){

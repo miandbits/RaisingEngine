@@ -1,5 +1,5 @@
 namespace {
-void pilotScreen(StudioWindow& w,const QString& id){auto list=w.findChild<QListWidget*>("projectList");QVERIFY(list);for(int i=0;i<list->count();++i)if(list->item(i)->data(Qt::UserRole)==id){list->setCurrentRow(i);list->itemDoubleClicked(list->item(i));return;}QFAIL(qPrintable(id));}
+void pilotScreen(StudioWindow& w,const QString& id){auto list=w.findChild<QListWidget*>("projectList");QVERIFY(list);for(int i=0;i<list->count();++i)if(list->item(i)->data(Qt::UserRole)==id){list->setCurrentRow(i);list->itemActivated(list->item(i));return;}QFAIL(qPrintable(id));}
 void pilotElement(StudioWindow& w,const QString& id){auto tree=w.findChild<QTreeWidget*>("hierarchy");QVERIFY(tree);tree->clearSelection();for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole)==id){tree->setCurrentItem(*it);(*it)->setSelected(true);return;}QFAIL(qPrintable(id));}
 
 void pilotComparison(QDialog& editor,QStringList path,QString kind,QString id,int minimum){

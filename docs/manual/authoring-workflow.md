@@ -48,6 +48,15 @@ Reopening the project restores its connection. An unavailable remembered store
 produces a warning while still opening the content. New projects use the default
 store rather than inheriting the previous project's connection.
 
+Packaged Qt editors keep new plugin installations in your user data folder:
+`~/Library/Application Support/RaisingEngine/Raising Studio/plugin-store` on macOS,
+or `%LOCALAPPDATA%\RaisingEngine\Raising Studio\plugin-store` on Windows
+(with `~/AppData/Local` as the Windows fallback). An explicit store setting or
+`RAISING_PLUGIN_STORE` takes precedence; repository/CLI defaults are unchanged.
+Older stores inside an application bundle are not moved or deleted automatically.
+To migrate one, copy its complete folder to a writable location and connect that
+copy in **Manage plugins**. Keep the original until the copied packages validate.
+
 ## Continue an existing event
 
 1. Open **Story authoring → Find existing events / continue a story**.

@@ -1,3 +1,4 @@
+import {plannerEntryError} from './planner-entry.js';
 import type {ContentSnapshot, RunState} from '../core/model.js';
 import type {FacilityView,GameplayView} from '../gameplay/model.js';
 import type {Element} from './model.js';
@@ -39,7 +40,8 @@ export function projectDataUi(content:ContentSnapshot,state:RunState|null,gamepl
   };
   for(const component of design.components??[])for(const child of component.elements)checkConditions(child as Element);
   const cache=new Map<string,{enabled:boolean;reason:string}>();
-  const allowedCommand=(command:NonNullable<ReturnType<typeof widgetCommand>>)=>{
+  const allowedCommand=(command:NonNullable<ReturnType<typeof widgetCommand>>):{enabled:boolean;reason:string}=>{
+    if(command.type==='openPlanner'){const reason=plannerEntryError(design,state,content.activities,command,condition=>{const reply=request({operation:'evaluate',content,state,condition}) as Reply;return reply.ok&&reply.value===true;});if(reason)return {enabled:false,reason};return allowedCommand({type:'navigate',screenId:command.screenId});}
     if(command.type==='navigate'&&!state&&design.routing){const enabled=design.screens.some(s=>s.id===command.screenId&&!s.modal);return {enabled,reason:enabled?'':'이동할 화면을 찾을 수 없습니다.'};}
     const key=JSON.stringify(command);const previous=cache.get(key);if(previous)return previous;
     let allowed:{enabled:boolean;reason:string};
@@ -70,7 +72,7 @@ export function projectDataUi(content:ContentSnapshot,state:RunState|null,gamepl
     for(const element of resolveScreenElements(design,screen.id)){
       const command=element.kind==='button'?widgetCommand(element,state):null;
       if(element.kind==='button'&&element.action==='assignActivity'&&!command)availability[element.id]={enabled:false,reason:state?'캐릭터별 활동 배정을 사용할 수 없습니다.':'게임 시작 후 사용할 수 있습니다.'};
-      if(command&&(element.uiContext||battleUiTypes.includes(command.type)))availability[element.id]=allowedCommand(command);
+      if(command&&(element.uiContext||command.type==='openPlanner'||battleUiTypes.includes(command.type)))availability[element.id]=allowedCommand(command);
     }
     for(const source of screen.elements){
       const element=source as Element;

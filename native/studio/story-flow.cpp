@@ -1,3 +1,4 @@
+#include "calendar.hpp"
 #include <QTimer>
 #include "story-flow.hpp"
 #include "studio.hpp"
@@ -12,8 +13,7 @@ public:
     const int perMonth=qMax(1,project.value("periodsPerMonth").toInt());
     const int total=qMax(1,project.value("durationMonths").toInt()*perMonth);
     for(int i=0;i<total;++i) {
-      const int month=project.value("startMonth").toInt(1)-1+i/perMonth;
-      addItem(QObject::tr("%1년 %2월 · %3번째 일정").arg(project.value("startYear").toInt(1)+month/12).arg(month%12+1).arg(i%perMonth+1),i+1);
+      addItem(StudioCalendar::label(project,i),i+1);
     }
   }
   int value() const { return currentData().toInt(); }

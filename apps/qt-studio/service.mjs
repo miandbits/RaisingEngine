@@ -1,4 +1,20 @@
+import {verifyProjectBackup,restoreProjectBackup} from './backup-restore.mjs';
+import {applyProjectReleaseSettings} from '../../dist/packages/studio-service/release-import.js';
+import {prepareRelease} from '../../dist/packages/export-service/release-metadata.js';
+import {GoalRouteBatches} from './goal-route-batches.mjs';
+import {SavedGoalChecks} from './goal-save-checks.mjs';
+import {startGoalBaselineBatch} from './goal-baseline-batches.mjs';
+import {listPriorityProfiles,savePriorityProfile,deletePriorityProfile,resolvePriorityProfile} from './analysis-priorities.mjs';
+import {packagedStudioPluginStore} from './storage-paths.mjs';
+import { DraftRecovery } from './recovery.mjs';
+import { GameReleases } from './releases.mjs';
+import { randomUUID } from 'node:crypto';
+import { prepareIOSProject, configureIOSProject, runAppleTool, validateIOSVersions } from '../../scripts/lib/ios-project.mjs';
+import { FirstGameProgress } from './first-game.mjs';
+import { desktopTarget, gameDirectory, playerExecutable } from '../../dist/packages/export-service/targets.js';
 import { saveMigration } from './save-migration.mjs';
+import { UpdateCompatibility } from './update-compatibility.mjs';
+import { PresentationUpdates } from './presentation-updates.mjs';
 import {GoalCiReports} from './goal-ci.mjs';
 import {GitHubGoalReports} from './goal-github.mjs';
 import {runGoalRegression} from './goal-regression.mjs';
@@ -14,7 +30,7 @@ import {listGoalRoutes, importGoalRecording, saveGoalRoute, checkGoalRoutes} fro
 // Qt and Electron use the same authoring transactions, validator and exporter.
 // stdout is a JSON-lines protocol; diagnostics belong on stderr.
 import { createInterface } from 'node:readline';
-import { mkdir, mkdtemp, realpath, access, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, access, readFile, writeFile, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
@@ -40,18 +56,28 @@ import { authoringPreview } from './authoring-preview.mjs';
 const engineRoot = fileURLToPath(new URL('../..', import.meta.url));
 const LOCK_FILE = 'plugins/lock.json';
 export class QtStudioService {
+  updateCompatibility = new UpdateCompatibility();
+  presentationUpdates = new PresentationUpdates();
+  recovery = new DraftRecovery();
+  releases = new GameReleases();
+  firstGame = new FirstGameProgress();
+  nativeTarget = desktopTarget();
   debugSession = null;
   analysisJobs = new AnalysisJobs();
+  goalRouteBatches = new GoalRouteBatches();
+  savedGoalChecks = new SavedGoalChecks(this.goalRouteBatches);
   goalSearchJobs = new GoalSearchJobs();
   goalComparisons = new GoalComparisons();
   goalCiReports = new GoalCiReports();
   goalGitHub = new GitHubGoalReports();
   /** shareViews: replies are serialized right away (the stdio protocol below), so the draft's
    *  documents are not cloned into each reply (in-process callers keep their own copies). */
-  constructor({ runtimes = { web: process.env.RAISING_WEB_PLAYER_RUNTIME || path.join(engineRoot, 'dist/web'), windows: process.env.RAISING_NATIVE_PLAYER_RUNTIME || path.join(engineRoot, 'dist/native-player-app') }, pluginStore, shareViews = false } = {}) {
+  constructor({ runtimes = { web: process.env.RAISING_WEB_PLAYER_RUNTIME || path.join(engineRoot, 'dist/web'), windows: process.env.RAISING_WINDOWS_PLAYER_RUNTIME || (process.platform === 'win32' ? process.env.RAISING_NATIVE_PLAYER_RUNTIME : null) || path.join(engineRoot, 'dist/native-player-app'), macos: process.env.RAISING_MACOS_PLAYER_RUNTIME || (process.platform === 'darwin' ? process.env.RAISING_NATIVE_PLAYER_RUNTIME : null) || path.join(engineRoot, 'dist/native-player-app'), ios: process.env.RAISING_IOS_PLAYER_RUNTIME || process.env.RAISING_NATIVE_PLAYER_RUNTIME || path.join(engineRoot, 'dist/native-player-app') }, pluginStore, shareViews = false, nativeTarget = desktopTarget() } = {}) {
+    if (!["windows", "macos"].includes(nativeTarget)) throw new Error("Invalid desktop player target.");
+    this.nativeTarget = nativeTarget;
     this.runtimes = runtimes;
     this.shareViews = shareViews;
-    this.pluginStore = pluginStorePath(pluginStore);
+    this.pluginStore = pluginStorePath(pluginStore || process.env.RAISING_PLUGIN_STORE || packagedStudioPluginStore(engineRoot));
     this.defaultPluginStore = this.pluginStore;
     this.editor = new StudioEditor({ pluginStore: this.pluginStore });
   }
@@ -71,13 +97,47 @@ export class QtStudioService {
     this.editor.edit(lock ? { type: 'replace', file: lock.file, data } : { type: 'create', file: LOCK_FILE, data }, revision);
   }
   async handle(request) {
+    let result, recoveryWarning;
+    try { result = await this.dispatch(request); }
+    finally {
+      try { await this.recovery.checkpoint(this.editor); }
+      catch(error) { recoveryWarning = 'Recovery copy could not be updated. Save your project: ' + error.message; }
+    }
+    if (result.view) {
+      result.recovery = {...this.recovery.status, ...(recoveryWarning ? {warning:recoveryWarning} : {})};
+      try { result.releaseCompatibility = await this.releases.compatibility(this.editor, this.runtimes); }
+      catch(error) { result.releaseCompatibility = {summary:'Release settings need attention: '+error.message,rows:[]}; }
+    }
+    return result;
+  }
+  async dispatch(request) {
     const { method, params = {} } = request;
     if (method === 'saveMigrationPreview' || method === 'saveMigrationPublish') return saveMigration(method, params);
+    if (method === 'updateCompatibility') return {error:null,updateCompatibility:await this.updateCompatibility.check(this.editor,params)};
+    if (method === 'presentationUpdateCheck') return {error:null,presentationUpdate:await this.presentationUpdates.check(this,params)};
     if(method==='goalCompareStep')return {error:null,goalComparisonStep:await this.goalComparisons.step(this.editor,params)};
+    if(method==='goalBaselineBatchStatus'||method==='goalBaselineBatchStop'){
+      if(params.root!==this.editor.root)throw Error('This baseline batch does not belong to the current project.');
+      const job=this.goalRouteBatches.get(params.root,params.jobId);
+      if(job.mode!=='baseline')throw Error('This job is not a baseline capture.');
+      if(method==='goalBaselineBatchStop')this.goalRouteBatches.stop(params.root,params.jobId);
+      return {error:null,goalBaselineBatch:await this.goalRouteBatches.status(params.root,params.jobId,this.editor.draftVersion())};
+    }
+    if(method==='goalSaveCheckStatus'||method==='goalSaveCheckStop'){
+      if(params.root!==this.editor.root)throw Error('Saved checks do not belong to the current project.');
+      if(method==='goalSaveCheckStop')this.savedGoalChecks.stop(params.checkId);
+      return {error:null,goalSaveCheck:await this.savedGoalChecks.status(params.root,this.editor.draftVersion())};
+    }
+    if(method==='goalRouteBatchStatus'||method==='goalRouteBatchStop'){
+      if(params.root!==this.editor.root)throw Error('This route batch does not belong to the current project.');
+      const goalRouteBatch=method==='goalRouteBatchStop'?this.goalRouteBatches.stop(params.root,params.jobId):await this.goalRouteBatches.status(params.root,params.jobId,this.editor.draftVersion());
+      return {error:null,goalRouteBatch};
+    }
     if(method==='goalSearchStatus'||method==='goalSearchStop')return {error:null,goalSearch:method==='goalSearchStop'?this.goalSearchJobs.cancel(params.root,params.jobId):this.goalSearchJobs.public(this.goalSearchJobs.get(params.root,params.jobId))};
-    if(['analysisList','analysisStatus','analysisStop','analysisRuns','analysisRun','analysisReplay','analysisTree'].includes(method)){
+    if(['analysisList','analysisStatus','analysisBalanceCompare','analysisStop','analysisRuns','analysisRun','analysisReplay','analysisTree'].includes(method)){
       const jobs=this.analysisJobs;let analysis;
-      if(method==='analysisList')analysis={jobs:(await jobs.list(params.root)).map(job=>({...job,result:{...job.result,routeGraph:undefined,traces:[]}}))};
+      if(method==='analysisList')analysis={jobs:(await jobs.list(params.root)).map(job=>({...job,result:{...job.result,routeGraph:undefined,traces:[],...(job.result.balance?{balance:{...job.result.balance,periodSeries:undefined}}:{})}}))};
+      else if(method==='analysisBalanceCompare'){if(this.editor.root&&params.root!==this.editor.root)throw Error('Open the project for this comparison first.');analysis={comparison:await jobs.compareBalance(params.root,params.beforeJobId,params.jobId)};}
       else if(method==='analysisStatus'){const job=await jobs.get(params.root,params.jobId,params.includeGraph!==false);analysis={job:params.includeGraph===false?{...job,result:{...job.result,routeGraph:undefined,traces:[]}}:job};}
       else if(method==='analysisStop')analysis={job:await jobs.cancel(params.root,params.jobId)};
       else if(method==='analysisRuns'){const runs=await jobs.runs(params.root,params.jobId,params);analysis={runs:params.includePaths?runs:{...runs,rows:runs.rows.map(({nodeIds,edgeIds,traceHash,...row})=>row)}};}
@@ -89,7 +149,7 @@ export class QtStudioService {
     let extra = {};
     switch (method) {
       case 'goalRecordPrepare': {
-        const caps=await readFile(path.join(this.runtimes.windows,'capabilities.json'),'utf8').then(JSON.parse).catch(()=>({}));
+        const caps=await readFile(path.join(this.runtimes[this.nativeTarget],'capabilities.json'),'utf8').then(JSON.parse).catch(()=>({}));
         if(!caps.toolFeatures?.includes('goal-route-recording-v1'))throw new Error('이 플레이어는 목표 경로 기록을 지원하지 않습니다. 최신 Windows 플레이어 런타임을 선택하세요.');
         extra={recordingSupported:true};break;
       }
@@ -131,7 +191,12 @@ export class QtStudioService {
         catch(error){extra.goalImpact={rows:[],error:'기준 변경은 완료되었으나 재검사에 실패했습니다: '+error.message,stale:true,complete:false};}
         break;
       }
-      case 'goalImpactLatest': {const content=await this.debugSnapshot(params.revision);extra={goalImpact:await latestGoalImpact(this.editor.root,content)};break;}
+      case 'goalImpactLatest': {
+        const content=await this.debugSnapshot(params.revision),saved=await this.savedGoalChecks.status(this.editor.root,this.editor.draftVersion());
+        // A newest comparison whose archive failed must remain visible instead
+        // of silently falling back to an older successful report on disk.
+        extra={goalImpact:saved?.goalImpact?.archiveError&&!['queued','running','cancelling'].includes(saved.status)?{...saved.goalImpact,stale:true}:await latestGoalImpact(this.editor.root,content)};break;
+      }
       case 'goalBaselineList': this.editor.current(params.revision);extra={goalBaselines:await listGoalBaselines(this.editor.root)};break;
       case 'goalBaselineSave': {
         const content=await this.debugSnapshot(params.revision);
@@ -158,6 +223,12 @@ export class QtStudioService {
         if(params.route?.gameId!==this.editor.documents.find(d=>d.kind==='project')?.data.gameId)throw new Error('현재 게임의 목표 경로만 저장할 수 있습니다.');
         extra={goalRouteSaved:await saveGoalRoute(this.editor.root,params.route,params.expectedRevision??null)};break;
       }
+      case 'goalBaselineBatchStart': {extra={goalBaselineBatch:await startGoalBaselineBatch(this,params)};break;}
+      case 'goalRouteBatchStart': {
+        const root=this.editor.root,content=await this.debugSnapshot(params.revision),version=this.editor.draftVersion();
+        const guard=async()=>{this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed before the batch started.');await this.editor.assertDiskUnchanged();this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed before the batch started.');};
+        extra={goalRouteBatch:await this.goalRouteBatches.start(root,content,version,params.revision,params,guard)};break;
+      }
       case 'goalRoutesRun': {
         const content=await this.debugSnapshot(params.revision);
         const report=await checkGoalRoutes(this.editor.root,content,params.ids);await this.editor.assertDiskUnchanged();
@@ -176,7 +247,7 @@ export class QtStudioService {
         extra={conditionPreview:{revision:params.revision,attributes:created.state.attributes,phase,hidden}};
         break;
       }
-      case 'createBenchmark': if(this.editor.root&&this.editor.view().dirty)throw new Error('현재 프로젝트의 변경을 먼저 저장하거나 되돌린 뒤 새 샘플을 만드세요.');await createBenchmarkProject(params.root,params);await this.editor.open(params.root);this.debugSession=null;break;
+      case 'createBenchmark': if(this.editor.root&&this.editor.view().dirty)throw new Error('현재 프로젝트의 변경을 먼저 저장하거나 되돌린 뒤 새 샘플을 만드세요.');await createBenchmarkProject(params.root,params);await this.goalRouteBatches.close();await this.editor.open(params.root);this.debugSession=null;break;
       case 'assuranceRun': {
         const content=await this.debugSnapshot(params.revision);
         const report=await runAssurance(content,{runs:params.runs??32,seed:params.seed??42,maxCommands:150,timeoutMs:60000});
@@ -184,9 +255,33 @@ export class QtStudioService {
         const file=path.join(folder,'report-'+Date.now()+'.json');await writeFile(file,JSON.stringify(report,null,2));
         extra={assurance:{...report,file}};break;
       }
+      case 'analysisPriorityProfiles':
+      case 'analysisPriorityProfileSave':
+      case 'analysisPriorityProfileDelete': {
+        this.editor.current(params.revision);
+        const project=this.editor.documents.find(d=>d.kind==='project')?.data;
+        const attributes=this.editor.documents.find(d=>d.kind==='attributes')?.data?.attributes;
+        if(!project||!Array.isArray(attributes))throw Error('Open a project with valid attribute definitions first.');
+        const content={project:structuredClone(project),attributes:structuredClone(attributes)},root=this.editor.root;
+        const guard=async()=>{this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed. Reopen player priorities.');await this.editor.assertDiskUnchanged();this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed. Reopen player priorities.');};
+        if(method!=='analysisPriorityProfiles'&&this.editor.readOnly)throw Error('Copy this read-only sample to an editable project before saving player priorities.');
+        let priorityProfiles;
+        if(method==='analysisPriorityProfiles')priorityProfiles=await listPriorityProfiles(root,content);
+        else if(method==='analysisPriorityProfileSave')priorityProfiles=await savePriorityProfile(root,content,params,guard);
+        else priorityProfiles=await deletePriorityProfile(root,content,params,guard);
+        if(method!=='analysisPriorityProfiles')this.recovery.last=null;
+        this.editor.current(params.revision);extra={analysis:{priorityProfiles}};break;
+      }
       case 'analysisStart': {
-        const content=await this.debugSnapshot(params.revision);
-        const job=await this.analysisJobs.start(this.editor.root,content,this.editor.draftVersion(),params.revision,{runs:5000,seed:42,strategy:'random',maxCommands:1000,timeoutMs:3600000,...params.options});
+        const content=await this.debugSnapshot(params.revision),root=this.editor.root;
+        const options={runs:5000,seed:42,strategy:'random',maxCommands:1000,timeoutMs:3600000,...params.options};
+        if(params.priorityProfileId!==undefined){
+          if(options.priorityProfile!==undefined)throw Error('Choose either a saved profile or explicit priorities, not both.');
+          options.priorityProfile=await resolvePriorityProfile(root,content,params);
+          this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed before analysis.');
+          await this.editor.assertDiskUnchanged();this.editor.current(params.revision);if(this.editor.root!==root)throw Error('The project changed before analysis.');
+        }
+        const job=await this.analysisJobs.start(root,content,this.editor.draftVersion(),params.revision,options);
         extra={analysis:{job}};break;
       }
       case 'open': {
@@ -199,21 +294,42 @@ export class QtStudioService {
           try { await this.editor.configurePluginStore(params.pluginStore, this.editor.revision); this.pluginStore = this.editor.pluginStore; }
           catch (error) { extra.environmentWarning = `저장된 플러그인 저장소를 사용할 수 없습니다: ${error.message}`; }
         }
-        try { await this.editor.open(params.root); }
+        try { await this.goalRouteBatches.close();await this.editor.open(params.root); }
         catch (error) { this.editor.pluginStore = previousStore; this.pluginStore = previousStore; this.editor.diagnostics = previousDiagnostics; throw error; }
+        // Include discovery in open: a deferred RPC can race the first editor click.
+        try { extra.recoveries = await this.recovery.list(this.editor.root); }
+        catch (error) { extra.environmentWarning = [extra.environmentWarning, `Recovery discovery failed: ${error.message}`].filter(Boolean).join('\n'); }
         this.debugSession = null; break;
       }
       case 'create': {
         if(params.template==='existing')await createProjectFromSource(params.source,params.root);
         else await createTemplateProject(path.join(engineRoot, 'examples'), params.template??'academy-adventure', params.root);
+        if (params.template === 'my-first-raising-game') {
+          const file = path.join(params.root, 'project.json');
+          const project = JSON.parse(await readFile(file, 'utf8'));
+          project.gameId = 'raising-' + randomUUID();
+          await writeFile(file, JSON.stringify(project, null, 2) + '\n');
+        }
         const previousStore = this.pluginStore;
         this.editor.pluginStore = this.defaultPluginStore;
         this.pluginStore = this.defaultPluginStore;
-        try { await this.editor.open(params.root); }
+        try { await this.goalRouteBatches.close();await this.editor.open(params.root); }
         catch (error) { this.editor.pluginStore = previousStore; this.pluginStore = previousStore; throw error; }
+        if (params.template === 'my-first-raising-game') await this.firstGame.initialize(this.editor);
         this.debugSession = null; break;
       }
       case 'view': break;
+      case 'releaseTarget': this.editor.current(params.revision); await this.releases.preference(this.editor, params.target); break;
+      case 'releaseBackupVerify': this.editor.current(params.revision); extra.backupVerification=await verifyProjectBackup(params.file); this.editor.current(params.revision); break;
+      case 'releaseBackupRestore': this.editor.current(params.revision); extra.backupRestored=await restoreProjectBackup(params.file,{destination:params.destination,expectedSha256:params.sha256,originalRoot:this.editor.root}); break;
+      case 'releaseLaunch': extra.launch = await this.releases.launch(params.token); break;
+      case 'recoveryList': extra.recoveries = await this.recovery.list(this.editor.root); break;
+      case 'recoveryRestore': this.editor.current(params.revision); extra.restoredProject = await this.recovery.restore(this.editor.root, {...params,revision:params.recoveryRevision}); break;
+      case 'recoveryDiscard': this.editor.current(params.revision); await this.recovery.discard(this.editor.root, {...params,revision:params.recoveryRevision}); if(params.id===this.recovery.id)this.recovery.last=this.editor.root+this.editor.draftVersion(); break;
+      case 'discardDraftRecovery':
+        this.editor.current(params.revision); await this.recovery.clearOwn(this.editor.root);
+        this.recovery.last = this.editor.root + this.editor.draftVersion(); this.recovery.status = null; break;
+      case 'firstGameObserve': await this.firstGame.observe(this.editor, params); break;
       case 'pluginStatus': if (this.editor.root) await this.editor.validate(params.revision); break;
       case 'pluginStore': {
         await this.editor.configurePluginStore(params.directory, params.revision);
@@ -267,6 +383,9 @@ export class QtStudioService {
       case 'importSprites':
         extra = { spriteImport: await importSprites(this.editor, params, params.revision) };
         await this.editor.validate(this.editor.revision); break;
+      case 'projectReleaseSettings':
+        await applyProjectReleaseSettings(this.editor,params,params.revision);
+        await this.editor.validate(this.editor.revision); break;
       case 'importFont':
         extra = { importedAssetId: await importFont(this.editor, params.file, params.revision) };
         await this.editor.validate(this.editor.revision); break;
@@ -275,24 +394,22 @@ export class QtStudioService {
         await this.editor.validate(this.editor.revision); break;
       case 'save': {
         await this.editor.save(params.revision);
-        const hasRoutes=await access(path.join(this.editor.root,'playtests','routes')).then(()=>true,()=>false);
-        if(hasRoutes){
-          let content;
-          try {content=await this.debugSnapshot(this.editor.revision);}catch(error){extra={goalReport:{ok:false,reports:[],error:error.message},goalImpact:{rows:[],error:error.message,complete:false,stale:true}};}
-          if(content){
-            try {if((await listGoalRoutes(this.editor.root)).length){const report=await checkGoalRoutes(this.editor.root,content);await this.editor.assertDiskUnchanged();extra.goalReport={...report,testedRevision:this.editor.revision};}}
-            catch(error){extra.goalReport={ok:false,reports:[],error:error.message,testedRevision:this.editor.revision};}
-            try {const report=await checkGoalImpacts(this.editor.root,content,this.editor.revision);extra.goalImpact=await publishGoalImpacts(this.editor,content,this.editor.revision,report);}
-            catch(error){extra.goalImpact={rows:[],error:error.message,complete:false,stale:true,testedRevision:this.editor.revision};}
-          }
-        }
+        // Disk persistence is complete. Check startup is a separate outcome;
+        // replay and impact comparison run from this immutable saved snapshot.
+        try {
+          const hasRoutes=await access(path.join(this.editor.root,'playtests','routes')).then(()=>true,()=>false);
+          if(hasRoutes){const content=await this.debugSnapshot(this.editor.revision);extra.goalSaveCheck=await this.savedGoalChecks.enqueue(this.editor.root,content,this.editor.draftVersion(),this.editor.revision);}
+          else {this.savedGoalChecks.stop();extra.goalSaveCheck=null;}
+        }catch(error){extra.goalSaveCheck=this.savedGoalChecks.failed(this.editor.root,this.editor.draftVersion(),this.editor.revision,error);}
         break;
       }
       case 'validate': await this.editor.validate(params.revision); break;
       case 'export': {
         const revision = params.revision;
+        const iosVersions = params.target === 'ios' ? validateIOSVersions({version:params.iosVersion ?? params.releaseVersion,buildNumber:params.iosBuildNumber}) : null;
+        if (iosVersions && params.releaseVersion && iosVersions.version !== params.releaseVersion) throw new Error('The iOS app version must match the release archive version.');
         this.editor.current(revision);
-        if (params.target !== 'windows' && params.target !== 'web') throw new Error('지원하지 않는 내보내기 대상입니다.');
+        if (!['windows', 'web', 'macos', 'ios'].includes(params.target)) throw new Error('지원하지 않는 내보내기 대상입니다.');
         if (typeof params.destination !== 'string' || !path.isAbsolute(params.destination)) throw new Error('새 출력 폴더의 절대 경로를 지정하세요.');
         await this.editor.validate(revision);
         if (this.editor.diagnostics.some(d => d.severity === 'error')) throw new Error('내보내기 전에 문제 패널의 오류를 수정하세요.');
@@ -300,13 +417,45 @@ export class QtStudioService {
         this.editor.current(revision);
         const built = await this.editor.snapshot(revision);
         if (!built.ok) throw new Error('내보내기 스냅샷을 만들 수 없습니다.');
+        if(params.presentationCheck&&params.updateCheck)throw Error('Choose either a verified presentation update or the ordinary content-update workflow.');
+        const presentation=params.presentationCheck?await this.presentationUpdates.verify(this,params.presentationCheck,{revision,target:params.target}):null;
+        if(params.updateCheck)await this.updateCompatibility.verify(this.editor,params.updateCheck);
         const extensions = await this.editor.exportExtensions(revision, built.snapshot, params.target, await this.playerFeatures(params.target));
-        const exported = await exportGame({ content: built.snapshot, projectRoot: this.editor.root,
+        const release=await prepareRelease(this.editor.root,this.editor.documents.find(d=>d.kind==='assets')?.data?.release);
+        this.editor.current(revision);
+        const exported = await exportGame({ content: built.snapshot, projectRoot: this.editor.root, release,
+          ...(presentation?{presentationBase:presentation.base}:{}),
           destination: params.destination, target: params.target, runtimes: this.runtimes, extensions,
+          prepareBundle: async directory => {
+            if(params.target==='ios') await prepareIOSProject(directory, {root:engineRoot, applicationId:'org.raisingengine.'+built.snapshot.project.gameId, ...iosVersions});
+            if(params.target==='macos' && process.platform==='darwin') {
+              const app=path.join(directory,'RaisingPlayer.app');
+              // Old templates put data in MacOS, where codesign treats it as nested
+              // code. Its xattr signatures disappear on ordinary copies and ZIPs.
+              const legacyFonts=await lstat(path.join(app,'Contents/MacOS/fonts')).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+              if(legacyFonts)throw Error('Rebuild the macOS player runtime: bundled fonts must be in Contents/Resources/fonts, not Contents/MacOS/fonts.');
+              await runAppleTool('/usr/bin/codesign', ['--force','--deep','--sign','-',app], directory);
+              await runAppleTool('/usr/bin/codesign', ['--verify','--deep','--strict',app], directory);
+            }
+            if(params.releaseVersion) await this.releases.prepare(directory, {editor:this.editor, target:params.target, version:params.releaseVersion, content:built.snapshot, contentFingerprint:presentation?.report.baselineFingerprint??built.snapshot.contentFingerprint, engineRoot});
+          },
           beforePublish: async () => {
             await this.editor.assertDiskUnchanged(); this.editor.current(revision);
+            if(params.updateCheck)await this.updateCompatibility.verify(this.editor,params.updateCheck);
+            if(params.presentationCheck)await this.presentationUpdates.verify(this,params.presentationCheck,{revision,target:params.target});
           } });
-        extra = { exported }; break;
+        extra = { exported: {...exported, launchToken:this.releases.register(exported), ...(params.releaseVersion ? {releaseVersion:params.releaseVersion,gameArchive:path.join(exported.directory,'Game.zip'),projectArchive:path.join(exported.directory,'Project-backup.zip')} : {})} };
+        // Failed validation/export must not persist a target preference. A settings
+        // failure after publication is a warning, never a claim that no game exists.
+        try {await this.releases.preference(this.editor,params.target);}
+        catch(error){extra.exported.warning='Game exported, but the preferred target could not be saved: '+error.message;}
+        if (params.target === 'ios') {
+          try { extra.exported.xcodeProject = await configureIOSProject(exported.directory,{recordStatus:false}); }
+          catch (error) { extra.exported.warning = [extra.exported.warning,'Game and iOS sources exported. Xcode generation needs attention: ' + error.message + '\nUse Generate Xcode project.command after installing Xcode and CMake.'].filter(Boolean).join('\n'); }
+        }
+        try { await this.firstGame.exported(this.editor, exported); }
+        catch (error) { extra.checklistWarning = error.message; }
+        break;
       }
       case 'authoringWorkspace': {
         this.editor.current(params.revision);
@@ -402,14 +551,14 @@ export class QtStudioService {
           if (hasScene && hasPortraitTransforms(params.scene) && !capabilities.visualFeatures.includes('scene-portrait-transform-v1'))
             throw new Error('현재 플레이어는 저장하지 않은 장면의 배율·위치 변환(scene-portrait-transform-v1)을 지원하지 않습니다. 내보내기용 플레이어를 다시 빌드해 주세요.');
         };
-        await requirePreview(this.runtimes.windows);
+        await requirePreview(this.runtimes[this.nativeTarget]);
         const cache = path.join(process.env.RAISING_STUDIO_CACHE || path.join(os.tmpdir(),'RaisingStudio'), 'qt-render-preview');
         await mkdir(cache, { recursive: true });
-        const run = await mkdtemp(path.join(cache, 'run-'));
+        const run = await realpath(await mkdtemp(path.join(cache, 'run-')));
         // Play/preview runs skip export-only preparation (atlas packing): quick, and reports keep the part ids.
-        const extensions = await this.editor.exportExtensions(revision, built.snapshot, 'windows');
+        const extensions = await this.editor.exportExtensions(revision, built.snapshot, this.nativeTarget);
         const exported = await exportGame({ content: built.snapshot, projectRoot: this.editor.root,
-          destination: path.join(run, 'game'), target: 'windows', runtimes: this.runtimes, extensions });
+          destination: path.join(run, 'game'), target: this.nativeTarget, runtimes: this.runtimes, extensions });
         // A rebuilt runtime or external edit during export must not launch stale data.
         await requirePreview(exported.directory);
         await this.editor.assertDiskUnchanged();
@@ -418,14 +567,14 @@ export class QtStudioService {
         const inspectionFile = inspection ? path.join(run, 'inspection.json') : null;
         if (inspectionFile) await writeFile(inspectionFile, JSON.stringify(inspection), 'utf8');
         if (sceneFile) await writeFile(sceneFile, JSON.stringify(params.scene, null, 2), 'utf8');
-        extra = { play: { preview: true, executable: path.join(exported.directory, 'RaisingPlayer.exe'),
-          directory: exported.directory, save: path.join(run, 'save.json'), report: path.join(run, 'report.json'),
+        extra = { play: { preview: true, executable: playerExecutable(this.nativeTarget, exported.directory),
+          directory: gameDirectory(this.nativeTarget, exported.directory), save: path.join(run, 'save.json'), report: path.join(run, 'report.json'),
           revision, fingerprint: exported.contentFingerprint, ...(sceneFile ? { scene: sceneFile, previewSource: 'initial-state', gameplayValidated: false } : {}),
           ...(inspection ? {inspection:inspectionFile,screenId:inspection.screenId,explanation:inspection.explanation,previewSource:'authoring-state',gameplayValidated:false} : {}) } };
         break;
       }
       case 'play': {
-        const capabilities=await readFile(path.join(this.runtimes.windows,'capabilities.json'),'utf8').then(JSON.parse).catch(()=>({}));
+        const capabilities=await readFile(path.join(this.runtimes[this.nativeTarget],'capabilities.json'),'utf8').then(JSON.parse).catch(()=>({}));
         this.editor.current(params.revision);
         await this.editor.validate(params.revision);
         if (this.editor.diagnostics.some(d => d.severity === 'error')) throw new Error('실행 전에 문제 패널의 오류를 수정하세요.');
@@ -434,21 +583,22 @@ export class QtStudioService {
         if (!built.ok) throw new Error('실행 스냅샷을 만들 수 없습니다.');
         const cache = path.join(process.env.RAISING_STUDIO_CACHE || path.join(os.tmpdir(),'RaisingStudio'), 'qt-preview');
         await mkdir(cache, { recursive: true });
-        const run = await mkdtemp(path.join(cache, 'run-'));
-        const extensions = await this.editor.exportExtensions(this.editor.revision, built.snapshot, 'windows');
+        const run = await realpath(await mkdtemp(path.join(cache, 'run-')));
+        const extensions = await this.editor.exportExtensions(this.editor.revision, built.snapshot, this.nativeTarget);
         const exported = await exportGame({ content: built.snapshot, projectRoot: this.editor.root,
-          destination: path.join(run, 'game'), target: 'windows',
+          destination: path.join(run, 'game'), target: this.nativeTarget,
           runtimes: this.runtimes, extensions });
         // Recheck before launch: an MCP save during export must not silently become this run.
         await this.editor.assertDiskUnchanged();
-        extra = { play: { executable: path.join(exported.directory, 'RaisingPlayer.exe'),
-          directory: exported.directory, save: path.join(run, 'save.json'), report: path.join(run, 'report.json'), recording: capabilities.toolFeatures?.includes('goal-route-recording-v1')?path.join(run, 'recording.json'):null,
+        this.firstGame.play = {root:this.editor.root, version:this.editor.draftVersion(), fingerprint:exported.contentFingerprint};
+        extra = { play: { executable: playerExecutable(this.nativeTarget, exported.directory),
+          directory: gameDirectory(this.nativeTarget, exported.directory), save: path.join(run, 'save.json'), report: path.join(run, 'report.json'), recording: capabilities.toolFeatures?.includes('goal-route-recording-v1')?path.join(run, 'recording.json'):null,
           revision: this.editor.revision, fingerprint: exported.contentFingerprint } };
         break;
       }
       default: throw new Error(`알 수 없는 요청: ${method}`);
     }
-    return { ...this.editor.reply(null, null, { shared: this.shareViews }), ...extra, assets: await this.assets(), localizationSources:extractMessages(contentFromDocuments(this.editor.documents)), plugins: await this.plugins() };
+    return { ...this.editor.reply(null, null, { shared: this.shareViews }), ...extra, firstGame: await this.firstGame.status(this.editor), assets: await this.assets(), localizationSources:extractMessages(contentFromDocuments(this.editor.documents)), plugins: await this.plugins() };
   }
   async debugSnapshot(revision) {
     this.editor.current(revision);
@@ -495,5 +645,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     }
   }
   // The editor closed its end (quit, also after 「저장 안 함」): files imported for the unsaved draft go.
+  await service.goalRouteBatches.close();
+  await service.releases.close();
   await service.editor.close();
 }

@@ -1,3 +1,4 @@
+import {IndexedSlotStorage} from '../../packages/web-player/slot-storage.js';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Player } from '../player/renderer/main.js';
@@ -14,6 +15,9 @@ async function start() {
   if (!response.ok) throw new Error(`게임 데이터를 열 수 없습니다 (${response.status}).`);
   const bundle = await response.json() as GameBundle;
   if (bundle.formatVersion !== '1' || !bundle.content?.project || !bundle.assets) throw new Error('지원하지 않는 게임 묶음입니다.');
+  if(bundle.presentationRevision?.visual && (bundle.presentationRevision.formatVersion!=='1'||bundle.presentationRevision.policy!=='paint-layout-v1'))throw new Error('Unsupported presentation update policy.');
+  const application=bundle.application;
+  if(application!==undefined&&(!application||typeof application!=='object'||Array.isArray(application)||Object.keys(application).length!==1||typeof application.displayName!=='string'||!application.displayName.trim()||application.displayName.length>80||/[\u0000-\u001f\u007f]/.test(application.displayName)))throw new Error('Invalid application display name.');
   const wasmModuleUrl = new URL('./wasm/raising-wasm.mjs', document.baseURI).href;
   const { default: createModule } = await import(/* @vite-ignore */ wasmModuleUrl) as { default: () => Promise<WasmCoreModule> };
   const runtime = new WasmRuntime(await createModule());
@@ -43,8 +47,8 @@ async function start() {
       const link = document.createElement('a'); link.href = url; link.download = 'raising-save.json';
       document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
-  }, validateSave, extensions.active ? extensions : null);
-  document.title = bundle.content.project.title;
+  }, validateSave, extensions.active ? extensions : null, new IndexedSlotStorage(JSON.stringify([bundle.content.project.gameId,new URL('.',document.baseURI).pathname])), bundle.presentationRevision?.visual);
+  document.title = application?.displayName ?? bundle.content.project.title;
   createRoot(container).render(<Player />);
 }
 void start().catch(error => {

@@ -1,3 +1,4 @@
+#include <QDockWidget>
 #include "studio.hpp"
 #include "validation-location.hpp"
 #include <QTest>
@@ -51,7 +52,7 @@ private slots:
     for(auto e:firstScreen["elements"].toArray())if(!e.toObject()["locked"].toBool()){unlocked=e.toObject()["id"].toString();break;}
     QVERIFY(!unlocked.isEmpty());hierarchy->clearSelection();for(QTreeWidgetItemIterator it(hierarchy);*it;++it)if((*it)->data(0,Qt::UserRole).toString()==unlocked&&(*it)->data(0,Qt::UserRole+1).toString()==firstScreen["id"].toString())(*it)->setSelected(true);
     auto width=w.findChild<QSpinBox*>("elementWidth");QVERIFY(width&&width->isEnabled());{
-      const auto prior=w.projectData();const int n=width->value();w.activateWindow();width->setFocus();QTest::qWait(20);QVERIFY(width->hasFocus());QTest::keyClick(width,Qt::Key_A,Qt::ControlModifier);QTest::keyClicks(width,QString::number(n-1));validate->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),30000);QVERIFY(w.projectData()!=prior);QVERIFY(w.findChild<QLabel*>("validationSummary")->text().contains("오류 0건"));w.findChild<QAction*>("undoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),30000);QCOMPARE(w.projectData(),prior);validate->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),30000);
+      const auto prior=w.projectData();const int n=width->value();if(auto dock=w.findChild<QDockWidget*>("inspectorDock")){dock->show();dock->raise();}w.raise();w.activateWindow();QApplication::setActiveWindow(&w);width->setFocus();QTRY_VERIFY_WITH_TIMEOUT(width->hasFocus(),5000);QTest::keyClick(width,Qt::Key_A,Qt::ControlModifier);QTest::keyClicks(width,QString::number(n-1));validate->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),30000);QVERIFY(w.projectData()!=prior);QVERIFY(w.findChild<QLabel*>("validationSummary")->text().contains("오류 0건"));w.findChild<QAction*>("undoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),30000);QCOMPARE(w.projectData(),prior);validate->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),30000);
     }
     w.findChild<QAction*>("saveProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.currentView()["dirty"].toBool(),30000);
     const QJsonValue saved=w.currentView()["documents"];w.openProject(plan["root"].toString());QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),30000);QCOMPARE(w.currentView()["documents"],saved);validate->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),30000);QVERIFY(w.findChild<QLabel*>("validationSummary")->text().contains("오류 0건"));QVERIFY(w.grab().save(evidence+"/validated.png"));

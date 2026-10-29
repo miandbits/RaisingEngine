@@ -4,10 +4,18 @@
 #include <memory>
 #include <string>
 #include <stdexcept>
+#include <filesystem>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 // Device initialization is lazy: a silent project needs no audio device.
 class GameAudio {
   ma_engine engine{};
+#if defined(__APPLE__) && TARGET_OS_IOS
+  ma_context playback_context{};
+  bool context_initialized=false;
+#endif
   bool initialized=false,suspended=false;
   std::map<std::string,std::unique_ptr<ma_sound>> sounds;
   ma_sound* music=nullptr;
@@ -17,7 +25,22 @@ class GameAudio {
   void initialize() {
     if(initialized)return;
     auto config=ma_engine_config_init();
-    if(ma_engine_init(&config,&engine)!=MA_SUCCESS)throw std::runtime_error("오디오 장치를 열 수 없습니다.");
+#if defined(__APPLE__) && TARGET_OS_IOS
+    // ma_engine's default context tries PlayAndRecord on iOS, although games
+    // only output audio. Avoid activating an unnecessary microphone route.
+    auto context_config=ma_context_config_init();
+    context_config.coreaudio.sessionCategory=ma_ios_session_category_playback;
+    if(ma_context_init(nullptr,0,&context_config,&playback_context)!=MA_SUCCESS)
+      throw std::runtime_error("오디오 장치를 열 수 없습니다.");
+    context_initialized=true;
+    config.pContext=&playback_context;
+#endif
+    if(ma_engine_init(&config,&engine)!=MA_SUCCESS){
+#if defined(__APPLE__) && TARGET_OS_IOS
+      ma_context_uninit(&playback_context);context_initialized=false;
+#endif
+      throw std::runtime_error("오디오 장치를 열 수 없습니다.");
+    }
     initialized=true;
     if(suspended)ma_engine_stop(&engine);
   }
@@ -26,12 +49,24 @@ class GameAudio {
     const auto key=std::string(background?"music:":"effect:")+file;
     auto it=sounds.find(key);if(it!=sounds.end())return it->second.get();
     auto value=std::make_unique<ma_sound>();
-    if(ma_sound_init_from_file(&engine,file.c_str(),MA_SOUND_FLAG_DECODE,nullptr,nullptr,value.get())!=MA_SUCCESS)
+#ifdef _WIN32
+    const auto native_file=std::filesystem::u8path(file);
+    const auto loaded=ma_sound_init_from_file_w(&engine,native_file.c_str(),MA_SOUND_FLAG_DECODE,nullptr,nullptr,value.get());
+#else
+    const auto loaded=ma_sound_init_from_file(&engine,file.c_str(),MA_SOUND_FLAG_DECODE,nullptr,nullptr,value.get());
+#endif
+    if(loaded!=MA_SUCCESS)
       throw std::runtime_error("오디오 파일을 재생할 수 없습니다: "+file);
     auto* result=value.get();sounds[key]=std::move(value);return result;
   }
 public:
-  ~GameAudio(){for(auto& [_,s]:sounds)ma_sound_uninit(s.get());if(initialized)ma_engine_uninit(&engine);}
+  ~GameAudio(){
+    for(auto& [_,s]:sounds)ma_sound_uninit(s.get());
+    if(initialized)ma_engine_uninit(&engine);
+#if defined(__APPLE__) && TARGET_OS_IOS
+    if(context_initialized)ma_context_uninit(&playback_context);
+#endif
+  }
   uint64_t cursor() const {ma_uint64 value=0;if(music)ma_sound_get_cursor_in_pcm_frames(music,&value);return value;}
   void seek(uint64_t value){if(music&&ma_sound_seek_to_pcm_frame(music,value)!=MA_SUCCESS)throw std::runtime_error("음악 재생 위치를 복원할 수 없습니다.");}
   bool ready() const{return initialized;}

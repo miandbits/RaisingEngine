@@ -1,3 +1,4 @@
+import { calendarDate } from './calendar.js';
 import { customStateSlot } from './custom-states.js';
 import type { Condition, NumericExpression, Effects } from '../schema/generated/activity.js';
 import type { CalendarTime, ContentSnapshot, DeepReadonly, NumericTarget, RunState, RunData, Change } from './model.js';
@@ -8,9 +9,7 @@ export function calendarTime(content: ContentSnapshot, state: Pick<RunState, 'pe
   const periodIndex = state.periodIndex;
   requireCore(Number.isInteger(periodIndex) && periodIndex >= 0 && periodIndex < content.project.durationMonths * content.project.periodsPerMonth,
     'INVALID_TIME', '기간 인덱스가 프로젝트 범위를 벗어났습니다.', '/periodIndex');
-  const absoluteMonth = content.project.startMonth - 1 + Math.floor(periodIndex / content.project.periodsPerMonth);
-  return { periodIndex, year: content.project.startYear + Math.floor(absoluteMonth / 12),
-    month: absoluteMonth % 12 + 1, periodInMonth: periodIndex % content.project.periodsPerMonth };
+  return calendarDate(content.project, periodIndex);
 }
 
 export function numericSlot(content: ContentSnapshot, state: RunState, target: DeepReadonly<NumericTarget>, path: string) {

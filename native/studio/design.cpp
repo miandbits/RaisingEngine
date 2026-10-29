@@ -1,5 +1,7 @@
 #include "studio.hpp"
 #include "design.hpp"
+#include "surface-editor.hpp"
+#include "control-style-editor.hpp"
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFontDatabase>
@@ -20,11 +22,12 @@ void StudioWindow::importFont(){
 
 void StudioWindow::editDesignSystem(){
   if(bridge.busy()||projectData().isEmpty())return;
+  const auto openedRevision=view.value("revision"),openedRoot=view.value("root");
   auto project=projectData();auto visual=project["visual"].toObject();auto styles=visual["styles"].toArray();auto defaults=visual["defaultStyle"].toObject();
   QDialog dialog(this);dialog.setObjectName("designSystemDialog");dialog.setWindowTitle(tr("공통 스타일 · 프로젝트 폰트"));dialog.resize(820,720);
   auto outer=new QVBoxLayout(&dialog);auto layout=new QHBoxLayout;outer->addLayout(layout);
   auto left=new QVBoxLayout;layout->addLayout(left,1);auto list=new QListWidget;list->setObjectName("designStyles");left->addWidget(list);
-  auto add=new QPushButton(tr("＋ 공통 스타일"));add->setObjectName("addSharedStyle");auto remove=new QPushButton(tr("스타일 삭제"));left->addWidget(add);left->addWidget(remove);
+  auto add=new QPushButton(tr("＋ 공통 스타일"));add->setObjectName("addSharedStyle");auto remove=new QPushButton(tr("스타일 삭제"));remove->setObjectName("removeSharedStyle");left->addWidget(add);left->addWidget(remove);
   auto form=new QFormLayout;layout->addLayout(form,2);
   auto idLabel=new QLabel;auto label=new QLineEdit;label->setObjectName("styleLabel");form->addRow(tr("ID"),idLabel);form->addRow(tr("이름"),label);
   auto font=new QComboBox;font->setObjectName("styleFont");font->addItem(tr("상속 / 기본 폰트"),QString());
@@ -35,19 +38,30 @@ void StudioWindow::editDesignSystem(){
   QMap<QString,QLineEdit*> colors;
   for(const auto& pair:QList<QPair<QString,QString>>{{"color",tr("글자 색")},{"fill",tr("바탕색")},{"borderColor",tr("테두리 색")},{"hoverFill",tr("마우스 올림")},{"pressedFill",tr("누른 상태")},{"disabledColor",tr("비활성 글자")}}){auto field=new QLineEdit;field->setObjectName("style-"+pair.first);field->setPlaceholderText(pair.first=="fill"?tr("상속 · #RRGGBB 또는 #RRGGBBAA"):tr("상속 · #RRGGBB"));colors[pair.first]=field;form->addRow(pair.second,field);}
   auto align=new QComboBox;align->addItem(tr("상속"),QString());align->addItem(tr("왼쪽"),"left");align->addItem(tr("가운데"),"center");align->addItem(tr("오른쪽"),"right");form->addRow(tr("문자 정렬"),align);
+  auto surface=new SurfaceField(assets);surface->setObjectName("styleSurface");form->addRow(tr("배경 표면"),surface);
   auto sample=new QLabel(tr("가나다 ABC 123 · 육성 시뮬레이션"));sample->setMinimumHeight(80);sample->setWordWrap(true);form->addRow(tr("폰트 미리보기"),sample);
   auto preview=[&]{QFont f("Noto Sans KR");for(auto v:assets){auto a=v.toObject();if(a["id"]==font->currentData().toString()){QRawFont raw(a["absolutePath"].toString(),24);if(raw.isValid())f.setFamily(raw.familyName());}}f.setPixelSize(numbers["fontSize"]->value()>0?numbers["fontSize"]->value():24);sample->setFont(f);};
   connect(font,qOverload<int>(&QComboBox::currentIndexChanged),&dialog,[&]{preview();});connect(numbers["fontSize"],qOverload<int>(&QSpinBox::valueChanged),&dialog,[&]{preview();});
   auto apply=new QComboBox;apply->setObjectName("styleApplyScope");apply->addItem(tr("기존 연결 유지"),"keep");if(!selection.isEmpty()){apply->addItem(tr("선택 요소에 연결 · 개별 모양 설정 제거"),"selected");apply->addItem(tr("프로젝트 전체의 같은 종류에 연결 · 개별 모양 설정 제거"),"kind");}form->addRow(tr("적용 범위"),apply);
   auto hint=new QLabel(tr("적용 순서: 프로젝트 기본 → 공통 스타일 → 요소별 설정.\n빈 값은 상속합니다. 폰트 파일은 디자인 메뉴에서 가져올 수 있습니다.\n공통 스타일을 고치면 연결된 모든 화면에 반영됩니다."));hint->setWordWrap(true);outer->addWidget(hint);
   int selected=-1;bool fillingForm=false;
-  auto store=[&]{if(selected<0||fillingForm)return;auto s=selected==0?defaults:styles[selected-1].toObject();if(selected)s["label"]=label->text();for(auto it=numbers.begin();it!=numbers.end();++it){if(it.value()->value()<0)s.remove(it.key());else s[it.key()]=it.key()=="fontSize"?qMax(10,it.value()->value()):it.value()->value();}for(auto it=colors.begin();it!=colors.end();++it){auto text=it.value()->text().trimmed();if(text.isEmpty())s.remove(it.key());else s[it.key()]=text;}for(auto pair:QList<QPair<QString,QComboBox*>>{{"fontAssetId",font},{"align",align}}){auto value=pair.second->currentData().toString();if(value.isEmpty())s.remove(pair.first);else s[pair.first]=value;}if(selected==0)defaults=s;else styles[selected-1]=s;};
+  auto store=[&]{if(selected<0||fillingForm)return;auto s=selected==0?defaults:styles[selected-1].toObject();if(selected)s["label"]=label->text();for(auto it=numbers.begin();it!=numbers.end();++it){if(it.value()->value()<0)s.remove(it.key());else s[it.key()]=it.key()=="fontSize"?qMax(10,it.value()->value()):it.value()->value();}for(auto it=colors.begin();it!=colors.end();++it){auto text=it.value()->text().trimmed();if(text.isEmpty())s.remove(it.key());else s[it.key()]=text;}for(auto pair:QList<QPair<QString,QComboBox*>>{{"fontAssetId",font},{"align",align}}){auto value=pair.second->currentData().toString();if(value.isEmpty())s.remove(pair.first);else s[pair.first]=value;}if(surface->value().isUndefined())s.remove("surface");else s["surface"]=surface->value();if(selected==0)defaults=s;else styles[selected-1]=s;};
   auto reload=[&]{list->clear();list->addItem(tr("프로젝트 기본 스타일"));for(auto v:styles)list->addItem(v.toObject()["label"].toString());};
-  connect(list,&QListWidget::currentRowChanged,&dialog,[&](int row){store();selected=row;if(row<0)return;fillingForm=true;auto s=row==0?defaults:styles[row-1].toObject();idLabel->setText(s["id"].toString("default"));label->setText(s["label"].toString());label->setEnabled(row>0);for(auto it=numbers.begin();it!=numbers.end();++it)it.value()->setValue(s.contains(it.key())?s[it.key()].toInt():-1);for(auto it=colors.begin();it!=colors.end();++it)it.value()->setText(s[it.key()].toString());font->setCurrentIndex(qMax(0,font->findData(s["fontAssetId"].toString())));align->setCurrentIndex(qMax(0,align->findData(s["align"].toString())));fillingForm=false;preview();});
+  connect(list,&QListWidget::currentRowChanged,&dialog,[&](int row){store();selected=row;if(row<0)return;fillingForm=true;auto s=row==0?defaults:styles[row-1].toObject();idLabel->setText(s["id"].toString("default"));label->setText(s["label"].toString());label->setEnabled(row>0);for(auto it=numbers.begin();it!=numbers.end();++it)it.value()->setValue(s.contains(it.key())?s[it.key()].toInt():-1);for(auto it=colors.begin();it!=colors.end();++it)it.value()->setText(s[it.key()].toString());font->setCurrentIndex(qMax(0,font->findData(s["fontAssetId"].toString())));align->setCurrentIndex(qMax(0,align->findData(s["align"].toString())));surface->setValue(s.value("surface"));fillingForm=false;preview();});
   connect(add,&QPushButton::clicked,&dialog,[&]{store();int suffix=1;QString id;while(true){id=QString("style-%1").arg(suffix++);bool found=false;for(auto s:styles)if(s.toObject()["id"]==id)found=true;if(!found)break;}styles.append(QJsonObject{{"id",id},{"label",tr("새 스타일")}});selected=-1;reload();list->setCurrentRow(styles.size());});
-  connect(remove,&QPushButton::clicked,&dialog,[&]{if(selected<=0)return;auto id=styles[selected-1].toObject()["id"];for(auto s:visual["screens"].toArray())for(auto e:s.toObject()["elements"].toArray())if(e.toObject()["styleId"]==id){QMessageBox::information(&dialog,tr("연결된 스타일"),tr("사용 중인 요소에 다른 스타일을 연결한 뒤 삭제하세요."));return;}styles.removeAt(selected-1);selected=-1;reload();list->setCurrentRow(0);});
+  connect(remove,&QPushButton::clicked,&dialog,[&]{if(selected<=0)return;auto id=styles[selected-1].toObject()["id"];if(usesControlStyle(visual,id.toString())){QMessageBox::information(&dialog,tr("연결된 스타일"),tr("컨트롤 색에 연결된 스타일입니다. 해당 요소나 읽기 배치에서 연결을 바꾼 뒤 삭제하세요."));return;}for(auto s:visual["screens"].toArray())for(auto e:s.toObject()["elements"].toArray())if(e.toObject()["styleId"]==id){QMessageBox::information(&dialog,tr("연결된 스타일"),tr("사용 중인 요소에 다른 스타일을 연결한 뒤 삭제하세요."));return;}styles.removeAt(selected-1);selected=-1;reload();list->setCurrentRow(0);});
   auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);outer->addWidget(buttons);connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);reload();list->setCurrentRow(0);
-  if(dialog.exec()!=QDialog::Accepted)return;store();visual["defaultStyle"]=defaults;visual["styles"]=styles;
+  if(dialog.exec()!=QDialog::Accepted)return;if(bridge.busy()||view.value("revision")!=openedRevision||view.value("root")!=openedRoot){errorLabel->setText(tr("프로젝트가 변경되었습니다. 이 창을 다시 열고 저장하세요."));return;}store();visual["defaultStyle"]=defaults;visual["styles"]=styles;
   if(selected>0&&apply->currentData()!="keep") {const auto kind=currentElement()["kind"];auto screens=visual["screens"].toArray();for(int i=0;i<screens.size();i++){auto s=screens[i].toObject();auto elements=s["elements"].toArray();for(int j=0;j<elements.size();j++){auto e=elements[j].toObject();if((apply->currentData()=="selected"&&s["id"]==screenId&&e["id"]==selection)||(apply->currentData()=="kind"&&e["kind"]==kind)){for(auto key:styleFields())e.remove(key);e["styleId"]=styles[selected-1].toObject()["id"];elements[j]=e;}}s["elements"]=elements;screens[i]=s;}visual["screens"]=screens;}
   project["visual"]=visual;replaceProject(project);
+}
+
+void StudioWindow::editSelectedSurface(){
+  if(bridge.busy()||currentElement().isEmpty())return;
+  const auto original=currentElement();const auto revision=view.value("revision"),root=view.value("root");
+  const auto selected=selection,screen=screenId;
+  SurfaceField field(assets,this);field.setValue(original.value("surface"));field.editValue();
+  if(field.value()==original.value("surface"))return;
+  if(bridge.busy()||view.value("revision")!=revision||view.value("root")!=root||selection!=selected||screenId!=screen){errorLabel->setText(tr("편집 대상이 변경되었습니다. 다시 열어 주세요."));return;}
+  updateElement([value=field.value()](QJsonObject& element){if(value.isUndefined())element.remove("surface");else element["surface"]=value;});
 }

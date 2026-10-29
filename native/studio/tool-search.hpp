@@ -9,6 +9,14 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QMainWindow>
+#include <QMenuBar>
+#include <QComboBox>
+#include <QToolBar>
+#include <QToolButton>
+#include <QWidgetAction>
+#include <QSet>
+#include <QFontMetrics>
 #include <QPointer>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -34,58 +42,125 @@ private:
   QLineEdit *search_; QListWidget *list_;
 };
 
+// Search the same live actions used by menus and toolbars. Never duplicate the
+// command handler: its save, validation, and unsaved-draft guards still apply.
 inline void showAuthoringToolSearch(QWidget* parent,QMenu* menu) {
   if (!commitEditorInput(parent)) return;
-  struct Tool { QPointer<QAction> action; QString path; };
+  QPointer<QWidget> previousFocus = QApplication::focusWidget();
+  QDialog dialog(parent);dialog.setObjectName("authoringToolSearch");dialog.setWindowTitle(QObject::tr("명령 · 도구 찾기"));dialog.resize(700,520);
+  struct Tool { QPointer<QAction> action; QString path; std::function<bool()> available; };
   QList<Tool> tools;
-  std::function<void(QMenu*,QString)> collect=[&](QMenu* branch,QString path){
+  QSet<QAction*> seen;
+  QSet<QAction*> observed;
+  using Guards = QList<QPointer<QAction>>;
+  auto label=[](QString value) { value.replace("&&", "\x01");value.remove('&');return value.replace("\x01", "&"); };
+  auto available=[](const Guards& guards) {
+    for (const auto& guard:guards) if (!guard || !guard->isEnabled() || !guard->isVisible()) return false;
+    return true;
+  };
+  auto append=[&](QAction* action,const QString& path,Guards guards) {
+    if(!action||seen.contains(action)||action->isSeparator()||!action->isVisible()||action->objectName()=="findAuthoringTool")return;
+    seen.insert(action);guards.push_back(action);for(const auto& guard:guards)if(guard)observed.insert(guard);
+    tools.push_back({action,path,[guards,available]{return available(guards);}});
+  };
+  std::function<void(QMenu*,QString,Guards)> collect=[&](QMenu* branch,QString path,Guards guards){
+    // This generated mirror is already represented by the original toolbars.
+    if(!branch||branch->objectName()=="toolbarAccessMenu")return;
+    guards.push_back(branch->menuAction());
     for(auto* action:branch->actions()){
-      if(action->isSeparator()||!action->isVisible()||action->objectName()=="findAuthoringTool")continue;
-      if(action->menu())collect(action->menu(),path.isEmpty()?action->text():path+" › "+action->text());
-      else tools.push_back({action,path});
+      if(action->isSeparator()||!action->isVisible())continue;
+      if(action->menu())collect(action->menu(),path.isEmpty()?label(action->text()):path+" › "+label(action->text()),guards);
+      else append(action,path,guards);
     }
   };
-  collect(menu,{});
-  QDialog dialog(parent);dialog.setObjectName("authoringToolSearch");dialog.setWindowTitle(QObject::tr("제작 도구 찾기"));dialog.resize(700,520);
-  // Inspector-only tools must remain discoverable when their section is collapsed
-  // or scrolled out of view. Dispatch the existing button so its guards still apply.
+  // Keep authoring tasks first, then add File, View, screen and workspace actions.
+  collect(menu, qobject_cast<QMainWindow*>(parent)?label(menu->title()):QString(), {});
+  if(auto window=qobject_cast<QMainWindow*>(parent)) {
+    for(auto action:window->menuBar()->actions())if(action->menu()&&action->isVisible())collect(action->menu(),label(action->text()),{});
+    for(auto toolbar:window->findChildren<QToolBar*>()) {
+      // Hidden workspace toolbars must not expose commands for another context.
+      if(!toolbar->isVisibleTo(parent))continue;
+      auto path=label(toolbar->windowTitle());if(path.isEmpty())path=QObject::tr("화면 도구");
+      for(auto action:toolbar->actions()) {
+        if(!action->isVisible()||action->isSeparator())continue;
+        auto widgetAction=qobject_cast<QWidgetAction*>(action);
+        auto widget=widgetAction?widgetAction->defaultWidget():nullptr;
+        if(auto combo=qobject_cast<QComboBox*>(widget)) {
+          auto name=combo->accessibleName();if(name.isEmpty())name=combo->toolTip();if(name.isEmpty())name=path;
+          const auto choicesPath=path+" › "+name;
+          for(int index=0;index<combo->count();++index) {
+            auto choice=new QAction(combo->itemText(index),&dialog);
+            choice->setObjectName(combo->objectName()+":"+QString::number(index));
+            choice->setCheckable(true);choice->setChecked(index==combo->currentIndex());
+            QPointer<QComboBox> target=combo;QPointer<QAction> source=action;
+            const auto text=combo->itemText(index);const auto data=combo->itemData(index);
+            auto ready=[target,source,index,text,data]{return target&&source&&source->isEnabled()&&source->isVisible()&&target->isEnabled()&&index<target->count()&&target->itemText(index)==text&&target->itemData(index)==data&&target->model()->flags(target->model()->index(index,target->modelColumn(),target->rootModelIndex())).testFlag(Qt::ItemIsEnabled);};
+            QObject::connect(choice,&QAction::triggered,&dialog,[target,index,ready]{if(ready()){target->setCurrentIndex(index);emit target->activated(index);}});
+            tools.push_back({choice,choicesPath,ready});observed.insert(action);
+          }
+        } else if(auto button=qobject_cast<QToolButton*>(widget);button&&button->menu()) {
+          const auto start=tools.size();collect(button->menu(),path+" › "+label(button->text()),{action});
+          QPointer<QToolButton> target=button;
+          for(int i=start;i<tools.size();++i){const auto ready=tools[i].available;tools[i].available=[ready,target]{return ready()&&target&&target->isEnabled();};}
+        } else if(!widgetAction) {
+          const auto start=tools.size();append(action,path,{});QPointer<QToolBar> target=toolbar;
+          for(int i=start;i<tools.size();++i){const auto ready=tools[i].available;tools[i].available=[ready,target]{return ready()&&target&&target->isEnabled();};}
+        }
+      }
+    }
+  }
+  // Inspector tools remain discoverable when collapsed or scrolled out of view.
   for(const auto& id:{"dataBindingPicker","presentationVariants","elementVisibleCondition","selectionBatch","componentSource"}) {
     auto button=parent->findChild<QPushButton*>(id);if(!button)continue;
-    auto action=new QAction(button->text(),&dialog);action->setEnabled(button->isEnabled());action->setToolTip(button->toolTip());
+    auto action=new QAction(button->text(),&dialog);action->setObjectName(id);action->setToolTip(button->toolTip());
     QPointer<QPushButton> target=button;
     QObject::connect(action,&QAction::triggered,&dialog,[target]{if(target&&target->isEnabled())target->click();});
-    tools.push_back({action,QObject::tr("선택 요소")});
+    tools.push_back({action,QObject::tr("선택 요소"),[target]{return target&&target->isEnabled();}});
   }
   auto layout=new QVBoxLayout(&dialog);
-  auto search=new QLineEdit;search->setObjectName("authoringToolQuery");search->setPlaceholderText(QObject::tr("인물, 활동, 조건, 폰트처럼 작업 이름으로 찾으세요"));layout->addWidget(search);
-  auto list=new QListWidget;list->setObjectName("authoringToolResults");layout->addWidget(list);
+  auto search=new QLineEdit;search->setObjectName("authoringToolQuery");search->setPlaceholderText(QObject::tr("저장, 내보내기, 플레이, 인물처럼 작업 이름으로 찾으세요"));search->setAccessibleName(QObject::tr("명령 · 도구 찾기"));layout->addWidget(search);
+  auto list=new QListWidget;list->setObjectName("authoringToolResults");list->setAccessibleName(QObject::tr("검색 결과"));layout->addWidget(list);
   new ToolSearchNavigation(search, list, &dialog);
-  auto status=new QLabel;status->setObjectName("authoringToolCount");layout->addWidget(status);
+  auto status=new QLabel;status->setObjectName("authoringToolCount");status->setWordWrap(true);layout->addWidget(status);
   auto buttons=new QDialogButtonBox(QDialogButtonBox::Open|QDialogButtonBox::Cancel);layout->addWidget(buttons);
   auto open=buttons->button(QDialogButtonBox::Open);open->setDefault(true);
-  auto canOpen=[&]{auto* item=list->currentItem();return item&&(item->flags()&Qt::ItemIsEnabled);};
+  auto canOpen=[&]{auto item=list->currentItem();return item&&tools[item->data(Qt::UserRole).toInt()].available();};
   auto filter=[&]{
+    QPointer<QAction> selected; if(auto item=list->currentItem())selected=tools[item->data(Qt::UserRole).toInt()].action;
     list->clear();const auto words=search->text().simplified().split(' ',Qt::SkipEmptyParts);
     for(int i=0;i<tools.size();++i){const auto& tool=tools[i];if(!tool.action)continue;
-      const auto haystack=tool.action->text()+" "+tool.path+" "+tool.action->toolTip();
+      const auto shortcut=tool.action->shortcut().toString(QKeySequence::NativeText);
+      const auto title=label(tool.action->text());const auto haystack=title+" "+tool.path+" "+tool.action->toolTip()+" "+shortcut;
       bool matches=true;for(const auto& word:words)if(!haystack.contains(word,Qt::CaseInsensitive)){matches=false;break;}if(!matches)continue;
-      auto item=new QListWidgetItem(tool.action->text()+(tool.path.isEmpty()?QString():"\n"+tool.path),list);item->setData(Qt::UserRole,i);item->setSizeHint({0,tool.path.isEmpty()?36:56});
-      item->setToolTip(tool.action->isEnabled()?tool.action->toolTip():QObject::tr("현재 상태에서는 사용할 수 없는 도구입니다."));
-      if(!tool.action->isEnabled())item->setFlags(item->flags()&~Qt::ItemIsEnabled&~Qt::ItemIsSelectable);
+      const auto caption=title+(shortcut.isEmpty()?QString():"   "+shortcut);
+      const auto details=tool.path+(tool.action->isCheckable()&&tool.action->isChecked()?" · "+QObject::tr("현재 선택"):QString());
+      auto item=new QListWidgetItem(caption+(details.isEmpty()?QString():"\n"+details),list);item->setData(Qt::UserRole,i);item->setData(Qt::UserRole+1,tool.action->objectName());
+      const QFontMetrics metrics(list->font());item->setSizeHint({0,metrics.height()*(details.isEmpty()?1:2)+16});
+      const bool enabled=tool.available();item->setToolTip(enabled?tool.action->toolTip():QObject::tr("현재 상태에서는 사용할 수 없는 도구입니다."));
+      if(!enabled)item->setFlags(item->flags()&~Qt::ItemIsEnabled&~Qt::ItemIsSelectable);
+      else if(selected==tool.action)list->setCurrentItem(item);
     }
-    for(int i=0;i<list->count();++i)if(list->item(i)->flags()&Qt::ItemIsEnabled){list->setCurrentRow(i);break;}
-    status->setText(list->count()?QObject::tr("%1개 도구 · Enter로 열기 · Esc로 닫기").arg(list->count()):QObject::tr("일치하는 도구가 없습니다. 다른 작업 이름을 입력하세요."));open->setEnabled(canOpen());
+    if(!list->currentItem())for(int i=0;i<list->count();++i)if(list->item(i)->flags()&Qt::ItemIsEnabled){list->setCurrentRow(i);break;}
+    status->setText(list->count()?QObject::tr("%1개 명령 · ↑↓로 선택 · Enter로 열기 · Esc로 닫기").arg(list->count()):QObject::tr("일치하는 도구가 없습니다. 다른 작업 이름을 입력하세요."));open->setEnabled(canOpen());
   };
   QObject::connect(search,&QLineEdit::textChanged,&dialog,filter);
+  for(auto action:observed)QObject::connect(action,&QAction::changed,&dialog,filter);
   QObject::connect(list,&QListWidget::currentRowChanged,&dialog,[&]{open->setEnabled(canOpen());});
   QObject::connect(list,&QListWidget::itemActivated,&dialog,[&]{if(canOpen())dialog.accept();});
   QObject::connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{if(canOpen())dialog.accept();});
   QObject::connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
   filter();search->setFocus();
-  if(dialog.exec()==QDialog::Accepted&&canOpen()){
-    const auto action=tools[list->currentItem()->data(Qt::UserRole).toInt()].action;
-    if(action&&action->isEnabled())action->trigger();
+  const bool accepted=dialog.exec()==QDialog::Accepted&&canOpen();
+  const int selected=accepted?list->currentItem()->data(Qt::UserRole).toInt():-1;
+  // Commands such as panel navigation use the invoking focus as their context.
+  // Restore it before dispatch; a command that opens a dialog then owns focus.
+  if(previousFocus&&previousFocus->isVisible()&&previousFocus->isEnabled()) {
+    auto window=previousFocus->window();window->activateWindow();
+    // Native activation can arrive after exec() returns. Set Qt's focus context
+    // now so synchronous actions (F6/panel navigation) see the invoking panel.
+    QApplication::setActiveWindow(window);previousFocus->setFocus(Qt::OtherFocusReason);
   }
+  if(selected>=0&&tools[selected].action&&tools[selected].available())tools[selected].action->trigger();
 }
 
 inline void organizeAuthoringTools(QMenu* menu,QWidget* owner) {
@@ -100,7 +175,7 @@ inline void organizeAuthoringTools(QMenu* menu,QWidget* owner) {
   group(QObject::tr("탐험 · 전투 · 거래"),"authoringAdventure",{"editTactics","editBattleHud","editExpeditions","editFacilities"});
   group(QObject::tr("검증 · 회귀"),"authoringVerification",{"runAssurance","goalRoutes","goalImpact","goalCiOpen","showRuleDebugger"});
   group(QObject::tr("시작 구성 · 샘플"),"authoringStarters",{"createBenchmark"});
-  auto find=new QAction(QObject::tr("제작 도구 찾기…"),owner);find->setObjectName("findAuthoringTool");find->setShortcut(QKeySequence("Ctrl+K"));
+  auto find=new QAction(QObject::tr("명령 · 도구 찾기…"),owner);find->setObjectName("findAuthoringTool");find->setShortcut(QKeySequence("Ctrl+K"));
   QObject::connect(find,&QAction::triggered,owner,[owner,menu]{showAuthoringToolSearch(owner,menu);});
   menu->insertAction(menu->actions().value(0),find);menu->insertSeparator(menu->actions().value(1));
 }

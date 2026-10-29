@@ -5,6 +5,21 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "resumeContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["screenId", "elementIds"],
+      "properties": {
+        "screenId": {"type": "string", "minLength": 1, "maxLength": 128},
+        "elementIds": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 1024}},
+        "showAfterLoad": {"const": true}
+      }
+    },
+    "readingHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
     "saveSystem": {
       "type": "object",
       "additionalProperties": false,
@@ -161,6 +176,7 @@
         ]
       }
     },
+    "activityTimelineCompletion": {"enum": ["reveal-result"], "description": "After presentation, reveal the committed activity result and wait for explicit advance, including continuous playback."},
     "resultPlayback": {
       "description": "Show committed activity changes sequentially inside result widgets. Existing authored activity timelines take precedence.",
       "type": "object",
@@ -698,6 +714,61 @@
           }
         }
       }
+    },
+    "readableLayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Opt-in physical-size reading layouts for phones and enlarged text. Missing fields use engine defaults.",
+      "properties": {
+        "maxShortEdge": {
+          "type": "integer",
+          "minimum": 320,
+          "maximum": 1200,
+          "description": "Auto mode activates at or below this safe viewport short edge. Default 600 CSS pixels/native points."
+        },
+        "fontSize": {
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 32,
+          "description": "Minimum reading text size before the player text preference. Default 18."
+        },
+        "minTargetSize": {
+          "type": "integer",
+          "minimum": 44,
+          "maximum": 96,
+          "description": "Minimum actual interactive width and height. Default 44."
+        },
+        "padding": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64,
+          "description": "Reading surface padding. Default 16."
+        },
+        "gap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 48,
+          "description": "Space between reading items and actions. Default 12."
+        },
+        "maxWidth": {
+          "type": "integer",
+          "minimum": 320,
+          "maximum": 1600,
+          "description": "Maximum centered reading column width. Default 760."
+        },
+        "background": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "description": "Opaque reading surface color. Default #172c29."
+        },
+        "controlStyleId": {
+          "$ref": "common.schema.json#/$defs/id",
+          "description": "Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults."
+        },
+        "surface": {
+          "$ref": "#/$defs/uiSurface"
+        }
+      }
     }
   },
   "required": [
@@ -706,6 +777,85 @@
     "screens"
   ],
   "$defs": {
+    "uiSurface": {
+      "title": "UiSurface",
+      "description": "Optional decorative whole-PNG surface. Missing inherits; none clears. One source pixel equals one logical unit. Tile repeats both axes from the top-left; nine-slice preserves source-pixel edge widths.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "none"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "imageAssetId"
+          ],
+          "properties": {
+            "mode": {
+              "const": "tile"
+            },
+            "imageAssetId": {
+              "$ref": "common.schema.json#/$defs/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "imageAssetId",
+            "insets"
+          ],
+          "properties": {
+            "mode": {
+              "const": "nine-slice"
+            },
+            "imageAssetId": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "insets": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "top",
+                "right",
+                "bottom",
+                "left"
+              ],
+              "properties": {
+                "top": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "right": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "bottom": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "left": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
     "screen": {
       "type": "object",
       "additionalProperties": false,
@@ -727,6 +877,85 @@
         },
         "modal": {
           "type": "boolean"
+        },
+        "readableLayout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "activation": {
+              "enum": ["auto", "always"],
+              "description": "auto follows the viewport threshold or player reading preference. always uses this screen's content-sized reading layout at every viewport without changing the player's preference. Omit to preserve auto behavior."
+            },
+            "actionLayout": {
+              "enum": ["grouped"],
+              "description": "Keep one primary action and group the other bottom actions in a labeled utility menu. Omit for the existing wrapping action region."
+            },
+            "primaryAction": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[a-z][a-z0-9_-]*$",
+              "description": "Optional existing bottom-action button ID for grouped mode. Omit when the reading content is the primary task."
+            },
+            "items": {
+              "type": "array",
+              "maxItems": 1000,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "elementId"
+                ],
+                "properties": {
+                  "elementId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024,
+                    "pattern": "^[a-z][a-z0-9_-]*$"
+                  },
+                  "fontSize": {
+                    "type": "integer",
+                    "minimum": 16,
+                    "maximum": 64,
+                    "description": "Text size before player scaling; never below the global minimum."
+                  },
+                  "schedulePresentation": {
+                    "enum": ["compact"],
+                    "description": "For schedule elements only: a compact period summary with an activity picker and explicit apply/cancel. Only changes the reading presentation."
+                  },
+                  "planReuse": {
+                    "enum": ["last-committed"],
+                    "description": "Offer review and reuse of the newest accepted schedule in the compact planner. Applying changes only the draft, never time or game state."
+                  },
+                  "planningGuidance": {
+                    "enum": ["first-use"],
+                    "description": "Optional first-use help for compact single-character planning. Players may skip or reopen it; acknowledgment is a presentation preference, never game progress."
+                  },
+                  "imageHeight": {
+                    "type": "integer",
+                    "minimum": 48,
+                    "maximum": 320,
+                    "description": "Image height in CSS pixels/native points. Default 160."
+                  }
+                }
+              }
+            },
+            "actions": {
+              "type": "array",
+              "maxItems": 12,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^[a-z][a-z0-9_-]*$"
+              },
+              "description": "Existing button IDs in the persistent bottom action region."
+            }
+          }
         }
       },
       "required": [
@@ -865,6 +1094,10 @@
             "contain"
           ]
         },
+        "showPhaseForecast": {
+          "type": "boolean",
+          "description": "Offer a read-only forecast of the current phase draft. Distinguishes determined changes from assumptions and blockers. Off by default."
+        },
         "showActivityRules": {
           "type": "boolean",
           "description": "Show authored costs and base attribute effects in schedule columns or roster assignments. Not a prediction. Off by default."
@@ -878,8 +1111,39 @@
             "columns",
             "calendar",
             "menu",
-            "board"
+            "board",
+            "activity-board"
           ]
+        },
+        "activityBoard": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "density": {
+              "enum": [
+                "compact"
+              ]
+            },
+            "showSummary": {
+              "type": "boolean"
+            },
+            "advanceAfterApply": {
+              "type": "boolean"
+            },
+            "forecast": {
+              "enum": [
+                "inline"
+              ]
+            },
+            "summaryAttributeIds": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 128,
+              "items": {
+                "$ref": "common.schema.json#/$defs/id"
+              }
+            }
+          }
         },
         "statsLayout": {
           "enum": [
@@ -946,6 +1210,7 @@
             "load",
             "sound",
             "navigate",
+            "openPlanner",
             "visit",
             "buy",
             "interact",
@@ -985,6 +1250,8 @@
             "recollectionSave",
             "recollectionLoad",
             "recollectionAuto",
+            "readingHistory",
+            "resumeContext",
             "dialogueAuto",
             "recollectionSpeed",
             "recollectionSkip",
@@ -997,6 +1264,14 @@
             "timelineSkip"
           ]
         },
+        "plannerElementId": {
+          "type": "string",
+          "maxLength": 600,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:__[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$",
+          "description": "Resolved element ID on the target screen, including component instance paths separated by __."
+        },
+        "plannerGroupId": {"$ref": "common.schema.json#/$defs/id"},
+        "plannerActivityId": {"$ref": "common.schema.json#/$defs/id"},
         "screenId": {
           "$ref": "common.schema.json#/$defs/id"
         },
@@ -1126,11 +1401,18 @@
         "portraitId": {
           "$ref": "common.schema.json#/$defs/id"
         },
+        "controlStyleId": {
+          "$ref": "common.schema.json#/$defs/id",
+          "description": "Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults."
+        },
         "styleId": {
           "$ref": "common.schema.json#/$defs/id"
         },
         "fontAssetId": {
           "$ref": "common.schema.json#/$defs/id"
+        },
+        "surface": {
+          "$ref": "#/$defs/uiSurface"
         },
         "padding": {
           "type": "number",
@@ -1214,6 +1496,7 @@
                       "load",
                       "sound",
                       "navigate",
+                      "openPlanner",
                       "visit",
                       "buy",
                       "interact",
@@ -1253,6 +1536,8 @@
                       "recollectionSave",
                       "recollectionLoad",
                       "recollectionAuto",
+                      "readingHistory",
+            "resumeContext",
                       "dialogueAuto",
                       "recollectionSpeed",
                       "recollectionSkip",
@@ -1263,6 +1548,14 @@
                       "timelineSkip"
                     ]
                   },
+                  "plannerElementId": {
+                    "type": "string",
+                    "maxLength": 600,
+                    "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:__[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$",
+                    "description": "Resolved element ID on the target screen, including component instance paths separated by __."
+                  },
+                  "plannerGroupId": {"$ref": "common.schema.json#/$defs/id"},
+                  "plannerActivityId": {"$ref": "common.schema.json#/$defs/id"},
                   "screenId": {
                     "$ref": "common.schema.json#/$defs/id"
                   },
@@ -1283,8 +1576,15 @@
                     "minimum": 1,
                     "maximum": 999
                   },
+                  "controlStyleId": {
+                    "$ref": "common.schema.json#/$defs/id",
+                    "description": "Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults."
+                  },
                   "styleId": {
                     "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "surface": {
+                    "$ref": "#/$defs/uiSurface"
                   },
                   "fill": {
                     "type": "string",
@@ -1871,7 +2171,8 @@
           "type": "string",
           "enum": [
             "summary",
-            "changes"
+            "changes",
+            "growth"
           ]
         },
         "choiceLayout": {
@@ -2757,6 +3058,9 @@
         "fontAssetId": {
           "$ref": "common.schema.json#/$defs/id"
         },
+        "surface": {
+          "$ref": "#/$defs/uiSurface"
+        },
         "padding": {
           "type": "number",
           "minimum": 0,
@@ -2825,6 +3129,9 @@
         "fontAssetId": {
           "$ref": "common.schema.json#/$defs/id"
         },
+        "surface": {
+          "$ref": "#/$defs/uiSurface"
+        },
         "padding": {
           "type": "number",
           "minimum": 0,
@@ -2876,7 +3183,10 @@
             "component",
             "saveSlots",
             "playerSettings",
-            "loadSlots"
+            "loadSlots",
+            "schedule",
+            "stats",
+            "result"
           ]
         },
         "label": {
@@ -2969,8 +3279,39 @@
             "columns",
             "calendar",
             "menu",
-            "board"
+            "board",
+            "activity-board"
           ]
+        },
+        "activityBoard": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "density": {
+              "enum": [
+                "compact"
+              ]
+            },
+            "showSummary": {
+              "type": "boolean"
+            },
+            "advanceAfterApply": {
+              "type": "boolean"
+            },
+            "forecast": {
+              "enum": [
+                "inline"
+              ]
+            },
+            "summaryAttributeIds": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 128,
+              "items": {
+                "$ref": "common.schema.json#/$defs/id"
+              }
+            }
+          }
         },
         "statsLayout": {
           "enum": [
@@ -3037,6 +3378,7 @@
             "load",
             "sound",
             "navigate",
+            "openPlanner",
             "visit",
             "buy",
             "interact",
@@ -3076,6 +3418,8 @@
             "recollectionSave",
             "recollectionLoad",
             "recollectionAuto",
+            "readingHistory",
+            "resumeContext",
             "dialogueAuto",
             "recollectionSpeed",
             "recollectionSkip",
@@ -3088,6 +3432,14 @@
             "timelineSkip"
           ]
         },
+        "plannerElementId": {
+          "type": "string",
+          "maxLength": 600,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:__[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$",
+          "description": "Resolved element ID on the target screen, including component instance paths separated by __."
+        },
+        "plannerGroupId": {"$ref": "common.schema.json#/$defs/id"},
+        "plannerActivityId": {"$ref": "common.schema.json#/$defs/id"},
         "screenId": {
           "$ref": "common.schema.json#/$defs/id"
         },
@@ -3217,11 +3569,18 @@
         "portraitId": {
           "$ref": "common.schema.json#/$defs/id"
         },
+        "controlStyleId": {
+          "$ref": "common.schema.json#/$defs/id",
+          "description": "Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults."
+        },
         "styleId": {
           "$ref": "common.schema.json#/$defs/id"
         },
         "fontAssetId": {
           "$ref": "common.schema.json#/$defs/id"
+        },
+        "surface": {
+          "$ref": "#/$defs/uiSurface"
         },
         "padding": {
           "type": "number",
@@ -3479,6 +3838,7 @@
                       "load",
                       "sound",
                       "navigate",
+                      "openPlanner",
                       "visit",
                       "buy",
                       "interact",
@@ -3518,6 +3878,8 @@
                       "recollectionSave",
                       "recollectionLoad",
                       "recollectionAuto",
+                      "readingHistory",
+            "resumeContext",
                       "dialogueAuto",
                       "recollectionSpeed",
                       "recollectionSkip",
@@ -3528,6 +3890,14 @@
                       "timelineSkip"
                     ]
                   },
+                  "plannerElementId": {
+                    "type": "string",
+                    "maxLength": 600,
+                    "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:__[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$",
+                    "description": "Resolved element ID on the target screen, including component instance paths separated by __."
+                  },
+                  "plannerGroupId": {"$ref": "common.schema.json#/$defs/id"},
+                  "plannerActivityId": {"$ref": "common.schema.json#/$defs/id"},
                   "screenId": {
                     "$ref": "common.schema.json#/$defs/id"
                   },
@@ -3548,8 +3918,15 @@
                     "minimum": 1,
                     "maximum": 999
                   },
+                  "controlStyleId": {
+                    "$ref": "common.schema.json#/$defs/id",
+                    "description": "Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults."
+                  },
                   "styleId": {
                     "$ref": "common.schema.json#/$defs/id"
+                  },
+                  "surface": {
+                    "$ref": "#/$defs/uiSurface"
                   },
                   "fill": {
                     "type": "string",
@@ -3766,7 +4143,8 @@
           "type": "string",
           "enum": [
             "summary",
-            "changes"
+            "changes",
+            "growth"
           ]
         },
         "choiceLayout": {
@@ -3799,6 +4177,18 @@
               }
             }
           }
+        },
+        "showActivityDescription": {
+          "type": "boolean",
+          "description": "Show the selected activity's authored description below each schedule column. Off by default."
+        },
+        "showActivityRules": {
+          "type": "boolean",
+          "description": "Show authored costs and base attribute effects in schedule columns or roster assignments. Not a prediction. Off by default."
+        },
+        "showPhaseForecast": {
+          "type": "boolean",
+          "description": "Offer a read-only forecast of the current phase draft. Distinguishes determined changes from assumptions and blockers. Off by default."
         }
       },
       "required": [
@@ -4640,6 +5030,13 @@
               "type": "number",
               "minimum": 0,
               "maximum": 1
+            },
+            "controlStyleId": {
+              "$ref": "common.schema.json#/$defs/id",
+              "description": "Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults."
+            },
+            "surface": {
+              "$ref": "#/$defs/uiSurface"
             },
             "extensionRef": {
               "$ref": "common.schema.json#/$defs/id"

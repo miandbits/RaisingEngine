@@ -10,7 +10,7 @@
 2. 원하는 중간 지점에서 게임을 저장한다. 저장 위치는 검사 지점으로 기록된다. 불러오기로 되돌린 경우 최종적으로 선택한 분기만 남으며 새 게임은 이전 기록을 초기화한다.
 3. 플레이어를 닫으면 경로 창으로 돌아온다. **최근 기록 읽기**를 누른다. 다른 실행의 `recording.json`은 파일 선택으로 읽을 수 있다.
 4. 이름·ID·목표 엔딩·저장 검사 간격을 설정하고 **목표 경로 저장**을 누른다. 엔딩에 도달하기 전의 기록도 목표 엔딩을 지정해 등록할 수 있지만, 해당 기록만으로 목표에 도달하지 않으면 검사 실패다.
-5. **선택 경로 검사 / 전체 검사**로 현재 초안을 재생한다. 등록된 경로는 **프로젝트 저장 때마다 자동 검사**한다. 콘텐츠 저장 성공과 회귀 실패는 별도로 표시하며, 회귀 실패가 저장한 콘텐츠를 되돌리지는 않는다.
+5. **선택 경로 검사 / 전체 검사**로 현재 초안을 재생한다. 등록된 경로는 **프로젝트 저장 후 백그라운드에서 자동 검사**한다. 파일 저장이 끝나면 검사를 기다리지 않고 계속 편집할 수 있다. 콘텐츠 저장 성공과 회귀 실패는 별도로 표시하며, 회귀 실패가 저장한 콘텐츠를 되돌리지는 않는다.
 
 표에는 명령 수, 통과 여부, 중간 저장 복원 횟수, 실패 명령 번호·코드·원인이 나온다. 상세 기록에는 실패 명령 본문과 기대/실제 엔딩, 검사 콘텐츠 지문과 초안 버전이 있다. 검사 후 초안이 바뀌면 재검사가 필요하다는 안내가 표시된다.
 
@@ -23,7 +23,7 @@
 - 실제 저장 지점, 지정한 명령 간격, 시작과 끝에서 공통 저장 형식으로 직렬화·복원한다. 저장 없이 진행한 세션과 복원 세션을 다음 명령마다 비교하므로 명령 이력·난수·최종 상태의 차이를 검출한다.
 - 목표 엔딩 삭제, 명령 대상 삭제, 조건·비용 변경으로 인한 거부, 다른 엔딩 도달, 저장/재생 불일치를 구분한다.
 - 경로 저장은 파일 해시 기반 버전 확인과 전용 쓰기 잠금으로 다른 편집기 창의 변경을 조용히 덮어쓰지 않는다. 프로젝트 초안/디스크 버전 검사도 기존 서비스를 사용한다.
-- 기존 콘텐츠와 저장 스키마를 변경하지 않았다. 프로젝트당 128경로, 경로당 10,000명령/4 MiB, 전체 검사 60초 제한이며 제한 도달은 통과로 표시하지 않는다.
+- 기존 콘텐츠와 저장 스키마를 변경하지 않았다. 프로젝트당 128경로, 경로당 10,000명령/4 MiB 제한이 있다. 저장 후 자동 검사와 수동 배치는 아래의 경로별·전체 시간 제한을 사용하며 제한 도달은 통과로 표시하지 않는다. 기존 동기 CLI/API의 전체 시간 예산은 별도다.
 
 자동화 환경에서는 같은 검사기를 실행할 수 있다.
 
@@ -66,3 +66,15 @@ node scripts/check-goal-routes.mjs examples/starlight-three-months success
 
 
 경로의 시각적 비교와 단계 재생은 [목표 경로 그래프와 단계 비교](goal-route-comparison.md)를 참고하세요.
+
+## Manual background batches
+
+**Check selected route / Check all** captures the current draft and route files, then replays them in a supervised background process. Once preparation finishes, you can keep editing. The table shows command progress for the active route. **Cancel checks**, closing the route tool, reopening a project, or quitting the editor cancels the owned batch.
+
+- Defaults are 120 seconds per route and 900 seconds for the whole batch. Before starting, choose 1–300 seconds per route and 1–3,600 seconds overall. A native call that does not yield is terminated after a bounded two-second grace period. Remaining routes stay **Not run**.
+- **Passed**, **Failed**, **Timed out**, **Cancelled**, and **Not run** are distinct. A batch succeeds only when every selected route passes. Earlier completed results survive cancellation.
+- Editing the draft or selected route files marks the captured result as stale. It never means the new edit has already passed.
+- Reports and their exact captured inputs are stored under `.studio/route-batches/`. Automatic save checks and manual checks share the latest eight completed batch reports and their captured inputs. A process or OS interruption before report persistence can leave an orphan `.inputs.json` for recovery; this policy does not delete those unpaired inputs. Legacy `.studio/goal-report-*.json` reports are not removed. Each editor service runs one batch at a time; selected captured inputs are limited to 64 MiB and the worker JavaScript heap to 512 MiB. The heap limit is not a total-process RSS guarantee. Normal cancellation, worker failures, and hard deadlines retire the owned native process tree. On Windows, an external force-kill of the supervisor itself cannot guarantee descendant cleanup without an OS job object; it is not treated as a successful check.
+- **Save** schedules background checks against the saved snapshot. The existing synchronous `goalRoutesRun` service API and CLI retain their own aggregate time budgets. Raising a manual batch limit does not change those APIs. If a route needs a larger budget, inspect its result and run a selected manual batch with appropriate limits.
+
+These checks compare actual commands and save restoration. They do not certify screen input, accessibility, physical-device performance, or human enjoyment.

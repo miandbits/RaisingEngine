@@ -1,5 +1,16 @@
 # Windows · Web 기능 지원표
 
+2026-10-29 P2 소스 추가 기능:
+
+| 기능 | 네이티브 플레이어 | Web | 내보내기 기준 |
+|---|---|---|---|
+| 부품 안의 일정·능력치·성장 결과 | 지원 | 지원 | `component-widgets-v1`. 화면 전체 게임 상태를 표시하며 데이터 목록의 반복 행 안에는 배치하지 않음 |
+| 중첩 부품 | 지원 | 지원 | `nested-components-v1`. 기존 네이티브의 `ui-composition-v1`도 이 좁은 요구를 충족함 |
+
+중첩 부품 지원은 임의 모달·툴팁 등 전체 UI 조합 지원을 의미하지 않습니다. Web의 나머지 `ui-composition-v1` 내보내기 제한은 유지합니다. 아래 `platform-capabilities.json`은 당시 바이너리 해시를 포함한 역사 기록이므로 새 소스 선언으로 덮어쓰지 않습니다. 새 선언은 `scripts/lib/native-player-capabilities.mjs`와 `scripts/build-web.mjs`에서 생성합니다. 공개 프리뷰 설치 파일과 실기·스토어 승인 상태는 별개입니다.
+
+> 이 표의 시작 부분은 2026-10-18 역사 기록이다. 현재 제작 흐름·패키지 상태는 [최신 우선순위 점검](editor-priority-review-2026-10-29.md), [제작 흐름](../creator-workflow.md)과 아래 날짜별 플랫폼 검증 기록을 함께 본다. macOS와 iOS 내보내기 기능이 추가됐지만, 시뮬레이터 통과를 실기·스토어 출시 승인으로 읽지 않는다. 공개 설치 파일과 PR 소스는 서로 다른 버전일 수 있다.
+
 2026-10-18 검토판. **런타임 기능 선언**, **이번 실행 검증**, **이전 기능별 검증**을 구분한다. 원시 선언과 SHA-256은 [capabilities 보고서](platform-capabilities.json), 설치·제작 시험은 [Qt 검토판](qt-preview-release.md)을 본다. 선언은 내보내기 허용 조건이며 모든 조합의 완전성·하드웨어 인증을 뜻하지 않는다.
 
 | 기능 | Windows 플레이어 | Web / Chromium | 근거·제약 |
@@ -40,4 +51,33 @@
 
 이번 Web 검증 대상은 데스크톱 Chromium이다. Safari·Firefox, 실제 모바일 터치/오디오 정책·백그라운드 복귀는 별도 검증이 필요하다. Windows 검토판은 개발 PC에서 개발 도구 경로를 제거해 검증한 결과이며 새 VM·서명·SmartScreen 평판 검증을 대신하지 않는다.
 
-Android는 소스/패키징 준비와 가짜 SDK 기반 검사까지다. iOS·macOS는 실제 빌드·실기 미검증이다. Linux는 서비스 CI만 검증했으며 Qt/플레이어 배포 지원을 뜻하지 않는다. Switch·PlayStation·Xbox는 공식 SDK·개발기 확보 전까지 미지원/미검증 상태다.
+Android는 소스/패키징 준비와 가짜 SDK 기반 검사까지다. macOS·iOS의 새 소스 빌드 현황은 아래 Apple 플랫폼 항목을 본다. Linux는 서비스 CI만 검증했으며 Qt/플레이어 배포 지원을 뜻하지 않는다. Switch·PlayStation·Xbox는 공식 SDK·개발기 확보 전까지 미지원/미검증 상태다.
+
+## Apple platforms — 2026-10-23 source changes
+
+The Apple Silicon Qt editor now builds as an app bundle and selects a native macOS player. The starter's actual GUI create/customize/play/export/reopen journey passed, and both exported player routes matched 61 checkpoints including midgame and fresh-process save restoration. Live canvas playback uses a separate controlled window on macOS. The standalone editor passed a dependency audit and create/play/export checks with developer tool paths removed; it bundles Qt, Node, services and the player.
+
+iOS exports contain source, game resources and regenerable Xcode presets for simulator and device builds (minimum iOS 16). SDL is pinned separately to 3.4.18 because [Apple requires the scene lifecycle for apps linked with the iOS 27 SDK](https://developer.apple.com/documentation/uikit/transitioning-to-the-uikit-scene-based-life-cycle). Builds use Objective-C audio compilation and the portable SDL_image decoder. Simulator and unsigned arm64 device builds passed with Xcode 27.1. Both starter routes passed 61 state checkpoints on an iOS 27 iPhone simulator using touch events, including midgame save/load and fresh-process restoration.
+
+These are development targets, not certified public binaries. Apple native plugin binaries, Intel Mac execution, physical iPhone/iPad testing, Developer ID notarization and App Store distribution have separate verification requirements. Existing published Windows/Web evidence above is unchanged. Reproducible commands are in the root README; local proof is generated under `.cache/first-game-*`.
+
+## Reading layouts — 2026-10-24 source changes
+
+`readable-layout-v1` adds optional phone reading order, natural text reflow through 200%, controls of at least 44 logical points, safe areas, scrolling and persistent reading preferences to the native and Web players. The Qt editor exposes this without JSON editing and previews phone viewports with the real native renderer. Existing canvas layouts retain their behavior. See [the authoring guide](../manual/phone-reading-layout.md) and [implementation contract](readable-layout-contract.md).
+
+The creator CI includes shared validation, native/Web phone regressions and Qt authoring checks. Device orientation, physical ergonomics and assistive technologies still need platform acceptance; a layout capability is not a screen-reader support claim. Unsupported specialised widgets remain explicitly gated.
+
+
+### iOS release metadata
+
+Export uses **Release version** as the app's `CFBundleShortVersionString` and offers an independent **iOS build number** for `CFBundleVersion`, including when ZIP archives are disabled. Increase the build number for each new build you distribute. The release version must be three numeric components (for example `1.2.0`); the build number accepts one to three (for example `42` or `42.1`). Each component is bounded to nine digits. Preview suffixes such as `-beta` are rejected for iOS, and an app version cannot differ from its release archive version. Defaults for callers that omit metadata remain `0.1.0` and `1`.
+
+These formats follow Apple's current [release version](https://developer.apple.com/documentation/bundleresources/information-property-list/cfbundleshortversionstring) and [build version](https://developer.apple.com/documentation/bundleresources/information-property-list/cfbundleversion) definitions. The exporter records both values in `ios-build.json` and passes them through the generated CMake project into both SDK app bundles. Existing immutable exports retain their original metadata; regenerate an export to pick up this fix.
+
+Standalone creation accepts `--version 1.2.0 --build-number 42`. A previously generated `--project` retains its exported version metadata. Export a new project to change those values; CLI version overrides are rejected to avoid disagreeing with the exported release receipt. The editor does not contact App Store Connect to check previously uploaded build numbers. This metadata support does not imply signing, provisioning, physical-device or store acceptance.
+
+### Pinned iOS SDL keyboard correction
+
+`prepare-native-dependencies.mjs` reproducibly applies the reviewed keyboard-ownership correction to the pinned SDL 3.4.18 UIKit source. Files-picker keyboard notifications must not resize the game's SDL view during a UIKit orientation transition; SDL's own active text input and its final keyboard dismissal still run normally. Owned keyboard geometry uses the SDL window's `UIWindowScene` orientation; the deprecated global application orientation can return Unknown in scene-based applications and incorrectly flip valid landscape bounds. The previous orientation fallback remains only when no scene is attached. The patch is marked in the dependency source and guarded by exact original/patched SHA-256 values in `scripts/lib/ios-sdl-keyboard-patch.mjs`. Repeated preparation accepts only those reviewed bytes; unrelated source or staged permission changes are rejected and preserved. Do not reset a dependency checkout to bypass that check.
+
+The macOS creator smoke includes a dependency-patch regression for repeat preparation and local-change preservation. That test does not establish UIKit behavior: real Files-picker background/rotation/cancel and ordinary game text-entry rotation are separate simulator acceptance checks, and physical devices remain separate release work. Existing exported iOS source must be regenerated to include the correction.

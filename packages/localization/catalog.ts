@@ -3,11 +3,11 @@ export interface Locale {id:string;label:string;fontAssetId?:string}
 export interface Message {key:string;source:string;translations:Record<string,string>}
 export interface Localization {defaultLocale:string;fallbackLocale:string;locales:readonly Locale[];entries:readonly Message[]}
 export interface SourceMessage {key:string;source:string}
-const fields=new Set(['title','description','label','name','text','prompt','valueFormat']);
+const fields=new Set(['title','description','label','name','text','prompt','valueFormat','yearLabel','monthLabel','periodLabel','dayLabel']);
 const skip=new Set(['localization','assets','initialState']);
 const segment=(s:string)=>s.replace(/~/g,'~0').replace(/\//g,'~1');
 function visit(value:unknown,path:string,found:(key:string,source:string)=>string):unknown {
- if(Array.isArray(value))return value.map((x,i)=>visit(x,path+'/'+segment(x&&typeof x==='object'&&typeof x.id==='string'?'@'+x.id:String(i)),found));
+ if(Array.isArray(value))return value.map((x,i)=>typeof x==='string'&&path.endsWith('/weekdayLabels')?found(path+'/'+i,x):visit(x,path+'/'+segment(x&&typeof x==='object'&&typeof x.id==='string'?'@'+x.id:String(i)),found));
  if(!value||typeof value!=='object')return value;
  const out:Record<string,unknown>={};
  for(const [key,v] of Object.entries(value)){const p=path+'/'+segment(key);out[key]=skip.has(key)?v:typeof v==='string'&&fields.has(key)&&v.trim()?found(p,v):visit(v,p,found);}

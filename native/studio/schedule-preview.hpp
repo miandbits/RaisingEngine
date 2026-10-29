@@ -4,6 +4,7 @@
 #include <QPainter>
 #include <QFontMetricsF>
 #include <QObject>
+#include <functional>
 
 // Editor-only initial assignments. Never executes a rule or writes preview data.
 inline QJsonArray initialRosterPreview(const QJsonObject& project) {
@@ -27,12 +28,12 @@ inline QJsonArray initialRosterPreview(const QJsonObject& project) {
   return rows;
 }
 
-inline void paintRosterPreview(QPainter* p,const QRectF& box,const QJsonObject& data) {
+inline void paintRosterPreview(QPainter* p,const QRectF& box,const QJsonObject& data,std::function<void()> decoration={}) {
   p->save();p->setClipRect(box,Qt::IntersectClip);
   const auto fillValue=data.value("fill").toString("#fff9e8");
   QColor fill(fillValue.left(7)),ink(data.value("color").toString("#304d46"));
   if(fillValue.size()==9)fill.setAlpha(fillValue.right(2).toInt(nullptr,16));
-  p->setBrush(fill);p->setPen(Qt::NoPen);p->drawRoundedRect(box,6,6);
+  p->setBrush(fill);p->setPen(Qt::NoPen);p->drawRoundedRect(box,6,6);if(decoration)decoration();
   QFont font(data.value("_fontFamily").toString("Noto Sans KR"));font.setPixelSize(17);p->setFont(font);p->setPen(ink);
   const auto rows=data.value("_rosterPreview").toArray();
   p->drawText(box.adjusted(20,12,-20,-12),Qt::AlignTop|Qt::AlignLeft,QObject::tr("초기 배정 미리보기 · 실행 결과 아님"));

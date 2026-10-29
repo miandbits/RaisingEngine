@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdtemp,cp} from 'node:fs/promises';
 import path from 'node:path';
 import {QtStudioService} from '../../apps/qt-studio/service.mjs';
+import {saveAndWait} from '../helpers/save-check.mjs';
 import {saveGoalRoute} from '../../apps/qt-studio/goal-routes.mjs';
 
 test('partial approval preserves remaining differences, exact values, history and restoration',{timeout:180000},async()=>{
@@ -14,7 +15,7 @@ test('partial approval preserves remaining differences, exact values, history an
  const route={...original,id:'partial-meal',name:'부분 승인 · 생활 경로',checkpoints:[],commands:[{type:'navigate',screenId:'home'},{type:'executeAction',actionId:'action-1',quantity:1},...original.commands]};
  await saveGoalRoute(root,route);const baseline=(await call('goalBaselineSave',{routeId:route.id,name:'생활 원래 기준'})).goalBaseline;
  const bytes=await readFile(baseline.file,'utf8');const doc=service.editor.documents.find(d=>d.kind==='project'),data=structuredClone(doc.data),action=data.gameplay.actions.find(a=>a.id==='action-1');action.costs[0].amount=7;action.effects[0].value.value=3;
- await call('edit',{edit:{type:'replace',file:doc.file,data}});let report=(await call('save')).goalImpact;
+ await call('edit',{edit:{type:'replace',file:doc.file,data}});let report=(await saveAndWait(service)).goalImpact;
  const row=()=>report.rows.find(r=>r.routeId===route.id),params=()=>({impactReportId:report.id,impactRow:report.rows.findIndex(r=>r.routeId===route.id)});
  assert.equal(row().status,'changed');assert.ok(row().changeItems.some(i=>i.kind==='cost-check'));assert.ok(row().changeItems.some(i=>i.kind==='effect-check'));
  const selected=row().changeItems.filter(i=>i.path==='/attributes/money'||i.kind==='cost-rule'||i.kind==='effect-rule').map(i=>i.id);assert.equal(selected.length,3);
@@ -35,13 +36,13 @@ test('partial approval preserves remaining differences, exact values, history an
  assert.equal(row().approvedChangeCount,3);assert.equal(row().changeItems.find(i=>i.path==='/attributes/stamina').approved,false);
  // A later value is a new regression; an approval is never an ignore-by-path rule.
  const changed=structuredClone(data);changed.gameplay.actions.find(a=>a.id==='action-1').costs[0].amount=9;
- await call('edit',{edit:{type:'replace',file:doc.file,data:changed}});report=(await call('save')).goalImpact;
+ await call('edit',{edit:{type:'replace',file:doc.file,data:changed}});report=(await saveAndWait(service)).goalImpact;
  assert.equal(row().changeItems.find(i=>i.path==='/attributes/money').approved,false);assert.equal(row().changeItems.find(i=>i.kind==='cost-rule').approved,false);assert.equal(row().changeItems.find(i=>i.kind==='effect-rule').approved,true);
  const reverted=structuredClone(data);reverted.gameplay.actions.find(a=>a.id==='action-1').costs[0].amount=2;
- await call('edit',{edit:{type:'replace',file:doc.file,data:reverted}});report=(await call('save')).goalImpact;
+ await call('edit',{edit:{type:'replace',file:doc.file,data:reverted}});report=(await saveAndWait(service)).goalImpact;
  const reversion=row().changeItems.find(i=>i.kind==='cost-rule');assert.equal(reversion.approved,false);assert.equal(reversion.observations[0].before,7);assert.equal(reversion.observations[0].after,2);
  report=(await call('goalBaselineApprovePartial',{...params(),itemIds:[reversion.id],note:'비용을 원래 값으로 재승인'})).goalImpact;assert.equal(row().changeItems.find(i=>i.kind==='cost-rule').approved,true);
- await call('edit',{edit:{type:'replace',file:doc.file,data}});report=(await call('save')).goalImpact;
+ await call('edit',{edit:{type:'replace',file:doc.file,data}});report=(await saveAndWait(service)).goalImpact;
  assert.equal(row().changeItems.find(i=>i.kind==='cost-rule').approved,false);assert.equal(row().changeItems.find(i=>i.kind==='cost-rule').observations[0].before,2);assert.equal(row().changeItems.find(i=>i.path==='/attributes/money').approved,true);
  report=(await call('goalBaselineRestore',{...params(),baselineId:baseline.id,note:'모든 부분 승인 전으로 복원'})).goalImpact;assert.equal(row().approvedChangeCount,0);assert.ok(row().changeItems.every(i=>!i.approved));
  const graph=(await call('goalCompareOpen',{...params()})).goalComparison;assert.equal(graph.jumpStep,row().firstDifference);

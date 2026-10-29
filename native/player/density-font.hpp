@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <vector>
 
 // Keep authored font metrics (wrapping, hit boxes and saved UI positions) while
 // rasterizing glyphs for the output display. SDL already draws geometry/images
@@ -69,13 +70,27 @@ public:
     const int logical_width = Base::GetStringWidth(handle, text, shaping, Rml::Character::Null);
     auto high_shaping = shaping;
     high_shaping.letter_spacing *= density;
+    // Populate the raster face before GenerateString rebuilds its atlas. A
+    // previously unseen CJK glyph appended during generation otherwise has no
+    // geometry until another string happens to dirty this face.
+    Base::GetStringWidth(face.high, text, high_shaping, Rml::Character::Null);
+    // Wrapped lines append to the same atlas meshes. Earlier glyphs are already
+    // in logical coordinates and must not be translated/scaled a second time.
+    std::vector<size_t> previous_vertices;
+    previous_vertices.reserve(meshes.size());
+    for (const auto& textured : meshes) previous_vertices.push_back(textured.mesh.vertices.size());
     const int raster_width = Base::GenerateString(render_manager, face.high, 0, text, {}, colour, opacity, high_shaping, meshes);
     // FreeType rounds advances to pixels at each size. Match the original line
     // advance so a DPI change cannot move text into adjacent controls.
     const float x_scale = raster_width > 0 ? float(logical_width) / raster_width : 1.f / density;
-    for (auto& textured : meshes) for (auto& vertex : textured.mesh.vertices) {
-      vertex.position.x = position.x + vertex.position.x * x_scale;
-      vertex.position.y = position.y + vertex.position.y / density;
+    for (size_t mesh_index = 0; mesh_index < meshes.size(); ++mesh_index) {
+      auto& vertices = meshes[mesh_index].mesh.vertices;
+      const size_t first = mesh_index < previous_vertices.size() ? previous_vertices[mesh_index] : 0;
+      for (size_t vertex_index = first; vertex_index < vertices.size(); ++vertex_index) {
+        auto& vertex = vertices[vertex_index];
+        vertex.position.x = position.x + vertex.position.x * x_scale;
+        vertex.position.y = position.y + vertex.position.y / density;
+      }
     }
     return logical_width;
   }

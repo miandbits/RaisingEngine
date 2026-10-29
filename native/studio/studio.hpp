@@ -18,6 +18,7 @@
 class RendererPreviewDock;
 class CanvasStateBar;
 class QPushButton;
+class QTimer;
 class QDockWidget;
 class QMenu;
 class QStackedWidget;
@@ -40,6 +41,8 @@ public:
   QString lastRecording, recordingRoot;
   QJsonObject lastGoalReport;
   QJsonObject lastGoalImpact;
+  QJsonObject lastGoalSaveCheck;
+  QJsonObject lastGoalBaselineBatch;
   QString lastError;
   /** Automation: package file used by 패키지 설치… instead of the file dialog. */
   QString pluginPackagePath;
@@ -60,6 +63,8 @@ signals:
   void playerFinished(int code);
   void goalReportReady(QJsonObject report);
   void goalImpactReady(QJsonObject report);
+  void goalSaveCheckReady(QJsonObject check);
+  void goalBaselinesReady(QJsonObject batch);
   void followAuthoringItem(QString key);
 
 protected:
@@ -127,7 +132,7 @@ private:
   QLineEdit *nameField, *textField, *fillField, *colorField;
   QLineEdit *assetSearch;
   QSpinBox *xField, *yField, *widthField, *heightField, *fontField;
-  QComboBox *actionField, *targetField, *styleField;
+  QComboBox *actionField, *targetField, *styleField, *controlStyleField;
   QComboBox *previewLocaleField;
   QComboBox *anchorXField, *anchorYField, *viewportModeField, *previewSizeField;
   QComboBox *imageField, *bindingField, *attributeField, *relationshipField, *visibilityField, *userFieldField;
@@ -146,6 +151,7 @@ private:
   void refresh(bool fit = false);
   void updateInspector();
   void editVisibilityCondition();
+  void editSelectedSurface();
   void updateTargets(const QString &action, const QJsonObject &element);
   void selectElement(const QString &id);
   void selectElements(const QStringList &ids);
@@ -165,14 +171,19 @@ private:
   void importFont();
   void editDesignSystem();
   void editScreenSettings();
+  void editReadableLayout();
   void editUserFields();
   void applyTextBindingBatch();
   void editLocalization();
   void editComponents();
+  void createRaisingScreenFlow();
+  void shareScreenSection();
   void openComponentSource();
   QString componentToOpen;
   void editDataUi();
   void editTimelines();
+  void editActivityWorkflow(QString activityId = {});
+  bool editTimelineDraft(QJsonObject &draft, const QJsonArray &documents, QWidget *owner, QString activityId = {}, QString preferredTimelineId = {});
   void editBattleHud();
   void editExpeditions();
   void createProgressionActivity();
@@ -206,6 +217,17 @@ private:
   void createBenchmark();
   void runAssuranceDialog();
   void goalRoutesDialog();
+  void goalBaselineBatchDialog(QString routeId = {}, QString name = {});
+  void setupGoalSaveChecks();
+  void goalSaveChecksDialog();
+  void acceptGoalSaveCheck(QJsonObject check);
+  void refreshGoalSaveCheck();
+  void pollGoalSaveCheck();
+  void stopGoalSaveCheck();
+  QTimer *goalSaveCheckPolling=nullptr;
+  QPushButton *goalSaveCheckButton=nullptr;
+  QString goalSaveCheckRoot, goalSaveCheckReportedId;
+  QString goalSaveCheckCancelId;
   void goalSearchDialog(QJsonObject source = {});
   void goalCompareDialog(QString jobId = {}, QJsonObject impactLink = {});
   void goalImpactDialog(QJsonObject report = {});
@@ -219,6 +241,7 @@ private:
   void editContent();
   void editWidgetSettings();
   void refreshContent();
+  void ensureVisibleContentSelection();
   void openScreen(const QString &id);
   void closeScreen(int index);
   void createScreen(bool duplicate = false);
@@ -231,6 +254,13 @@ private:
   void play();
   void chooseProject(bool create);
   void newProjectWizard();
+  QDockWidget *firstGameDock = nullptr;
+  QJsonObject firstGameState, releaseCompatibility, recoveryState;
+  void showDraftRecovery();
+  QSet<QString> firstGameObserved;
+  void showFirstGameChecklist();
+  void updateFirstGameChecklist();
+  void observeFirstGamePlay(const QJsonObject &state);
   void showGettingStarted();
   void editStoryFlow();
   void initializeStarterScreens();
@@ -240,7 +270,7 @@ private:
   void editPresentationVariants();
   void editElementPresentationVariants(QJsonObject original,QWidget* parent,std::function<bool(QJsonArray,QString&)> apply);
   void editCustomStates();
-  void editProjectSettings();
+  void editProjectSettings(bool focusReadingHistory=false);
   void receivePlayer();
   bool mayDiscard();
   bool waitForPendingEdits();

@@ -18,7 +18,7 @@ inline nlohmann::json presentation_variant(const nlohmann::json& element, const 
     if (!evaluate(rule.at("when"))) continue;
     auto result = element;
     const auto& values = rule.at("values");
-    for (const auto key : {"text", "imageAssetId", "color", "fill", "opacity"})
+    for (const auto key : {"text", "imageAssetId", "color", "fill", "opacity", "surface", "controlStyleId"})
       if (values.contains(key)) result[key] = values.at(key);
     if (values.contains("text")) result["binding"] = "none";
     if (values.contains("imageAssetId")) result["imageSource"] = "asset";

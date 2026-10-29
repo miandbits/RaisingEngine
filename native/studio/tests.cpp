@@ -141,6 +141,7 @@ private slots:
   void progressionAuthoringGuards();
   void advanceButtonAuthoring();
   void projectSetupAuthoring();
+  void customCalendarAuthoring();
   void workbenchValidationHierarchy();
   void workbenchAnalysis5000();
   void workbenchAnalysisHistory();
@@ -1029,6 +1030,7 @@ private slots:
 #include "component-hierarchy-test.inc"
 #include "pm2-facilities-test.inc"
 #include "project-settings-test.inc"
+#include "calendar-authoring-test.inc"
 #include "roster-test.inc"
 #include "tool-search-test.inc"
 #include "toolbar-access-test.inc"

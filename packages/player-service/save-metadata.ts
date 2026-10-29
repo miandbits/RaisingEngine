@@ -1,7 +1,7 @@
 import type {ContentSnapshot,RunState} from '../core/model.js';
 
 export interface ScheduleDraft {month:number;slot:number;selected:number;activities:string[]}
-/** Native slot preview metadata. It is never consulted by simulation rules. */
+/** Portable slot preview metadata. Empty thumbnail means no image was captured. It is never consulted by simulation rules. */
 export interface SaveRecord {version:1;date:string;place:string;screenId:string;phase:string;thumbnail:string;savedAt:string;sequence:number;automatic:boolean}
 const recordKeys=['version','date','place','screenId','phase','thumbnail','savedAt','sequence','automatic'];
 export function validSaveRecord(value:unknown):value is SaveRecord {
@@ -9,7 +9,7 @@ export function validSaveRecord(value:unknown):value is SaveRecord {
   const r=value as Record<string,unknown>;
   if(Object.keys(r).length!==recordKeys.length||Object.keys(r).some(k=>!recordKeys.includes(k))||r.version!==1||typeof r.automatic!=='boolean'||!Number.isSafeInteger(r.sequence)||(r.sequence as number)<0)return false;
   for(const k of ['date','place','screenId','phase','thumbnail','savedAt'])if(typeof r[k]!=='string'||(r[k] as string).length>511)return false;
-  return /^frame-[0-9]+-[0-9]+\.png$/.test(r.thumbnail as string);
+  return /^(frame-[0-9]+-[0-9]+\.png)?$/.test(r.thumbnail as string);
 }
 export function validScheduleDraft(content:ContentSnapshot,state:RunState,value:unknown):value is ScheduleDraft {
   if(!value||typeof value!=='object'||Array.isArray(value))return false;

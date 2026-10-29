@@ -1,4 +1,5 @@
 #include "renderer-preview.hpp"
+#include "authoring-labels.hpp"
 #include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -24,7 +25,7 @@ void RendererPreviewDock::editScenario(){
   QJsonArray attributes,flags;auto event=new QComboBox;event->setObjectName("previewEvent");event->addItem(tr("사건 조건 검사 안 함"),"");
   for(auto value:documents){auto doc=value.toObject(),data=doc.value("data").toObject();auto kind=doc.value("kind").toString();if(kind=="character"&&actors.contains(data.value("id").toString()))actor->addItem(data.value("name").toString(),data.value("id").toString());if(kind=="activity")activity->addItem(data.value("label").toString(),data.value("id").toString());if(kind=="attributes")attributes=data.value("attributes").toArray();if(kind=="flags")flags=data.value("flags").toArray();}
   actor->setCurrentIndex(qMax(0,actor->findData(scenario.value("actorId").toString())));activity->setCurrentIndex(qMax(0,activity->findData(scenario.value("activityId").toString())));form->addRow(tr("검사할 캐릭터"),actor);form->addRow(tr("검사할 활동"),activity);
-  for(auto value:documents){auto doc=value.toObject(),data=doc.value("data").toObject();if(doc.value("kind")=="event")event->addItem(data.value("label").toString(data.value("name").toString())+" · "+data.value("id").toString(),data.value("id").toString());}event->setCurrentIndex(qMax(0,event->findData(scenario.value("eventId").toString())));form->addRow(tr("검사할 사건"),event);
+  for(auto value:documents){auto doc=value.toObject(),data=doc.value("data").toObject();if(doc.value("kind")=="event"){event->addItem(authoringLabel(data),data.value("id").toString());event->setItemData(event->count()-1,data.value("id").toString(),Qt::ToolTipRole);}}event->setCurrentIndex(qMax(0,event->findData(scenario.value("eventId").toString())));form->addRow(tr("검사할 사건"),event);
   auto routing=new QCheckBox(tr("조건에 따라 연결된 화면 확인"));routing->setObjectName("previewFollowRouting");routing->setChecked(scenario.value("followRouting").toBool());form->addRow(tr("화면 선택"),routing);
   if(canvasMode){routing->setChecked(false);routing->setEnabled(false);routing->setToolTip(tr("편집 캔버스에서는 현재 화면을 유지합니다. 화면 연결은 실제 렌더러 검사에서 확인하세요."));}
   auto rows=new QWidget;auto values=new QFormLayout(rows);form->addRow(rows);
@@ -44,7 +45,7 @@ void RendererPreviewDock::editScenario(){
 }
 
 void RendererPreviewDock::showReasons(const QJsonObject& explanation){
-  reasons->clear();if(explanation.isEmpty())return;
+  reasons->clear();reasons->setVisible(!explanation.isEmpty());if(explanation.isEmpty())return;
   auto stateRow=new QTreeWidgetItem(reasons,{tr("검사 상태"),(explanation.value("source")=="validated-save"?tr("플레이 저장 · C++ 재현 일치"):tr("새 게임 초기 상태"))+(explanation.value("modified").toBool()?tr(" · 가상 값 변경됨"):QString())});stateRow->setToolTip(0,explanation.value("notice").toString());stateRow->setToolTip(1,explanation.value("notice").toString());
   auto values=new QTreeWidgetItem(reasons,{tr("능력치·자원 · 현재 / 기준"),explanation.value("actorName").toString()});
   for(auto value:explanation.value("values").toArray()){auto row=value.toObject();new QTreeWidgetItem(values,{row.value("label").toString()+" · "+row.value("scopeName").toString(row.value("scope").toString()),QString::number(row.value("value").toInt())+" / "+QString::number(row.value("baseline").toInt())});}

@@ -45,6 +45,8 @@ std::string process(const std::string &text) {
       return command(requestContent(request), request.at("state"), request.at("command"),
                      request.at("expectedRevision"))
           .dump();
+    if (op == "forecastPhase")
+      return phaseForecast(requestContent(request), request.at("state"), request.at("activityIds")).dump();
     if (op == "inspect") {
       J trace = J::array();
       TraceScope tracing(&trace);

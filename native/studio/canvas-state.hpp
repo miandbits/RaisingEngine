@@ -19,7 +19,10 @@ public:
   RendererPreviewDock* renderer() const {return preview;}
   void launchPlay(QJsonObject descriptor);
   void failPlay(QString message);
+  void showAllElements();
+  void showGameState();
   std::function<bool()> busy;
+  std::function<bool()> snapshotBusy;
 signals:
   void snapshotRequested();
   void playRequested(QJsonObject params);

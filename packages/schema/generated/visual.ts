@@ -122,6 +122,10 @@ export type Element = {
   imageAssetId?: string;
   fit?: "cover" | "contain";
   /**
+   * Offer a read-only forecast of the current phase draft. Distinguishes determined changes from assumptions and blockers. Off by default.
+   */
+  showPhaseForecast?: boolean;
+  /**
    * Show authored costs and base attribute effects in schedule columns or roster assignments. Not a prediction. Off by default.
    */
   showActivityRules?: boolean;
@@ -129,7 +133,17 @@ export type Element = {
    * Show the selected activity's authored description below each schedule column. Off by default.
    */
   showActivityDescription?: boolean;
-  scheduleLayout?: "columns" | "calendar" | "menu" | "board";
+  scheduleLayout?: "columns" | "calendar" | "menu" | "board" | "activity-board";
+  activityBoard?: {
+    density?: "compact";
+    showSummary?: boolean;
+    advanceAfterApply?: boolean;
+    forecast?: "inline";
+    /**
+     * @maxItems 128
+     */
+    summaryAttributeIds?: string[];
+  };
   statsLayout?: "bars" | "compact";
   shopLayout?: "list" | "cards";
   /**
@@ -954,6 +968,7 @@ export type Element = {
     | "load"
     | "sound"
     | "navigate"
+    | "openPlanner"
     | "visit"
     | "buy"
     | "interact"
@@ -993,6 +1008,8 @@ export type Element = {
     | "recollectionSave"
     | "recollectionLoad"
     | "recollectionAuto"
+    | "readingHistory"
+    | "resumeContext"
     | "dialogueAuto"
     | "recollectionSpeed"
     | "recollectionSkip"
@@ -1003,6 +1020,12 @@ export type Element = {
     | "timelinePause"
     | "timelineSpeed"
     | "timelineSkip";
+  /**
+   * Resolved element ID on the target screen, including component instance paths separated by __.
+   */
+  plannerElementId?: string;
+  plannerGroupId?: string;
+  plannerActivityId?: string;
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -1033,8 +1056,13 @@ export type Element = {
   frameAssetId?: string;
   entryFrameAssetId?: string;
   portraitId?: string;
+  /**
+   * Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults.
+   */
+  controlStyleId?: string;
   styleId?: string;
   fontAssetId?: string;
+  surface?: UiSurface;
   padding?: number;
   borderWidth?: number;
   borderColor?: string;
@@ -1060,6 +1088,7 @@ export type Element = {
         | "load"
         | "sound"
         | "navigate"
+        | "openPlanner"
         | "visit"
         | "buy"
         | "interact"
@@ -1099,6 +1128,8 @@ export type Element = {
         | "recollectionSave"
         | "recollectionLoad"
         | "recollectionAuto"
+        | "readingHistory"
+        | "resumeContext"
         | "dialogueAuto"
         | "recollectionSpeed"
         | "recollectionSkip"
@@ -1107,13 +1138,24 @@ export type Element = {
         | "timelinePause"
         | "timelineSpeed"
         | "timelineSkip";
+      /**
+       * Resolved element ID on the target screen, including component instance paths separated by __.
+       */
+      plannerElementId?: string;
+      plannerGroupId?: string;
+      plannerActivityId?: string;
       screenId?: string;
       locationId?: string;
       shopId?: string;
       itemId?: string;
       interactionId?: string;
       quantity?: number;
+      /**
+       * Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults.
+       */
+      controlStyleId?: string;
       styleId?: string;
+      surface?: UiSurface;
       fill?: string;
       color?: string;
       fontSize?: number;
@@ -5480,7 +5522,7 @@ export type Element = {
     "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId";
   activityId?: string;
   decreasingAttributeIds?: string[];
-  resultLayout?: "summary" | "changes";
+  resultLayout?: "summary" | "changes" | "growth";
   choiceLayout?: "list" | "cards";
   /**
    * Show authored consequence text and immediate choice effects below each option.
@@ -5495,6 +5537,27 @@ export type Element = {
     imageAssetId: string;
   }[];
 };
+/**
+ * Optional decorative whole-PNG surface. Missing inherits; none clears. One source pixel equals one logical unit. Tile repeats both axes from the top-left; nine-slice preserves source-pixel edge widths.
+ */
+export type UiSurface =
+  | {
+      mode: "none";
+    }
+  | {
+      mode: "tile";
+      imageAssetId: string;
+    }
+  | {
+      mode: "nine-slice";
+      imageAssetId: string;
+      insets: {
+        top: number;
+        right: number;
+        bottom: number;
+        left: number;
+      };
+    };
 export type Condition =
   | {
       op: "always";
@@ -5596,7 +5659,10 @@ export type ComponentChild = {
     | "component"
     | "saveSlots"
     | "playerSettings"
-    | "loadSlots";
+    | "loadSlots"
+    | "schedule"
+    | "stats"
+    | "result";
   label?: string;
   x: number;
   y: number;
@@ -5641,7 +5707,17 @@ export type ComponentChild = {
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";
   imageAssetId?: string;
   fit?: "cover" | "contain";
-  scheduleLayout?: "columns" | "calendar" | "menu" | "board";
+  scheduleLayout?: "columns" | "calendar" | "menu" | "board" | "activity-board";
+  activityBoard?: {
+    density?: "compact";
+    showSummary?: boolean;
+    advanceAfterApply?: boolean;
+    forecast?: "inline";
+    /**
+     * @maxItems 128
+     */
+    summaryAttributeIds?: string[];
+  };
   statsLayout?: "bars" | "compact";
   shopLayout?: "list" | "cards";
   /**
@@ -6466,6 +6542,7 @@ export type ComponentChild = {
     | "load"
     | "sound"
     | "navigate"
+    | "openPlanner"
     | "visit"
     | "buy"
     | "interact"
@@ -6505,6 +6582,8 @@ export type ComponentChild = {
     | "recollectionSave"
     | "recollectionLoad"
     | "recollectionAuto"
+    | "readingHistory"
+    | "resumeContext"
     | "dialogueAuto"
     | "recollectionSpeed"
     | "recollectionSkip"
@@ -6515,6 +6594,12 @@ export type ComponentChild = {
     | "timelinePause"
     | "timelineSpeed"
     | "timelineSkip";
+  /**
+   * Resolved element ID on the target screen, including component instance paths separated by __.
+   */
+  plannerElementId?: string;
+  plannerGroupId?: string;
+  plannerActivityId?: string;
   screenId?: string;
   locationId?: string;
   shopId?: string;
@@ -6545,8 +6630,13 @@ export type ComponentChild = {
   frameAssetId?: string;
   entryFrameAssetId?: string;
   portraitId?: string;
+  /**
+   * Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults.
+   */
+  controlStyleId?: string;
   styleId?: string;
   fontAssetId?: string;
+  surface?: UiSurface;
   padding?: number;
   borderWidth?: number;
   borderColor?: string;
@@ -8685,6 +8775,7 @@ export type ComponentChild = {
         | "load"
         | "sound"
         | "navigate"
+        | "openPlanner"
         | "visit"
         | "buy"
         | "interact"
@@ -8724,6 +8815,8 @@ export type ComponentChild = {
         | "recollectionSave"
         | "recollectionLoad"
         | "recollectionAuto"
+        | "readingHistory"
+        | "resumeContext"
         | "dialogueAuto"
         | "recollectionSpeed"
         | "recollectionSkip"
@@ -8732,13 +8825,24 @@ export type ComponentChild = {
         | "timelinePause"
         | "timelineSpeed"
         | "timelineSkip";
+      /**
+       * Resolved element ID on the target screen, including component instance paths separated by __.
+       */
+      plannerElementId?: string;
+      plannerGroupId?: string;
+      plannerActivityId?: string;
       screenId?: string;
       locationId?: string;
       shopId?: string;
       itemId?: string;
       interactionId?: string;
       quantity?: number;
+      /**
+       * Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults.
+       */
+      controlStyleId?: string;
       styleId?: string;
+      surface?: UiSurface;
       fill?: string;
       color?: string;
       fontSize?: number;
@@ -10926,7 +11030,7 @@ export type ComponentChild = {
     "actorId" | "activityId" | "characterId" | "itemId" | "actionId" | "locationId" | "shopId" | "attributeId";
   activityId?: string;
   decreasingAttributeIds?: string[];
-  resultLayout?: "summary" | "changes";
+  resultLayout?: "summary" | "changes" | "growth";
   choiceLayout?: "list" | "cards";
   meterThickness?: number;
   /**
@@ -10936,9 +11040,31 @@ export type ComponentChild = {
     activityId: string;
     imageAssetId: string;
   }[];
+  /**
+   * Show the selected activity's authored description below each schedule column. Off by default.
+   */
+  showActivityDescription?: boolean;
+  /**
+   * Show authored costs and base attribute effects in schedule columns or roster assignments. Not a prediction. Off by default.
+   */
+  showActivityRules?: boolean;
+  /**
+   * Offer a read-only forecast of the current phase draft. Distinguishes determined changes from assumptions and blockers. Off by default.
+   */
+  showPhaseForecast?: boolean;
 };
 
 export interface VisualDesign {
+  resumeContext?: {
+    screenId: string;
+    /**
+     * @minItems 1
+     * @maxItems 64
+     */
+    elementIds: [string, ...string[]];
+    showAfterLoad?: true;
+  };
+  readingHistory?: {};
   saveSystem?: {
     manualSlots?: number;
     autoSlots?: number;
@@ -10995,6 +11121,10 @@ export interface VisualDesign {
       };
     }[];
   }[];
+  /**
+   * After presentation, reveal the committed activity result and wait for explicit advance, including continuous playback.
+   */
+  activityTimelineCompletion?: "reveal-result";
   /**
    * Show committed activity changes sequentially inside result widgets. Existing authored activity timelines take precedence.
    */
@@ -12878,6 +13008,44 @@ export interface VisualDesign {
           ];
     }[];
   };
+  /**
+   * Opt-in physical-size reading layouts for phones and enlarged text. Missing fields use engine defaults.
+   */
+  readableLayout?: {
+    /**
+     * Auto mode activates at or below this safe viewport short edge. Default 600 CSS pixels/native points.
+     */
+    maxShortEdge?: number;
+    /**
+     * Minimum reading text size before the player text preference. Default 18.
+     */
+    fontSize?: number;
+    /**
+     * Minimum actual interactive width and height. Default 44.
+     */
+    minTargetSize?: number;
+    /**
+     * Reading surface padding. Default 16.
+     */
+    padding?: number;
+    /**
+     * Space between reading items and actions. Default 12.
+     */
+    gap?: number;
+    /**
+     * Maximum centered reading column width. Default 760.
+     */
+    maxWidth?: number;
+    /**
+     * Opaque reading surface color. Default #172c29.
+     */
+    background?: string;
+    /**
+     * Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults.
+     */
+    controlStyleId?: string;
+    surface?: UiSurface;
+  };
 }
 export interface Scene {
   backgroundAssetId?: string | null;
@@ -12951,6 +13119,65 @@ export interface Screen {
    */
   elements: Element[];
   modal?: boolean;
+  readableLayout?: {
+    /**
+     * auto follows the viewport threshold or player reading preference. always uses this screen's content-sized reading layout at every viewport without changing the player's preference. Omit to preserve auto behavior.
+     */
+    activation?: "auto" | "always";
+    /**
+     * Keep one primary action and group the other bottom actions in a labeled utility menu. Omit for the existing wrapping action region.
+     */
+    actionLayout?: "grouped";
+    /**
+     * Optional existing bottom-action button ID for grouped mode. Omit when the reading content is the primary task.
+     */
+    primaryAction?: string;
+    /**
+     * @maxItems 1000
+     */
+    items: {
+      elementId: string;
+      /**
+       * Text size before player scaling; never below the global minimum.
+       */
+      fontSize?: number;
+      /**
+       * For schedule elements only: a compact period summary with an activity picker and explicit apply/cancel. Only changes the reading presentation.
+       */
+      schedulePresentation?: "compact";
+      /**
+       * Offer review and reuse of the newest accepted schedule in the compact planner. Applying changes only the draft, never time or game state.
+       */
+      planReuse?: "last-committed";
+      /**
+       * Optional first-use help for compact single-character planning. Players may skip or reopen it; acknowledgment is a presentation preference, never game progress.
+       */
+      planningGuidance?: "first-use";
+      /**
+       * Image height in CSS pixels/native points. Default 160.
+       */
+      imageHeight?: number;
+    }[];
+    /**
+     * Existing button IDs in the persistent bottom action region.
+     *
+     * @maxItems 12
+     */
+    actions?:
+      | []
+      | [string]
+      | [string, string]
+      | [string, string, string]
+      | [string, string, string, string]
+      | [string, string, string, string, string]
+      | [string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string, string];
+  };
 }
 export interface PresentationVariant {
   label: string;
@@ -12965,6 +13192,11 @@ export interface PresentationVariant {
     color?: string;
     fill?: string;
     opacity?: number;
+    /**
+     * Named style colors for generated controls. Only fill, color, borderColor, hoverFill, pressedFill and disabledColor are used; omitted colors retain runtime defaults.
+     */
+    controlStyleId?: string;
+    surface?: UiSurface;
     extensionRef?: string;
   };
 }
@@ -12985,6 +13217,7 @@ export interface StyleValues {
   radius?: number;
   align?: "left" | "center" | "right";
   fontAssetId?: string;
+  surface?: UiSurface;
   padding?: number;
   borderWidth?: number;
   borderColor?: string;
@@ -13001,6 +13234,7 @@ export interface NamedStyle {
   radius?: number;
   align?: "left" | "center" | "right";
   fontAssetId?: string;
+  surface?: UiSurface;
   padding?: number;
   borderWidth?: number;
   borderColor?: string;

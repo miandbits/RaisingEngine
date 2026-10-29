@@ -127,7 +127,7 @@ void LogicEditor::editSelected(){
     for(const auto &g:references("stateGroup"))if(g.toObject().value("id")==o.value("stateGroupId")&&g.toObject().value("scope")=="character")ownerField();
   }
   if(op=="literal")integer("value",tr("숫자"));if(op=="clamp"){integer("min",tr("최솟값"));integer("max",tr("최댓값"));}
-  if(op=="time")field("field",tr("시간"),{"periodIndex","year","month","periodInMonth"},{tr("전체 일정 칸"),tr("연도"),tr("월"),tr("월 내 일정 칸")});
+  if(op=="time"){const auto calendar=ruleProject(context).value("calendar").toObject();field("field",tr("시간"),{"periodIndex","year","month","periodInMonth"},{tr("전체 일정 칸"),calendar.value("yearLabel").toString(tr("연도")),calendar.value("monthLabel").toString(tr("월")),calendar.value("periodLabel").toString(tr("월 내 일정 칸"))});}
   if(op=="compare")field("comparator",tr("비교"),{"eq","ne","gt","gte","lt","lte"},{"=","≠",">","≥","<","≤"});
   if(op=="flag"||op=="setFlag"){ownerField();reference("flagId",tr("플래그"),"flag");boolean(op=="flag"?"equals":"value",tr("켜짐"));}
   if(op=="eventCompleted"){ownerField();reference("eventId",tr("사건"),"event");}

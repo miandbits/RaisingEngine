@@ -1,0 +1,164 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,cp,mkdir,readFile,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {setTimeout as delay} from 'node:timers/promises';
+import {QtStudioService} from '../../apps/qt-studio/service.mjs';
+import {saveAndWait} from '../helpers/save-check.mjs';
+import {mkdirSync,rmdirSync} from 'node:fs';
+import {randomUUID} from 'node:crypto';
+
+async function fixture(t){
+  await mkdir('.cache/save-background',{recursive:true});
+  const root=await mkdtemp(path.resolve('.cache/save-background/run-'));
+  await cp('examples/starlight-three-months',root,{recursive:true,filter:p=>!p.split(path.sep).some(x=>['.studio','baselines'].includes(x))});
+  const service=new QtStudioService();
+  t.after(async()=>{await service.goalRouteBatches.close();await service.editor.close();});
+  await service.handle({method:'open',params:{root}});
+  const call=(method,params={})=>service.handle({method,params:{root,revision:service.editor.revision,...params}});
+  const ordinary=(await call('goalRoutesList')).goalRoutes.find(x=>x.route.id==='ordinary');
+  const long={...ordinary.route,id:'a-long',name:'Long background witness',checkpoints:[],checkpointEvery:1,commands:Array.from({length:10000},()=>({type:'setSchedule',activityIds:['study','study','rest']}))};
+  return {service,root,call,ordinary,long};
+}
+async function wait(call,predicate){const end=Date.now()+30000;while(Date.now()<end){const check=(await call('goalSaveCheckStatus')).goalSaveCheck;if(predicate(check))return check;await delay(20);}throw Error('Saved check wait expired');}
+async function assertCompleted(check,phase){
+  if(check.status==='completed')return;
+  // Keep diagnostics in the already-uploaded public-fixture smoke directory.
+  // Do not copy content snapshots or unbounded command/observation histories.
+  const clip=value=>typeof value==='string'?value.slice(0,4096):value;
+  const failure=value=>value?{code:value.code,step:value.step,message:clip(value.message),messageTruncated:typeof value.message==='string'&&value.message.length>4096}:undefined;
+  const summary=value=>({id:value.id,batchId:value.batchId,status:value.status,ok:value.ok,stale:value.stale,error:clip(value.error),errorTruncated:typeof value.error==='string'&&value.error.length>4096,stopReason:value.stopReason,completed:value.completed,reports:value.reports?.slice(0,128).map(r=>({id:r.id,status:r.status,ok:r.ok,executed:r.executed,commands:r.commands,failure:failure(r.failure)})),comparison:value.goalImpact?{id:value.goalImpact.id,ok:value.goalImpact.ok,complete:value.goalImpact.complete,stale:value.goalImpact.stale,archived:value.goalImpact.archived,error:clip(value.goalImpact.error),archiveError:clip(value.goalImpact.archiveError),counts:value.goalImpact.counts}:null});
+  const diagnostic={phase,platform:process.platform,node:process.version,check:summary(check)};
+  if(check.file)try{diagnostic.persisted=summary(JSON.parse(await readFile(check.file,'utf8')));}catch(error){diagnostic.readError=clip(error.message);}
+  await mkdir('.cache/creator-smoke',{recursive:true});
+  const file=path.resolve('.cache/creator-smoke/background-save-failure-'+randomUUID()+'.json');await writeFile(file,JSON.stringify(diagnostic,null,2));
+  assert.equal(check.status,'completed',JSON.stringify({...diagnostic,file}));
+}
+
+test('save returns while long work runs; edits stay responsive, repeated saves coalesce, captured inputs remain immutable',{timeout:60000},async t=>{
+  const {service,root,call,ordinary,long}=await fixture(t);
+  await call('goalRouteSave',{route:long,expectedRevision:null});
+  const started=performance.now(),first=(await call('save')).goalSaveCheck;
+  assert.ok(performance.now()-started<5000,'Save must return without replaying the long route.');
+  assert.equal(service.editor.view().dirty,false);
+  assert.ok(['queued','running'].includes(first.status));
+  await wait(call,j=>j.status==='running');
+  const repeat=(await call('save')).goalSaveCheck;assert.equal(repeat.id,first.id,'Same saved content keeps the useful active job.');
+  const doc=service.editor.documents.find(d=>d.kind==='project'),data={...doc.data,description:'New saved content'};
+  const editStart=performance.now();await call('edit',{edit:{type:'replace',file:doc.file,data}});assert.ok(performance.now()-editStart<5000);
+  const second=(await call('save')).goalSaveCheck;assert.notEqual(second.id,first.id);
+  const entry=(await call('goalRoutesList')).goalRoutes.find(x=>x.route.id==='a-long');
+  await call('goalRouteSave',{route:{...ordinary.route,id:'a-long',name:'Replacement short route'},expectedRevision:entry.revision});
+  const third=(await call('save')).goalSaveCheck;assert.notEqual(third.id,second.id);
+  const captured=service.savedGoalChecks.latest;
+  await call('edit',{edit:{type:'replace',file:doc.file,data:{...data,description:'Unsaved newer content'}}});
+  const file=path.join(root,'playtests/routes/a-long.json');await writeFile(file,(await readFile(file,'utf8'))+'\n');
+  const final=await wait(call,j=>!['queued','running','cancelling'].includes(j.status));
+  assert.equal(final.id,third.id);assert.equal(final.status,'completed',JSON.stringify(final));assert.equal(final.ok,true);assert.equal(final.stale,true);assert.equal(final.routesChanged,true);
+  assert.ok(final.goalImpact.counts['missing-baseline']>0);assert.equal(final.goalImpact.complete,false,'Missing baselines are not a comparison pass.');
+  const input=JSON.parse(await readFile(final.file.replace(/\.json$/,'.inputs.json'),'utf8'));
+  assert.equal(input.content.project.description,'New saved content');assert.equal(input.entries.find(e=>e.route.id==='a-long').route.name,'Replacement short route');
+  assert.equal(captured.content,undefined,'Large snapshots are released after launch.');
+  assert.ok([...service.goalRouteBatches.jobs.values()].some(j=>j.status==='cancelled'));
+});
+
+test('automatic save checks wait behind manual work; cancellation and close retire queued work',{timeout:30000},async t=>{
+  const {service,call,long}=await fixture(t);await call('goalRouteSave',{route:long,expectedRevision:null});
+  const manual=(await call('goalRouteBatchStart',{ids:['a-long'],limits:{routeTimeoutMs:10000,batchTimeoutMs:15000}})).goalRouteBatch;
+  const saved=(await call('save')).goalSaveCheck;assert.equal(saved.status,'queued');
+  assert.equal(service.goalRouteBatches.get(service.editor.root,manual.id).status,'running','Saving never cancels a manual batch.');
+  await call('goalSaveCheckStop');assert.equal((await call('goalSaveCheckStatus')).goalSaveCheck.status,'cancelled');
+  await call('save');await service.goalRouteBatches.close();
+  assert.equal(service.savedGoalChecks.pending,null);assert.equal(service.savedGoalChecks.draining,null);
+  assert.ok([...service.goalRouteBatches.jobs.values()].every(j=>!['running','cancelling'].includes(j.status)));
+  assert.equal((await call('goalSaveCheckStatus')).goalSaveCheck.status,'cancelled');
+});
+
+test('baseline changes after queued save prevent a current comparison; saved project survives queue startup errors',{timeout:30000},async t=>{
+  const {service,root,call,long}=await fixture(t);await call('goalRouteSave',{route:long,expectedRevision:null});
+  const manual=(await call('goalRouteBatchStart',{ids:['a-long'],limits:{routeTimeoutMs:1000,batchTimeoutMs:1500}})).goalRouteBatch;
+  // Keep only short routes in the automatic capture while the manual input stays immutable.
+  const entry=(await call('goalRoutesList')).goalRoutes.find(x=>x.route.id==='a-long');
+  const ordinary=(await call('goalRoutesList')).goalRoutes.find(x=>x.route.id==='ordinary');
+  await call('goalRouteSave',{route:{...ordinary.route,id:'a-long'},expectedRevision:entry.revision});
+  const saved=(await call('save')).goalSaveCheck;assert.equal(saved.status,'queued');
+  await mkdir(path.join(root,'playtests/baselines'),{recursive:true});await writeFile(path.join(root,'playtests/baselines/.approvals'),JSON.stringify({version:1,active:{},history:[]}));
+  await call('goalRouteBatchStop',{jobId:manual.id});
+  const result=await wait(call,j=>!['queued','running','cancelling'].includes(j.status));
+  assert.equal(result.stale,true);assert.equal(result.goalImpact.complete,false);assert.match(result.goalImpact.error,/Baseline records changed/);
+  const original=service.goalRouteBatches.prepare;service.goalRouteBatches.prepare=async()=>{throw Error('Capture test failure');};
+  const failure=await call('save');assert.equal(failure.error,null);assert.equal(failure.view.dirty,false);assert.equal(failure.goalSaveCheck.status,'failed');assert.match(failure.goalSaveCheck.error,/Project saved/);
+  service.goalRouteBatches.prepare=original;
+  await assert.rejects(call('goalSaveCheckStatus',{root:path.dirname(root)}),/current project/);
+});
+
+test('projects without registered routes save without starting a background worker',async t=>{
+  const {service,call}=await fixture(t);service.goalRouteBatches.prepare=async root=>({root,entries:[]});
+  const result=await call('save');assert.equal(result.error,null);assert.equal(result.goalSaveCheck,null);assert.equal(service.goalRouteBatches.jobs.size,0);assert.equal((await call('goalSaveCheckStatus')).goalSaveCheck,null);
+});
+
+test('cancellation during worker handoff retires the newly created automatic worker',{timeout:15000},async t=>{
+  const {service,call,long}=await fixture(t);await call('goalRouteSave',{route:long,expectedRevision:null});
+  const manager=service.goalRouteBatches,start=manager.start.bind(manager);
+  let release,announced;const handoff=new Promise(resolve=>{announced=resolve;}),gate=new Promise(resolve=>{release=resolve;});
+  manager.start=async(...args)=>{const job=await start(...args);announced(job);await gate;return job;};
+  const saved=(await call('save')).goalSaveCheck;const worker=await handoff;
+  assert.equal((await call('goalSaveCheckStop')).goalSaveCheck.status,'cancelled');
+  release();await service.savedGoalChecks.draining;
+  assert.equal(manager.get(service.editor.root,worker.id).status,'cancelled');
+  assert.equal((await call('goalSaveCheckStatus')).goalSaveCheck.id,saved.id);
+  assert.equal((await call('goalSaveCheckStatus')).goalSaveCheck.status,'cancelled');
+});
+
+test('expired retained history stays readable through twenty fresh saved-check replacements',{timeout:120000},async t=>{
+  const {service,call}=await fixture(t);
+  let previous=(await saveAndWait(service)).goalSaveCheck;
+  await assertCompleted(previous,'initial saved check');
+  // Each cycle must pass on its first attempt. Repeated owned-worker retirement
+  // exercises the intermittent Windows failure without retrying failed checks.
+  for(let cycle=1;cycle<=20;cycle++){
+    // Other manual batches can evict the older automatic entry from the bounded map.
+    service.goalRouteBatches.jobs.delete(previous.batchId);
+    const expired=(await call('goalSaveCheckStatus')).goalSaveCheck;
+    assert.equal(expired.id,previous.id);assert.equal(expired.historyExpired,true);assert.equal(expired.stale,true);assert.match(expired.error,/retained batch history/);
+    const next=(await saveAndWait(service)).goalSaveCheck;assert.notEqual(next.id,previous.id);await assertCompleted(next,'replacement cycle '+cycle+' after retained-history expiry');assert.equal(next.stale,false);previous=next;
+  }
+});
+
+test('a delayed cancellation token cannot stop the automatic check from a newer save',{timeout:15000},async t=>{
+  const {service,call,long}=await fixture(t);
+  await call('goalRouteSave',{route:long,expectedRevision:null});
+  await call('goalRouteBatchStart',{ids:['a-long'],limits:{routeTimeoutMs:10000,batchTimeoutMs:15000}});
+  const old=(await call('save')).goalSaveCheck;
+  const doc=service.editor.documents.find(d=>d.kind==='project');
+  await call('edit',{edit:{type:'replace',file:doc.file,data:{...doc.data,description:'A newer saved revision'}}});
+  const current=(await call('save')).goalSaveCheck;
+  assert.notEqual(current.id,old.id);assert.equal(current.status,'queued');
+  const delayed=(await call('goalSaveCheckStop',{checkId:old.id})).goalSaveCheck;
+  assert.equal(delayed.id,current.id);assert.equal(delayed.status,'queued','Old UI cancellation must not own a replacement check.');
+  assert.equal(service.savedGoalChecks.pending.id,current.id);
+  const cancelled=(await call('goalSaveCheckStop',{checkId:current.id})).goalSaveCheck;
+  assert.equal(cancelled.id,current.id);assert.equal(cancelled.status,'cancelled');
+});
+
+test('archive failure remains visible after completion and identical save retries after recovery',{timeout:30000},async t=>{
+  const {service,root,call}=await fixture(t);
+  for(const entry of (await call('goalRoutesList')).goalRoutes)await call('goalBaselineSave',{routeId:entry.route.id,name:'Before editing · '+entry.route.name});
+  const first=(await saveAndWait(service)).goalSaveCheck;assert.equal(first.goalImpact.ok,true);assert.equal(first.goalImpact.archived,true);
+  const manager=service.goalRouteBatches,start=manager.start.bind(manager);manager.jobs.delete(first.batchId);
+  let blockedFile;
+  manager.start=async(...args)=>{
+    const job=await start(...args);manager.start=start;
+    manager.get(root,job.id).worker.prependListener('message',message=>{
+      if(message.goalImpact?.id){blockedFile=path.join(root,'.studio','goal-impact-'+message.goalImpact.id+'.json');mkdirSync(blockedFile);}
+    });return job;
+  };
+  const failed=(await saveAndWait(service)).goalSaveCheck;
+  assert.equal(failed.status,'completed','Route completion remains separate from comparison archival.');
+  assert.equal(failed.goalImpact.archived,false);assert.equal(failed.goalImpact.ok,false);assert.equal(failed.goalImpact.complete,false);assert.equal(failed.goalImpact.stale,true);assert.ok(failed.goalImpact.archiveError);
+  const persisted=JSON.parse(await readFile(failed.file,'utf8'));assert.equal(persisted.goalImpact.archiveError,failed.goalImpact.archiveError);
+  assert.equal((await readFile(failed.file,'utf8')).includes('\n  '),false,'Large enclosing batch reports use compact lossless JSON.');
+  rmdirSync(blockedFile);
+  const latest=(await call('goalImpactLatest')).goalImpact;assert.equal(latest.id,failed.goalImpact.id,'An older successful disk report must not hide the latest archive failure.');assert.equal(latest.ok,false);assert.ok(latest.archiveError);
+  const retry=(await saveAndWait(service)).goalSaveCheck;assert.notEqual(retry.id,failed.id);assert.equal(retry.goalImpact.archived,true);assert.equal(retry.goalImpact.ok,true);
+});

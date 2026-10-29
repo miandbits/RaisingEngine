@@ -2,6 +2,7 @@
 #include "RmlUi_Platform_SDL.h"
 #include "RmlUi_Renderer_SDL.h"
 #include "density-font.hpp"
+#include "utf8-file-interface.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3_image/SDL_image.h>
@@ -10,7 +11,9 @@
 #include "screen.hpp"
 #include "audio.hpp"
 #include "bundle.hpp"
+#include "application-title.hpp"
 #include "preview.hpp"
+#include "layout-diagnostics.hpp"
 #include "scene-preview.hpp"
 #include "extension-element.hpp"
 #include <RmlUi/Core/Elements/ElementFormControlSelect.h>
@@ -22,10 +25,15 @@
 #include <ctime>
 #include <set>
 #include "save-slots.hpp"
+#include "portable-save-files.hpp"
+#include "portable-save-input.hpp"
 
 #include "route-recording.hpp"
 #include "recollection.hpp"
 #include "editor-preview.hpp"
+#ifdef SDL_PLATFORM_MACOS
+void configure_macos_player();
+#endif
 
 class PlayerApplication : public Rml::EventListener {
 public:
@@ -51,7 +59,7 @@ public:
     else if(type=="recollectionSkip"){r.autoplay=false;r.seek(r.record.at("replayFrames").size()-1);recollection_sound();}
     else if(type=="save"||type=="recollectionSave"){
       Json value={{"version",1},{"gameId",game.content.at("project").at("gameId")},{"kind",r.record.at("kind")},{"sourceId",r.record.at("sourceId")},{"unlockedAt",r.record.at("unlockedAt")},{"contentFingerprint",r.record.at("contentFingerprint")},{"frames",r.record.at("frames")},{"cursor",r.cursor},{"extensions",r.extensions.save(true)},{"playback",r.playback()},{"musicCursor",gallery_audio.cursor()}};
-      const auto file=recollection_file(),temp=fs::path(file.u8string()+".tmp"),backup=fs::path(file.u8string()+".bak");fs::create_directories(file.parent_path());
+      const auto file=recollection_file();auto temp=file;temp+=".tmp";auto backup=file;backup+=".bak";fs::create_directories(file.parent_path());
       {std::ofstream out(temp,std::ios::binary|std::ios::trunc);out<<value.dump(2);out.flush();if(!out)throw std::runtime_error("회상 저장에 실패했습니다.");}
       if(fs::exists(file)){std::error_code ec;fs::remove(backup,ec);fs::rename(file,backup);}try{fs::rename(temp,file);}catch(...){if(fs::exists(backup)&&!fs::exists(file))fs::rename(backup,file);throw;}
       r.notice="회상 저장 완료";
@@ -66,7 +74,7 @@ public:
   }
   void advance_recollection_clock(double delta){
     if(!std::isfinite(delta)||delta<0||delta>60000)throw std::runtime_error("Invalid recollection clock delta");
-    if(!recalling()||!recollection->autoplay)return;
+    if(portable_active()||!recalling()||!recollection->autoplay)return;
     auto& r=*recollection;double remaining=r.elapsed_ms+delta*r.speed;
     while(remaining>=GalleryRecollection::frame_ms&&recalling()){
       remaining-=GalleryRecollection::frame_ms;
@@ -82,19 +90,21 @@ public:
   fs::path save_file;
   RouteRecording recording;
   std::deque<Json> pending;
+  Json pending_planner_entry;
   std::map<std::string,float> collection_scroll;
   bool dirty=true, running=true, muted=false, backgrounded=false,timeline_manual_clock=false;
   bool editor_events=false,editor_live=false,editor_paused=false;
   double extension_dt=0;
   uint64_t document_generation=0;
-  bool syncing_user_inputs=false;
+  bool syncing_user_inputs=false,editor_input_dirty=false;
   std::string preview_element,preview_state="normal",preview_source="initial";
   bool preview() const {return !editor_live&&!markup.preview_screen.empty();}
   int auto_revision=-1,auto_attempted=-1;
   double auto_elapsed=0;
   #include "settings-app.inc"
+  #include "reading-history-app.inc"
   void advance_schedule_clock(double delta) {
-    if(preview()||backgrounded||game.gallery.active||!markup.ui_modal.empty()||game.state.is_null())return;
+    if(preview()||backgrounded||game.gallery.active||markup.reading_overlay()||!markup.ui_modal.empty()||game.state.is_null())return;
     const int revision=game.state.value("stateRevision",-1);
     if(auto_revision!=revision){auto_revision=revision;auto_elapsed=0;}
     const auto command=game.schedule_step();
@@ -104,7 +114,7 @@ public:
     auto_attempted=revision;execute({{"type","scheduleStep"}});
   }
   void advance_timeline_clock(double delta) {
-    if(game.gallery.active||!markup.ui_modal.empty())return;
+    if(game.gallery.active||markup.reading_overlay()||!markup.ui_modal.empty())return;
     if(!preview()&&!game.direction_cursor.is_null()){auto next=direction_advance(direction_config(game.content),game.direction_cursor,int(std::round(delta)));if(next!=game.direction_cursor){game.direction_cursor=next;dirty=true;}}
     if(preview()||!game.timeline_active())return;
     const auto before=game.timeline_cursor;game.tick_timeline(delta);
@@ -115,7 +125,7 @@ public:
     if(game.timeline_plan.contains("resultPlayback")){
       Rml::ElementList elements;document->GetElementsByTagName(elements,"div");
       for(auto* element:elements)if(element->GetAttribute<bool>("data-result-playback",false)){
-        const auto text=result_playback_text(game.timeline_plan,game.timeline_cursor,element->GetAttribute<bool>("data-result-changes",false));
+        const auto text=result_playback_text(plan_activity_timeline(markup.display_content,game.state,markup.locale),game.timeline_cursor,element->GetAttribute<bool>("data-result-changes",false),markup.locale);
         if(element->GetAttribute<std::string>("data-result-text","")!=text){element->SetInnerRML(markup.result_playback_markup(element->GetAttribute<bool>("data-result-changes",false),{{"fill",element->GetAttribute<std::string>("data-result-fill","#213c34e8")},{"color",element->GetAttribute<std::string>("data-result-color","#fff8e6")}}));element->SetAttribute("data-result-text",text);}
       }
       return;
@@ -143,7 +153,7 @@ public:
     const double dt=preview()?0:extension_dt*extension_playback_rate();extension_dt=0;
     extensions.update(dt);play_extension_sounds();extensions.frame();
   }
-  double extension_playback_rate() const {if(game.gallery.active||!markup.ui_modal.empty())return 0;return game.timeline_active()&&game.timeline_plan.contains("resultPlayback")?(game.timeline_cursor.value("paused",false)?0:game.timeline_cursor.value("speed",1)):1;}
+  double extension_playback_rate() const {if(portable_active()||markup.resume_context_open||game.gallery.active||!markup.ui_modal.empty())return 0;return game.timeline_active()&&game.timeline_plan.contains("resultPlayback")?(game.timeline_cursor.value("paused",false)?0:game.timeline_cursor.value("speed",1)):1;}
   void advance_extensions(double delta){if(recalling()){recollection->extensions.update(delta*recollection->speed);recollection->extensions.frame();return;}if(!extensions.active())return;extensions.update(delta*extension_playback_rate());play_extension_sounds();extensions.frame();}
   /** Event sounds of plugin notifications (presentation only): a missing file never stops the game. */
   uint64_t extension_sounds_played=0,extension_sound_errors=0,extension_sound_missing=0;
@@ -171,15 +181,26 @@ public:
   }
   Json editor_command=Json::object();
   std::optional<SDL_FingerID> active_finger;
+  Rml::Element* touch_scroll=nullptr;
+  float touch_start_x=0,touch_start_y=0,touch_scroll_start=0,touch_scroll_start_x=0;
+  bool touch_scroll_vertical=false,touch_scroll_horizontal=false;
+  bool touch_dragged=false;
+  Json test_safe_area;
+  #include "readable-app.inc"
+  #include "portable-save-app.inc"
+  #include "resume-context-app.inc"
   int lifecycle_saves=0;
   std::map<std::string,std::string> entrance_keys;
   std::map<SDL_JoystickID,SDL_Gamepad*> gamepads;
   PlayerApplication(Json bundle, fs::path root, SDL_Window* window, SDL_Renderer* renderer, fs::path save_file)
     :markup(game,bundle.at("assets"),std::move(root)),window(window),renderer(renderer),save_file(std::move(save_file)) {
+    portable_files=std::make_unique<raising_player::PortableSaveFiles>(window,portable_staging_root());
+    markup.portable_available=portable_files->available();
     gallery_bundle=bundle;game.gallery_manifest=bundle.value("extensions",Json());
     extensions.load(bundle,markup.bundle);
     extensions.asset_path=[this](const std::string& id){return markup.asset(Json(id));};
-    markup.extensions=&extensions;
+    markup.extensions=&extensions;markup.reading_history=&reading_history;
+    game.accepted_replacement=[this](const std::string& reason){++markup.reuse_generation;markup.close_activity_board();markup.plan_reuse_open=false;markup.phase_forecast_open=false;markup.phase_forecast_cache_key=nullptr;reset_reading_history(reason);reset_resume_context(reason);};
     game.observer=[this](const Json& before,const Json& after,const Json& command,const std::string& error){
       // Conditions/routing may reveal a plugin only as a result of this command.
       // Synchronize logical mounts before its single observation, without displaying a window.
@@ -190,16 +211,19 @@ public:
     game.extension_state=[this]{return extensions.save(true);};
     game.planner_state=[this]{return markup.plan_save();};
     game.planner_restore=[this](const Json& draft){markup.restore_plan(draft);markup.forecast_key.clear();};
-    game.content=bundle.at("content"); game.refresh();
+    game.content=bundle.at("content");
+    markup.presentation_visual=bundle.value("presentationRevision",Json::object()).value("visual",Json());
+    game.refresh();
     refresh_save_preview();
     game.gallery_content=[this]{return localized_content(game.content,markup.locale);};
     if(game.content.at("project").contains("gallery"))game.gallery.open(this->save_file.parent_path()/("collection-"+game.content.at("project").value("gameId","game")+".json"),game.content.at("project").value("gameId","game"));
-#ifdef SDL_PLATFORM_ANDROID
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
     SDL_AddEventWatch(watch_lifecycle,this);
 #endif
   }
   ~PlayerApplication(){
-#ifdef SDL_PLATFORM_ANDROID
+    if(portable_files)portable_files->shutdown();
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
     SDL_RemoveEventWatch(watch_lifecycle,this);
 #endif
     for(auto& [_,pad]:gamepads)SDL_CloseGamepad(pad);
@@ -212,29 +236,29 @@ public:
   }
   fs::path autosave_file() const {return save_file.parent_path()/"autosave.json";}
   void restore_autosave() {
-    if(preview())return;
+    if(preview()||portable_active())return;
     auto backup=autosave_file();backup+=".bak";
     if(!fs::exists(autosave_file())&&!fs::exists(backup))return;
     bool restored=false;std::string error;
     for(const auto& candidate:{autosave_file(),backup})if(fs::exists(candidate)) {
-      try {game.load(candidate);restored=true;break;}catch(const std::exception& failure){error=failure.what();}
+      try {game.load(candidate);game.message=markup.settings_words("자동 저장을 불러왔습니다.","Autosave restored.","自動保存を読み込みました。");restored=true;break;}catch(const std::exception& failure){error=failure.what();}
     }
     if(restored) {
       extensions.reset();extensions.pending_restore=game.loaded_extensions;
       markup.user_values_draft=Json::object();
       if(!game.state.at("schedule").is_null())for(const auto& id:game.state.at("schedule"))markup.plan.push_back(id.get<std::string>());
       try{audio.sync_music(markup.asset(game.state.at("presentation").value("musicAssetId",Json())),muted);}catch(const std::exception& failure){game.message=failure.what();}
-    } else game.message=std::string("자동 저장을 불러오지 못했습니다: ")+error;
+    } else game.message=markup.settings_words("자동 저장을 불러오지 못했습니다: ","Could not restore autosave: ","自動保存を読み込めませんでした: ")+error;
     dirty=true;
   }
   void drain_actions(){while(!pending.empty()){const auto action=pending.front();pending.pop_front();execute(action);}}
   void lifecycle(bool paused) {
     if(backgrounded==paused)return;
     if(paused) {
-      drain_actions();
+      if(portable_active())pending.clear();else drain_actions();
       if(context&&active_finger){context->ProcessMouseMove(-1,-1,0);context->ProcessMouseButtonUp(0,0);}
       active_finger.reset();pending.clear();
-      if(!preview()&&!game.state.is_null())try{game.save(autosave_file());lifecycle_saves++;}catch(const std::exception& error){game.message=error.what();}
+      if(!preview()&&!game.state.is_null())try{game.save(autosave_file());game.message=markup.settings_words("자동 저장했습니다.","Autosaved.","自動保存しました。");lifecycle_saves++;}catch(const std::exception& error){game.message=error.what();}
     }
     backgrounded=paused;audio.suspend(paused||game.gallery.active);gallery_audio.suspend(paused);dirty=true;
   }
@@ -252,9 +276,20 @@ public:
     auto& markup=active_markup();
     const auto eventType=event.GetType();
     // Plugin hit tests (CONTRACT.md §7): observed for the animation, never consumed; the click goes on below.
-    if(eventType=="click")ExtensionElement::observe_click(document,event);
+    if((portable_active()||markup.resume_context_open)&&eventType!="click")return;
+    if(eventType=="click"&&!portable_active()&&!markup.resume_context_open)ExtensionElement::observe_click(document,event);
     if((recalling()||game.gallery.active)&&eventType!="click")return;
     if(eventType=="keydown"&&event.GetParameter<int>("key_identifier",0)==Rml::Input::KI_ESCAPE&&(!markup.ui_modal.empty()||!markup.pending_purchase.is_null())){if(!markup.slot_confirmation.empty())markup.slot_confirmation.clear();else if(!markup.pending_purchase.is_null())markup.pending_purchase=nullptr;else markup.ui_modal.clear();dirty=true;return;}
+    if(eventType=="keydown"&&(event.GetTargetElement()->IsClassSet("activity-board-details")||event.GetTargetElement()->IsClassSet("activity-board-catalog")||event.GetTargetElement()->IsClassSet("activity-board")||event.GetTargetElement()->IsClassSet("activity-board-periods")||event.GetTargetElement()->IsClassSet("schedule-detail-pane")||event.GetTargetElement()->IsClassSet("scroll-group")||event.GetTargetElement()->GetId()=="reading-main")) {
+      auto* pane=event.GetTargetElement();const auto key=event.GetParameter<int>("key_identifier",0);
+      if(pane->IsClassSet("activity-board-details")&&markup.readable_active)for(auto* parent=pane->GetParentNode();parent;parent=parent->GetParentNode())if(parent->GetId()=="reading-main"||parent->IsClassSet("activity-board")){pane=parent;break;}
+      if(pane->IsClassSet("activity-board-periods")){float x=pane->GetScrollLeft();if(key==Rml::Input::KI_LEFT)x-=80;else if(key==Rml::Input::KI_RIGHT)x+=80;else if(key==Rml::Input::KI_HOME)x=0;else if(key==Rml::Input::KI_END)x=pane->GetScrollWidth();else return;pane->SetScrollLeft(x);event.StopPropagation();return;}
+      float y=pane->GetScrollTop();
+      if(key==Rml::Input::KI_DOWN)y+=48;else if(key==Rml::Input::KI_UP)y-=48;
+      else if(key==Rml::Input::KI_PRIOR)y-=pane->GetClientHeight()*.85f;else if(key==Rml::Input::KI_NEXT)y+=pane->GetClientHeight()*.85f;
+      else if(key==Rml::Input::KI_HOME)y=0;else if(key==Rml::Input::KI_END)y=pane->GetScrollHeight();else return;
+      pane->SetScrollTop(y);event.StopPropagation();return;
+    }
     if(eventType!="click"&&eventType!="change"&&eventType!="input")return;
     if(event.GetType()=="change"||event.GetType()=="input") {
       auto* element=event.GetTargetElement();const auto field=element->GetAttribute<Rml::String>("data-user-field","");
@@ -265,28 +300,44 @@ public:
           syncing_user_inputs=true;
           for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input"&&entry.value("userFieldId","")==field)if(auto* other=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))if(other!=input&&other->GetValue()!=input->GetValue())other->SetValue(input->GetValue());
           syncing_user_inputs=false;
+          editor_input_dirty=true;
           for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="text"&&entry.value("binding","")=="user-field")if(auto* text=document->GetElementById("node-"+entry.value("id","")))text->SetInnerRML(escape(markup.bind("user-field",entry)));
         }
         return;
       }
     }
     if(event.GetType()=="change") {
-      auto* element=event.GetTargetElement();std::string id=element->GetId();
+      auto* element=event.GetTargetElement();std::string id=markup.widget_local_control(element->GetId());
       if(id.rfind("roster-",0)==0)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(element)){markup.roster_draft[id.substr(7)]=select->GetValue();dirty=true;}
-      if(id.rfind("plan-",0)==0)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(element)) {
+      if(!syncing_user_inputs&&id.rfind("plan-",0)==0)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(element)) {
         const int index=std::stoi(id.substr(5));if(index>=0&&index<game.periods()&&markup.plan.size()==size_t(game.periods())){
           markup.plan[index]=select->GetValue();
-          if(auto* summary=document->GetElementById("plan-summary-"+std::to_string(index))) {
+          syncing_user_inputs=true;
+          for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule")if(auto* other=dynamic_cast<Rml::ElementFormControlSelect*>(document->GetElementById(widget_control_id(entry.value("id",""),"plan-"+std::to_string(index)))))if(other!=select&&other->GetValue()!=select->GetValue())other->SetValue(select->GetValue());
+          syncing_user_inputs=false;
+          // Preserve the live dropdown and keyboard focus while updating the
+          // shared detail pane; replacing the document would close the list.
+          for(const auto& entry:markup.render_elements)if(auto* detail=document->GetElementById("plan-details-"+entry.value("id",""))){
+            markup.plan_slot=index;detail->SetInnerRML(markup.schedule_detail(entry,index));detail->SetScrollTop(0);
+            for(int i=0;i<game.periods();++i)if(auto* review=document->GetElementById(widget_control_id(entry.value("id",""),"plan-review-"+std::to_string(i))))review->SetClass("selected",i==index);
+          }
+
+          if(!markup.progress_pending())for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="button"&&entry.value("action","")=="advance"&&entry.value("autoLabel",true)) {
+            const auto id=entry.value("id","");if(auto* control=document->GetElementById(id)){const auto label=markup.advance_label();control->SetInnerRML(escape(label));markup.labels[id]=label;}
+          }
+          for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule") {
+          if(auto* summary=document->GetElementById(widget_control_id(entry.value("id",""),"plan-summary-"+std::to_string(index)))) {
             std::string value;for(const auto& activity:markup.display_content.at("activities"))if(activity.at("id")==markup.plan[index])value=markup.activity_preview(activity);
             summary->SetInnerRML(escape(value));
           }
-          if(auto* description=document->GetElementById("plan-description-"+std::to_string(index))) {
+          if(auto* description=document->GetElementById(widget_control_id(entry.value("id",""),"plan-description-"+std::to_string(index)))) {
             std::string value;for(const auto& activity:markup.display_content.at("activities"))if(activity.at("id")==markup.plan[index])value=activity.value("description","");
             description->SetInnerRML(escape(value));
           }
-          if(auto* rules=document->GetElementById("plan-rules-"+std::to_string(index))) {
+          if(auto* rules=document->GetElementById(widget_control_id(entry.value("id",""),"plan-rules-"+std::to_string(index)))) {
             std::string value;for(const auto& activity:markup.display_content.at("activities"))if(activity.at("id")==markup.plan[index])value=markup.activity_rules(activity);
             rules->SetInnerRML(value);
+          }
           }
         }
       }
@@ -297,6 +348,7 @@ public:
       if(found!=markup.actions.end()) {if(!element->HasAttribute("disabled"))pending.push_back(found->second);return;}
     }
   }
+  #include "activity-board-app.inc"
   #include "save-slots-app.inc"
   void refresh_save_preview() {
     markup.saved_preview={{"status","empty"}};
@@ -310,17 +362,38 @@ public:
     } catch(...) {markup.saved_preview={{"status","invalid"}};}
   }
   void rebuild() {
+    finish_resume_context_restore();
+    EditorKeyboardRebuildGuard input_rebuild;
     auto& markup=active_markup();auto& game=recalling()?recollection->game:this->game;
     const std::string previous_screen=markup.screen_id;
     const std::string previous_focus=context&&context->GetFocusElement()?context->GetFocusElement()->GetId():"";
     ExtensionElement::host=recalling()?&recollection->extensions:&extensions;
+    this->markup.portable_available=portable_files&&portable_files->available()&&!preview()&&!editor_live&&!recalling()&&!this->game.gallery.active;
+    remember_reading_position();
+    touch_scroll=nullptr;
     ++document_generation;
     if(document)for(const auto& entry:markup.render_elements)if((entry.value("kind","")=="collection"||entry.value("overflow","")=="scroll"))
       if(auto* element=document->GetElementById("node-"+entry.value("id","")))collection_scroll[markup.screen_id+"/"+entry.value("id","")]=element->GetScrollTop();
     if(document)for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule")
       if(auto* element=document->GetElementById("roster-actors-"+entry.value("id","")))collection_scroll[markup.screen_id+"/roster-"+entry.value("id","")]=element->GetScrollTop();
+    if(document)for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule")
+      if(auto* strip=document->GetElementById("plan-periods-"+entry.value("id","")))collection_scroll[markup.screen_id+"/plan-periods-"+entry.value("id","")]=strip->GetScrollLeft();
+    if(document)for(const auto& entry:markup.render_elements)if(entry.value("scheduleLayout","")=="activity-board")for(const auto* part:{"periods","groups","catalog","viewport"})if(auto* e=document->GetElementById(markup.activity_board_id(entry,part)))collection_scroll[markup.screen_id+"/"+e->GetId()]=(std::string(part)=="periods"||std::string(part)=="groups")?e->GetScrollLeft():e->GetScrollTop();
     SDL_GetWindowSizeInPixels(window,&markup.viewport_width,&markup.viewport_height);
-    const auto source=recalling()?recollection->document():markup.document();
+    SDL_GetWindowSize(window,&markup.window_width,&markup.window_height);
+    SDL_Rect safe{};if(!SDL_GetWindowSafeArea(window,&safe))safe={0,0,markup.window_width,markup.window_height};
+    markup.safe_area=test_safe_area.is_object()?test_safe_area:Json{{"x",safe.x},{"y",safe.y},{"width",safe.w},{"height",safe.h}};
+    auto source=recalling()?recollection->document():markup.document();
+    if(!recalling()&&!pending_planner_entry.is_null()){
+      // First-use guidance may temporarily own the surface. Keep the destination
+      // until guidance closes, but never replay it after load or a game command.
+      if(markup.screen_id!=pending_planner_entry.value("screenId","")||game.state!=pending_planner_entry.value("_state",Json()))pending_planner_entry=nullptr;
+      else if(!markup.planning_guide){
+        const auto entry=pending_planner_entry;pending_planner_entry=nullptr;
+        if(open_activity_board_context(entry.value("plannerElementId",""),entry.value("plannerGroupId",""),entry.value("plannerActivityId","")))source=markup.document();
+        else {game.message="The requested planner is unavailable.";source=markup.document();}
+      }
+    }
     if(!context)context=Rml::CreateContext("game",{markup.width,markup.height});
     if(!context)throw std::runtime_error("렌더링 컨텍스트를 만들지 못했습니다.");
     context->SetDimensions({markup.width,markup.height});
@@ -332,7 +405,7 @@ public:
     if(document)document->Close();
     document=replacement;
     document->AddEventListener("mouseover",this);document->AddEventListener("mouseout",this);document->AddEventListener("focus",this,true);document->AddEventListener("blur",this,true);document->AddEventListener("keydown",this);document->AddEventListener("click",this);document->AddEventListener("change",this);document->AddEventListener("input",this);document->Show();
-    for(int i=0;i<game.periods();i++)if(auto* select=document->GetElementById("plan-"+std::to_string(i))) {
+    for(const auto& owner:markup.render_elements)if(owner.value("kind","")=="schedule")for(int i=0;i<game.periods();i++)if(auto* select=document->GetElementById(widget_control_id(owner.value("id",""),"plan-"+std::to_string(i)))) {
       if(auto* box=select->QuerySelector("selectbox"))box->SetProperty("width",number(std::max(60.f,select->GetProperty<float>("width")))+"px");
       if(auto* arrow=select->QuerySelector("selectarrow"))arrow->SetInnerRML("▾");
     }
@@ -340,13 +413,20 @@ public:
     if(!active_modal.empty()){Rml::ElementList all;document->QuerySelectorAll(all,"button,select,input");for(auto* e:all){bool inside=false;for(auto* p=e;p;p=p->GetParentNode())if(p->GetId()==active_modal)inside=true;if(!inside)e->SetAttribute("disabled","disabled");}}
     if(recalling()){Rml::ElementList controls;document->QuerySelectorAll(controls,"button,select,input");for(auto* control:controls)if(!markup.actions.count(control->GetId()))control->SetAttribute("disabled","disabled");}
     apply_preview();context->Update();
+    const bool explicit_return_focus=!reading_focus.empty()||!portable_focus_pending.empty();
+    Rml::Element* save_focus=nullptr;
     if(!active_modal.empty())if(auto* modal=document->GetElementById(active_modal)){
       Rml::Element* focus=nullptr;
       if(!markup.slot_confirmation.empty())for(const auto& [id,action]:markup.actions)if(action.value("type","")=="cancelSlot")focus=document->GetElementById(id);
       if(!focus&&(previous_focus.size()>8&&(previous_focus.substr(previous_focus.size()-8)=="-confirm"||previous_focus.substr(previous_focus.size()-7)=="-cancel")))for(const auto& [id,action]:markup.actions)
         if(action.value("type","")=="selectSaveSlot"&&action.value("index",-1)==markup.slot_selected&&action.value("automatic",false)==markup.slot_auto)focus=document->GetElementById(id);
       if(!focus&&!previous_focus.empty())if(auto* prior=document->GetElementById(previous_focus);prior&&!prior->HasAttribute("disabled"))for(auto* parent=prior;parent;parent=parent->GetParentNode())if(parent==modal)focus=prior;
-      if(!focus)focus=modal->QuerySelector("button:not([disabled])");if(focus)focus->Focus();
+      if(!focus)focus=modal->QuerySelector("button:not([disabled])");
+      if(focus){
+        focus->Focus();
+        const auto action=markup.actions.find(focus->GetId());
+        if(!markup.slot_confirmation.empty()||(action!=markup.actions.end()&&action->second.value("type","")=="selectSaveSlot"))save_focus=focus;
+      }
     }
     for(const auto& entry:markup.render_elements)if((entry.value("kind","")=="collection"||entry.value("overflow","")=="scroll")) {
       const auto found=collection_scroll.find(markup.screen_id+"/"+entry.value("id",""));
@@ -356,6 +436,11 @@ public:
       const auto found=collection_scroll.find(markup.screen_id+"/roster-"+entry.value("id",""));
       if(found!=collection_scroll.end())if(auto* element=document->GetElementById("roster-actors-"+entry.value("id","")))element->SetScrollTop(found->second);
     }
+    for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule") {
+      const auto found=collection_scroll.find(markup.screen_id+"/plan-periods-"+entry.value("id",""));
+      if(found!=collection_scroll.end())if(auto* strip=document->GetElementById("plan-periods-"+entry.value("id","")))strip->SetScrollLeft(found->second);
+    }
+    for(const auto& entry:markup.render_elements)if(entry.value("scheduleLayout","")=="activity-board")for(const auto* part:{"periods","groups","catalog","viewport"})if(auto* e=document->GetElementById(markup.activity_board_id(entry,part))){const auto found=collection_scroll.find(markup.screen_id+"/"+e->GetId());if(found!=collection_scroll.end()){if(std::string(part)=="periods"||std::string(part)=="groups")e->SetScrollLeft(found->second);else e->SetScrollTop(found->second);}}
     std::map<std::string,std::string> next_entrance_keys;
     if(!preview())for(const auto& entry:markup.render_elements) {
       const auto motion=entry.value("motion","none");if(motion=="none")continue;
@@ -378,8 +463,15 @@ public:
     }
     if(previous_screen==markup.screen_id&&!previous_focus.empty()&&active_modal.empty())
       if(auto* focus=document->GetElementById(previous_focus);focus&&!focus->HasAttribute("disabled"))focus->Focus();
+    restore_reading_position();
+    // A generated save action takes focus after the old list's reading anchor
+    // is restored. Reveal its real target without changing other reading views.
+    if(save_focus&&!explicit_return_focus){save_focus->Focus();context->Update();save_focus->ScrollIntoView(true);context->Update();}
+    if(!markup.activity_board_focus.empty()){if(auto* target=document->GetElementById(markup.activity_board_focus);target&&!target->HasAttribute("disabled")){target->Focus();context->Update();target->ScrollIntoView(true);context->Update();}markup.activity_board_focus.clear();}
+    restore_portable_focus();
     entrance_keys=std::move(next_entrance_keys);dirty=false;
     try{if(!recalling())recording.publish(game);}catch(const std::exception& e){game.message=e.what();std::cerr<<"Route recording: "<<e.what()<<std::endl;}
+    input_rebuild.finish();
     if(editor_events){std::cout<<Json({{"event","editor-view"},{"command",editor_command},{"view",ui_state()}}).dump()<<std::endl;editor_command=Json::object();}
   }
   void execute(const Json& incoming) {
@@ -387,8 +479,20 @@ public:
     if(editor_live)markup.preview_screen.clear();
     editor_command=incoming;
     try {
+      if(portable_action(incoming))return;
+      if(resume_context_action(incoming))return;
+      if(activity_board_action(incoming))return;
+      if(markup.activity_board_open&&incoming.value("type","").rfind("activityBoard",0)!=0)markup.close_activity_board();
+      if(readable_action(incoming))return;
+      if(incoming.value("type","")=="readingRosterActivity"){
+        const auto actor=incoming.value("actorId","");if(!markup.roster_draft.contains(actor))throw std::runtime_error("Unknown roster actor");
+        bool found=false;for(const auto& a:game.content.at("activities"))if(a.at("id")==incoming.at("activityId")&&!a.contains("expeditionId"))found=true;
+        if(!found)throw std::runtime_error("Unknown roster activity");markup.roster_draft[actor]=incoming.at("activityId");dirty=true;return;
+      }
+      if(markup.reading_history_open)return;
       if(setting_action(incoming))return;
       if(recalling()){recollection_action(incoming.value("type",""));return;}
+      markup.reading_menu=false;
       const auto action=markup.selection_action(incoming);
       game.message.clear();const std::string type=action.value("type","");
       if(reveal_before_advance(type))return;
@@ -461,6 +565,10 @@ public:
         }dirty=true;return;
       }
       if(game.timeline_active()&&type!="save"&&type!="load"&&type!="sound"&&type!="nextLocale"&&!(type=="advance"&&game.timeline_cursor.value("completed",false)))throw std::runtime_error("활동 연출을 마치거나 건너뛴 뒤 계속해 주세요.");
+      if(type=="openPlanner"){
+        const auto error=markup.planner_destination_error(action);if(!error.empty())throw std::runtime_error(error);
+        game.send({{"type","navigate"},{"screenId",action.at("screenId")}});pending_planner_entry=action;pending_planner_entry["_state"]=game.state;dirty=true;return;
+      }
       if(type=="nextLocale"){markup.nextLocale();dirty=true;return;}
       if(type=="chooseTacticsSkill"){markup.tactics_skill=action.value("skillId","");dirty=true;return;}
       if(!markup.pending_purchase.is_null()&&type!="confirmPurchase"&&type!="cancelPurchase"&&type!="uiBack")return;
@@ -469,7 +577,7 @@ public:
         std::string reason;if(!game.available(action,&reason))throw std::runtime_error(reason);
         markup.pending_purchase=action;markup.pending_confirmation=transaction.value("confirmation",Json::object());markup.pending_revision=game.state.value("stateRevision",0);dirty=true;return;
       }
-      if(type=="start") {slot_auto_revision=-1;recording.reset();game.direction_cursor=nullptr;markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.start(markup.user_values_draft);game.settle();markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();markup.quantities.clear();markup.plan.clear();markup.plan_slot=0;markup.plan_group.clear();markup.plan_month=-1;markup.plan_selected=0;}
+      if(type=="start") {reading_positions.clear();reading_position_key.clear();markup.compact_picker=false;markup.close_activity_board();slot_auto_revision=-1;recording.reset();game.direction_cursor=nullptr;markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.start(markup.user_values_draft);game.settle();markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();markup.quantities.clear();markup.plan.clear();markup.plan_slot=0;markup.plan_group.clear();markup.plan_month=-1;markup.plan_selected=0;}
       else if(type=="quantity"){auto& value=markup.quantities[action.value("key","")];value=std::clamp(value+action.value("delta",0),1,std::max(1,action.value("maximum",1)));}
       else if(type=="confirmPurchase"){auto purchase=markup.pending_purchase;markup.pending_purchase=nullptr;if(!purchase.is_null()){
         if(game.state.value("stateRevision",-1)!=markup.pending_revision)throw std::runtime_error("상태가 변경되었습니다. 내용을 다시 확인해 주세요.");
@@ -488,6 +596,7 @@ public:
           markup.plan[markup.plan_slot]=id;markup.plan_selected|=1<<markup.plan_slot;
         }
       }
+      else if(type=="planInspect") {markup.plan_slot=std::clamp(action.value("slot",0),0,game.periods()-1);}
       else if(type=="planSlot") {markup.plan_slot=std::clamp(action.value("slot",0),0,game.periods()-1);markup.plan_selected&=~(1<<markup.plan_slot);markup.plan_group.clear();}
       else if(type=="planGroup") {markup.plan_group=action.value("group","");}
       else if(type=="planActivity") {
@@ -508,9 +617,9 @@ public:
           if(target){const auto found=markup.actions.find(target->value("id",""));if(found!=markup.actions.end())game.send(found->second);}
         }
       }
-      else if(type=="save"){game.save(save_file);refresh_save_preview();markup.saved_preview["justSaved"]=true;recording.checkpoint(game);}
-      else if(type=="load") {markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.load(save_file);dialogue_key.clear();markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();extensions.pending_restore=game.loaded_extensions;markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan_group.clear();markup.pending_purchase=nullptr;}
-      else if(type=="sound") {muted=!muted;game.message=muted?"소리를 껐습니다.":"소리를 켰습니다.";}
+      else if(type=="save"){game.save(save_file);game.message=markup.settings_words("게임을 저장했습니다.","Game saved.","ゲームを保存しました。");refresh_save_preview();markup.saved_preview["justSaved"]=true;recording.checkpoint(game);}
+      else if(type=="load") {markup.roster_revision=-1;auto_attempted=-1;auto_revision=-1;game.load(save_file);game.message=markup.settings_words("저장한 지점에서 이어갑니다.","Continued from your saved game.","保存したところから再開します。");dialogue_key.clear();markup.tactics_skill.clear();markup.tactics_actor.clear();markup.ui_selections.clear();markup.ui_modal.clear();collection_scroll.clear();extensions.reset();extensions.pending_restore=game.loaded_extensions;markup.user_values_draft=Json::object();markup.quantities.clear();markup.plan_group.clear();markup.pending_purchase=nullptr;}
+      else if(type=="sound") {muted=!muted;game.message=muted?markup.settings_words("소리를 껐습니다.","Sound muted.","音を消しました。"):markup.settings_words("소리를 켰습니다.","Sound on.","音を有効にしました。");}
       else if(type=="selectBattleAction"||type=="selectBattleTarget"||type=="confirmBattleAction"||type=="cancelBattleAction") {
         const auto command=game.battle_ui(action);if(!command.is_null()){game.send(command);game.settle();}
       }
@@ -533,7 +642,10 @@ public:
         else game.send({{"type","advanceNarrative"}});
         game.settle();
       } else {
-        const auto before=game.state;game.send(action);game.settle();
+        const auto before=game.state;const auto receipt=type=="choose"?choice_reading_receipt(action):Json();
+        game.send(action);
+        if(!receipt.is_null()&&game.state.value("stateRevision",0)>before.value("stateRevision",0))reading_history.record(receipt);
+        game.settle();
         if(type=="buy"){
           std::string name=action.value("itemId","");for(const auto& item:game.content.at("project").value("gameplay",Json::object()).value("items",Json::array()))if(item.at("id")==name){name=item.value("name",name);break;}
           game.message=name+" "+std::to_string(action.value("quantity",1))+"개를 받았습니다.";
@@ -555,12 +667,16 @@ public:
   void event(SDL_Event& event) {
     if(event.type==SDL_EVENT_QUIT)running=false;
     if(event.type==SDL_EVENT_WILL_ENTER_BACKGROUND||event.type==SDL_EVENT_DID_ENTER_BACKGROUND||event.type==SDL_EVENT_DID_ENTER_FOREGROUND||event.type==SDL_EVENT_TERMINATING) {
-#ifndef SDL_PLATFORM_ANDROID
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
       watch_lifecycle(this,&event);
 #endif
       return;
     }
     if(backgrounded)return;
+    // UIKit already owns character edits and selection while its field is active.
+    // Do not apply a second copy of hardware key or SDL text events to RmlUi.
+    if(static_cast<EditorClockSystem*>(Rml::GetSystemInterface())->OwnsKeyboard()&&
+       (event.type==SDL_EVENT_KEY_DOWN||event.type==SDL_EVENT_KEY_UP||event.type==SDL_EVENT_TEXT_INPUT||event.type==SDL_EVENT_TEXT_EDITING))return;
     if(editor_paused&&((event.type>=SDL_EVENT_KEY_DOWN&&event.type<=SDL_EVENT_KEYMAP_CHANGED)||(event.type>=SDL_EVENT_MOUSE_MOTION&&event.type<=SDL_EVENT_MOUSE_WHEEL)||(event.type>=SDL_EVENT_GAMEPAD_AXIS_MOTION&&event.type<=SDL_EVENT_GAMEPAD_TOUCHPAD_UP)))return;
     if(event.type==SDL_EVENT_FINGER_DOWN||event.type==SDL_EVENT_FINGER_MOTION||event.type==SDL_EVENT_FINGER_UP||event.type==SDL_EVENT_FINGER_CANCELED) {
       if(!context)return;
@@ -569,18 +685,30 @@ public:
       if(!SDL_RenderCoordinatesFromWindow(renderer,finger.x*width,finger.y*height,&x,&y))return;
       if(event.type==SDL_EVENT_FINGER_DOWN) {
         if(active_finger||x<0||y<0||x>=markup.width||y>=markup.height)return;
-        active_finger=finger.fingerID;context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);context->ProcessMouseButtonDown(0,0);
+        active_finger=finger.fingerID;touch_start_x=x;touch_start_y=y;touch_dragged=false;touch_scroll=nullptr;
+        for(auto* e=context->GetElementAtPoint({x,y});e;e=e->GetParentNode()){
+          const auto sy=e->GetProperty("overflow-y")->ToString(),sx=e->GetProperty("overflow-x")->ToString();
+          const bool vertical=(sy=="auto"||sy=="scroll")&&e->GetScrollHeight()>e->GetClientHeight()+1;
+          const bool horizontal=(sx=="auto"||sx=="scroll")&&e->GetScrollWidth()>e->GetClientWidth()+1;
+          if(vertical||horizontal){touch_scroll=e;touch_scroll_vertical=vertical;touch_scroll_horizontal=horizontal;touch_scroll_start=e->GetScrollTop();touch_scroll_start_x=e->GetScrollLeft();break;}
+        }
+        context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);context->ProcessMouseButtonDown(0,0);
       } else if(active_finger&&*active_finger==finger.fingerID) {
-        if(event.type==SDL_EVENT_FINGER_CANCELED)context->ProcessMouseMove(-1,-1,0);
-        else context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);
-        if(event.type!=SDL_EVENT_FINGER_MOTION){context->ProcessMouseButtonUp(0,0);active_finger.reset();}
+        if((active_markup().readable_active||touch_scroll)&&!touch_dragged&&std::hypot(x-touch_start_x,y-touch_start_y)>active_markup().minimum_control_extent(8)){touch_dragged=true;context->ProcessMouseMove(-1,-1,0);context->ProcessMouseButtonUp(0,0);}
+        if(touch_dragged&&touch_scroll){if(touch_scroll_vertical)touch_scroll->SetScrollTop(touch_scroll_start+touch_start_y-y);if(touch_scroll_horizontal)touch_scroll->SetScrollLeft(touch_scroll_start_x+touch_start_x-x);}
+        else {
+          if(event.type==SDL_EVENT_FINGER_CANCELED)context->ProcessMouseMove(-1,-1,0);
+          else context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);
+          if(event.type!=SDL_EVENT_FINGER_MOTION)context->ProcessMouseButtonUp(0,0);
+        }
+        if(event.type!=SDL_EVENT_FINGER_MOTION){active_finger.reset();touch_scroll=nullptr;}
       }
       return;
     }
     // Keep physical dimensions out of the simulation. Responsive layouts rebuild
     // the logical canvas; legacy fit layouts retain their authored dimensions.
-    if(event.type==SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED||event.type==SDL_EVENT_WINDOW_RESIZED||event.type==SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) {
-      if(game.content.at("project").at("visual").value("viewportMode","fit")=="responsive")dirty=true;
+    if(event.type==SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED||event.type==SDL_EVENT_WINDOW_RESIZED||event.type==SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED||event.type==SDL_EVENT_WINDOW_SAFE_AREA_CHANGED) {
+      dirty=true; // Fit canvases also recompute generated control minima in window points.
       if(context){context->SetDimensions({markup.width,markup.height});context->SetDensityIndependentPixelRatio(1.f);}return;
     }
     if(event.type==SDL_EVENT_GAMEPAD_ADDED){auto* pad=SDL_OpenGamepad(event.gdevice.which);if(pad)gamepads[event.gdevice.which]=pad;return;}
@@ -594,8 +722,14 @@ public:
       return;
     }
     if(event.type==SDL_EVENT_KEY_DOWN) {
+      if(portable_active()&&(event.key.key==SDLK_ESCAPE||event.key.key==SDLK_AC_BACK)){portable_action({{"type","portableCancel"}});return;}
+      if(portable_active()&&(event.key.key==SDLK_F2||event.key.key==SDLK_F5||event.key.key==SDLK_F9))return;
+      if(event.key.key==SDLK_ESCAPE&&markup.resume_context_open){resume_context_action({{"type","uiBack"}});return;}
+      if(event.key.key==SDLK_ESCAPE&&markup.activity_board_open){activity_board_action({{"type","uiBack"}});return;}
+      if(event.key.key==SDLK_ESCAPE&&markup.reading_overlay()){readable_action({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_ESCAPE){pending.push_back({{"type","uiBack"}});return;}
       if(event.key.key==SDLK_AC_BACK&&context){context->ProcessKeyDown(Rml::Input::KI_ESCAPE,0);context->ProcessKeyUp(Rml::Input::KI_ESCAPE,0);return;}
+      if((markup.phase_forecast_open||markup.resume_context_open||markup.planning_guide||markup.reading_history_open||markup.plan_reuse_open)&&(event.key.key==SDLK_F5||event.key.key==SDLK_F9))return;
       if(event.key.key==SDLK_F5){pending.push_back({{"type","save"}});return;}
       if(event.key.key==SDLK_F2){pending.push_back({{"type","nextLocale"}});return;}
       if(event.key.key==SDLK_F9){pending.push_back({{"type","load"}});return;}
@@ -623,7 +757,7 @@ public:
         {"fontSize",element->GetProperty("font-size")->ToString()},
         {"color",element->GetProperty("color")->ToString()}});
     }
-    Json controls=Json::array(),options=Json::array();for(int i=0;i<game.periods();i++)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(document->GetElementById("plan-"+std::to_string(i)))){
+    Json controls=Json::array(),options=Json::array();for(const auto& owner:markup.render_elements)if(owner.value("kind","")=="schedule")for(int i=0;i<game.periods();i++)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(document->GetElementById(widget_control_id(owner.value("id",""),"plan-"+std::to_string(i))))){
       auto offset=select->GetAbsoluteOffset();auto size=select->GetBox().GetSize();controls.push_back({{"id",select->GetId()},{"value",select->GetValue()},{"x",offset.x},{"y",offset.y},{"width",size.x},{"height",size.y}});
       for(int j=0;j<select->GetNumOptions();j++)if(auto* option=select->GetOption(j)) {
         auto point=option->GetAbsoluteOffset();auto extent=option->GetBox().GetSize();auto* box=option->GetParentNode();auto clip=box->GetAbsoluteOffset();auto bounds=box->GetBox().GetSize();
@@ -631,9 +765,14 @@ public:
         options.push_back({{"id",option->GetId()},{"visible",visible},{"x",point.x},{"y",point.y},{"width",extent.x},{"height",extent.y},{"clipY",clip.y},{"clipHeight",bounds.y}});
       }
     }
-    Json texts=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule"||entry.value("kind","")=="text"||entry.value("kind","")=="dialogue"||entry.value("kind","")=="equipment"||entry.value("kind","")=="quests"||entry.value("kind","")=="expedition"||entry.value("kind","")=="battle"||entry.value("kind","")=="relationship-stages"||entry.value("kind","")=="plugin") {
+    Json texts=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="stats"||entry.value("kind","")=="result"||entry.value("kind","")=="schedule"||entry.value("kind","")=="text"||entry.value("kind","")=="dialogue"||entry.value("kind","")=="equipment"||entry.value("kind","")=="quests"||entry.value("kind","")=="expedition"||entry.value("kind","")=="battle"||entry.value("kind","")=="relationship-stages"||entry.value("kind","")=="plugin") {
       const auto id=entry.value("id","");if(auto* element=document->GetElementById("node-"+id))texts[id]=element->GetInnerRML();
     }
+    if(auto* history=document->GetElementById("engine-reading-history-panel"))texts["engine-reading-history-panel"]=history->GetInnerRML();
+    if(auto* forecast=document->GetElementById("engine-phase-forecast-panel"))texts["engine-phase-forecast-panel"]=forecast->GetInnerRML();
+    if(auto* reminders=document->GetElementById("engine-resume-context-panel"))texts["engine-resume-context-panel"]=reminders->GetInnerRML();
+    if(auto* guide=document->GetElementById("engine-planning-guide"))texts["engine-planning-guide"]=guide->GetInnerRML();
+    for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="saveSlots"||entry.value("kind","")=="loadSlots")if(auto* e=document->GetElementById("node-"+entry.value("id","")))texts[entry.value("id","")]=e->GetInnerRML();
     if(auto* fallback=document->GetElementById("node-system-widget"))texts["system-widget"]=fallback->GetInnerRML();
     Json result_layout=Json::array();
     for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="result")if(auto* element=document->GetElementById("node-"+entry.value("id",""))){
@@ -652,12 +791,35 @@ public:
         nodes.push_back(rendered_node_report({{"id",actors->GetId()},{"kind","roster-actors"}},actors,markup.width,markup.height,context));
         nodes.back()["scrollTop"]=actors->GetScrollTop();
       }
+      if(entry.value("kind","")=="schedule")if(auto* strip=document->GetElementById("plan-periods-"+entry.value("id",""))) {
+        nodes.push_back(rendered_node_report({{"id",strip->GetId()},{"kind","schedule-periods"}},strip,markup.width,markup.height,context));
+        nodes.back()["scrollLeft"]=strip->GetScrollLeft();
+      }
+      if(entry.value("kind","")=="schedule")if(auto* detail=document->GetElementById("plan-details-"+entry.value("id",""))) {
+        nodes.push_back(rendered_node_report({{"id",detail->GetId()},{"kind","schedule-details"}},detail,markup.width,markup.height,context));
+        nodes.back()["scrollTop"]=detail->GetScrollTop();nodes.back()["scrollHeight"]=detail->GetScrollHeight();nodes.back()["clientHeight"]=detail->GetClientHeight();nodes.back()["scrollWidth"]=detail->GetScrollWidth();nodes.back()["clientWidth"]=detail->GetClientWidth();
+      }
+      if(entry.value("scheduleLayout","")=="activity-board")for(const auto* part:{"viewport","periods","groups","catalog","cards","details"})if(auto* node=document->GetElementById(markup.activity_board_id(entry,part))){nodes.push_back(rendered_node_report({{"id",node->GetId()},{"kind",std::string("activity-board-")+part},{"ownerId",entry.value("id","")}},node,markup.width,markup.height,context));nodes.back()["scrollTop"]=node->GetScrollTop();nodes.back()["scrollLeft"]=node->GetScrollLeft();nodes.back()["scrollHeight"]=node->GetScrollHeight();nodes.back()["clientHeight"]=node->GetClientHeight();nodes.back()["scrollWidth"]=node->GetScrollWidth();nodes.back()["clientWidth"]=node->GetClientWidth();}
+      if(entry.value("scheduleLayout","")=="activity-board"&&markup.activity_board_reading)if(auto* footer=document->GetElementById(entry.value("id","")+"__board-footer")){Rml::ElementList controls;footer->QuerySelectorAll(controls,"button");for(auto* control:controls)nodes.push_back(rendered_node_report({{"id",control->GetId()},{"kind","runtime-button"},{"ownerId",entry.value("id","")},{"label",markup.labels[control->GetId()]}},control,markup.width,markup.height,context));}
       if(element&&entry.value("kind","")!="button"){
         Rml::ElementList buttons;element->QuerySelectorAll(buttons,"button");
         for(auto* button:buttons){if(runtime_button_count++>=1024){runtime_buttons_truncated=true;break;}
           const auto id=button->GetId();const auto label=markup.labels.find(id);
           nodes.push_back(rendered_node_report({{"id",id},{"kind","runtime-button"},{"ownerId",entry.value("id","")},{"label",label==markup.labels.end()?id:label->second}},button,markup.width,markup.height,context));
         }
+      }
+    }
+    Json point_controls=Json::array();Rml::ElementList all_controls;document->QuerySelectorAll(all_controls,"button,input,select");
+    for(auto* e:all_controls){const auto at=e->GetAbsoluteOffset(Rml::BoxArea::Border),size=e->GetBox().GetSize(Rml::BoxArea::Border);float x1,y1,x2,y2;SDL_RenderCoordinatesToWindow(renderer,at.x,at.y,&x1,&y1);SDL_RenderCoordinatesToWindow(renderer,at.x+size.x,at.y+size.y,&x2,&y2);point_controls.push_back({{"id",e->GetId()},{"x",x1},{"y",y1},{"width",x2-x1},{"height",y2-y1},{"fontSize",e->GetProperty("font-size")->ToString()},{"enabled",!e->HasAttribute("disabled")}});}
+    Json reading={{"view",markup.readable_view},{"guidanceOpen",markup.planning_guide},{"guidanceStep",markup.planning_guide_step},{"guidanceAcknowledged",markup.player_preferences.value("guidance",Json::object()).value("compact-planning-v1",false)},{"menuOpen",markup.reading_menu},{"pickerOpen",markup.compact_picker},{"planReuse",{{"open",markup.plan_reuse_open},{"source",markup.reuse_projection},{"candidate",markup.plan_reuse_open?markup.reuse_candidate:Json()}}},{"pendingActivity",markup.compact_activity},{"pendingSlot",markup.compact_slot},{"active",markup.readable_active},{"screenId",markup.readable_screen_id},{"windowWidth",markup.window_width},{"windowHeight",markup.window_height},{"safeArea",markup.safe_area},{"pixelDensity",SDL_GetWindowPixelDensity(window)},{"displayScale",SDL_GetWindowDisplayScale(window)},{"textScale",markup.player_preferences.value("textScale",1.0)},{"minTargetSize",markup.readable_target},{"controls",point_controls}};
+    for(const auto* id:{"reading-main","reading-actions"})if(auto* e=document->GetElementById(id)){const auto at=e->GetAbsoluteOffset(),size=e->GetBox().GetSize();reading[id]={{"x",at.x},{"y",at.y},{"width",size.x},{"height",size.y},{"scrollTop",e->GetScrollTop()},{"scrollHeight",e->GetScrollHeight()},{"scrollWidth",e->GetScrollWidth()},{"clientWidth",e->GetClientWidth()},{"clientHeight",e->GetClientHeight()},{"overflowY",e->GetProperty("overflow-y")->ToString()}};}
+    if(markup.readable_active){const auto at=current_reading_position();reading["position"]={{"anchor",at.anchor},{"text",at.text},{"fraction",at.fraction},{"focus",at.focus}};}
+    Json timelinePresentation=nullptr;
+    if(document->GetElementById("timeline-text")){
+      timelinePresentation={{"reading",markup.readable_active}};
+      for(const auto* id:{"timeline-status","timeline-text","timeline-visual"})if(auto* e=document->GetElementById(id)){
+        auto report=rendered_node_report({{"id",id},{"kind","timeline-presentation"}},e,markup.width,markup.height,context);
+        report["rml"]=e->GetInnerRML();report["opacity"]=e->GetProperty("opacity")->ToString();timelinePresentation[id]=report;
       }
     }
     Json timelineStage=nullptr;
@@ -673,17 +835,20 @@ public:
         {"overflow",stage->GetProperty("overflow-x")->ToString()},{"layers",layers}};
     }
     Json input_values=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="input")if(auto* input=dynamic_cast<Rml::ElementFormControlInput*>(document->GetElementById("user-input-"+entry.value("id",""))))input_values[entry.value("id","")]={{"value",input->GetValue()},{"disabled",input->HasAttribute("disabled")}};
-    return {{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
+    float origin_x=0,origin_y=0,unit_x=0,unit_y=0;SDL_RenderCoordinatesToWindow(renderer,0,0,&origin_x,&origin_y);SDL_RenderCoordinatesToWindow(renderer,1,1,&unit_x,&unit_y);
+    const auto layout_diagnostics=LayoutDiagnostics::report(document,nodes,float(markup.width),float(markup.height),unit_x-origin_x,unit_y-origin_y,
+      {{"screenId",markup.screen_id},{"locale",markup.locale},{"windowWidth",markup.window_width},{"windowHeight",markup.window_height},{"viewportWidth",markup.width},{"viewportHeight",markup.height},{"textScale",markup.player_preferences.value("textScale",1.0)},{"readableActive",markup.readable_active},{"stateSource",preview()?preview_source:"live-game"}});
+    return {{"windowTitle",SDL_GetWindowTitle(window)},{"layoutDiagnostics",layout_diagnostics},{"nativeTextInput",static_cast<EditorClockSystem*>(Rml::GetSystemInterface())->KeyboardReport()},{"resumeContext",{{"enabled",markup.resume_context_enabled()},{"open",markup.resume_context_open},{"projection",markup.resume_context_open?markup.resume_context_projection():Json()}}},{"portableSave",portable_report()},{"readingHistory",{{"enabled",history_enabled()},{"open",markup.reading_history_open},{"snapshot",reading_history.snapshot()}}},{"readingLayout",reading},{"settings",{{"enabled",preferences_enabled},{"values",preferences},{"notice",markup.settings_notice},{"fullscreen",bool(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)}}},{"dialogueReading",{{"active",dialogue_active()},{"complete",dialogue_complete()},{"visibleBytes",dialogue_prefix_bytes(dialogue_text,size_t(dialogue_characters))},{"totalBytes",dialogue_text.size()},{"waitMs",dialogue_wait}}},{"recollection",recalling()?Json{{"active",true},{"cursor",recollection->cursor},{"playback",recollection->playback()},{"state",recollection->game.state},{"extensions",recollection->extensions.report()},{"notice",recollection->notice}}:Json{{"active",false}}},{"commands",game.commands},{"galleryAudio",{{"playing",markup.gallery_music_playing},{"loaded",gallery_audio.loaded_count()},{"cursor",gallery_audio.cursor()}}},{"gallery",{{"active",game.gallery.active},{"entryId",this->markup.gallery_entry},{"frameIndex",this->markup.gallery_frame},{"recordIndex",this->markup.gallery_record},{"data",game.gallery.data},{"error",game.gallery.error}}},{"direction",game.direction_cursor},{"directionFrame",game.direction_cursor.is_null()?Json():direction_frame(direction_config(game.content),game.direction_cursor)},{"tooltipVisible",document->GetElementById("ui-tooltip")&&document->GetElementById("ui-tooltip")->IsVisible(true)},{"focusId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},{"uiModal",markup.ui_modal},{"uiSelections",markup.ui_selections},{"screenId",markup.screen_id},{"state",game.state},{"message",game.message},{"elements",elements},{"texts",texts},{"controls",controls},{"options",options},{"nodes",nodes},{"timelineStage",timelineStage},{"timelinePresentation",timelinePresentation},{"userInputs",input_values},{"userDrafts",markup.user_values_draft},{"documentGeneration",document_generation},{"viewport",{{"width",markup.width},{"height",markup.height}}},{"focusedId",context->GetFocusElement()?context->GetFocusElement()->GetId():""},
       {"preview",{{"active",preview()},{"isolated",preview()},{"screenId",markup.preview_screen},{"elementId",preview_element},{"state",preview_state},{"stateSource",preview_source},{"sceneOverride",!markup.preview_scene.is_null()},{"displayScene",markup.display_scene()},{"measurement","rmlui-layout-boxes"}}},
       {"presentation",{{"x",presentation.x},{"y",presentation.y},{"width",presentation.w},{"height",presentation.h},{"pixelWidth",pixel_width},{"pixelHeight",pixel_height},{"fontRasterDensity",static_cast<DensityFontEngine*>(Rml::GetFontEngineInterface())->raster_density()}}},
-      {"scheduleDraft",markup.plan_save()},{"uiModal",markup.ui_modal},
+      {"phaseForecast",{{"enabled",markup.phase_forecast_enabled()},{"open",markup.phase_forecast_open},{"elementId",markup.phase_forecast_element},{"requests",markup.phase_forecast_requests},{"result",markup.phase_forecast_open?markup.phase_forecast_reply:Json()}}},{"activityBoard",{{"open",markup.activity_board_open},{"reading",markup.activity_board_reading},{"elementId",markup.activity_board_element},{"slot",markup.activity_board_slot},{"activityId",markup.activity_board_activity},{"group",markup.activity_board_group},{"valid",markup.activity_board_valid()}}},{"scheduleDraft",markup.plan_save()},{"uiModal",markup.ui_modal},
       {"runtimeButtonsTruncated",runtime_buttons_truncated},{"timeline",game.timeline_active()?Json{{"plan",game.timeline_plan},{"cursor",game.timeline_cursor}}:Json()},{"battleSelection",game.battle_selection},
       {"locale",markup.locale},{"resultLayout",result_layout},{"audio",{{"initialized",audio.ready()},{"musicGain",audio.music_gain()},{"effectsGain",audio.effects_gain()},{"musicPlaying",audio.playing()},{"musicCursor",audio.cursor()},{"loadedSounds",audio.loaded_count()},{"muted",muted},{"extensionSounds",extension_sounds_played},{"extensionSoundErrors",extension_sound_errors},{"extensionSoundMissing",extension_sound_missing}}},{"systems",game.projection.value("systems",Json())},{"backgrounded",backgrounded},{"lifecycleSaves",lifecycle_saves},{"extensions",extensions.report()},{"runtime","cpp-sdl3-rmlui"}};
   }
   Rml::Element* find_element(const std::string& id) {
     if(auto* element=document->GetElementById(id))return element;
     // RmlUi keeps dropdown options under non-DOM widget children.
-    for(int i=0;i<game.periods();i++)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(document->GetElementById("plan-"+std::to_string(i))))for(int j=0;j<select->GetNumOptions();j++)if(auto* option=select->GetOption(j);option&&option->GetId()==id)return option;
+    for(const auto& owner:markup.render_elements)if(owner.value("kind","")=="schedule")for(int i=0;i<game.periods();i++)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(document->GetElementById(widget_control_id(owner.value("id",""),"plan-"+std::to_string(i)))))for(int j=0;j<select->GetNumOptions();j++)if(auto* option=select->GetOption(j);option&&option->GetId()==id)return option;
     return nullptr;
   }
   void click(const std::string& id) {
@@ -726,13 +891,20 @@ public:
 };
 
 int main(int argc,char** argv) {
+#ifdef SDL_PLATFORM_MACOS
+  configure_macos_player();
+#endif
 #ifdef SDL_PLATFORM_ANDROID
   const auto* internal=SDL_GetAndroidInternalStoragePath();
   fs::path bundle_root=internal?fs::u8path(internal)/"game":fs::path("game"),save_file,automation_file,report_file;
 #else
   fs::path bundle_root=fs::u8path(SDL_GetBasePath()),save_file,automation_file,report_file;
+#ifdef SDL_PLATFORM_IOS
+  bundle_root/="game";
 #endif
-  int max_frames=0;bool hidden=false,editor_events=false;uint32_t requested_seed=42;
+#endif
+  std::string reading_override;double text_override=0;
+  int max_frames=0;bool hidden=false,editor_events=false,report_checkpoints_only=false;uint32_t requested_seed=42;
   std::string requested_locale,preview_screen,preview_element,preview_state="normal";
   fs::path preview_scene_file,preview_inspection_file,recording_file,editor_directory;Json preview_scene=nullptr;
   try {
@@ -753,14 +925,18 @@ int main(int argc,char** argv) {
     else if(arg=="--seed"&&i+1<argc){const std::string value=argv[++i];size_t used=0;const auto parsed=std::stoull(value,&used);if(used!=value.size()||parsed>UINT32_MAX)throw std::runtime_error("Seed must be an unsigned 32-bit integer");requested_seed=static_cast<uint32_t>(parsed);}
     else if(arg=="--frames"&&i+1<argc)max_frames=std::stoi(argv[++i]);
     else if(arg=="--hidden")hidden=true;
+    else if(arg=="--preview-reading-layout"||arg=="--reading-layout"){if(i+1>=argc){std::cerr<<"Missing reading layout override\n";return 2;}reading_override=argv[++i];if(reading_override!="auto"&&reading_override!="on"){std::cerr<<"Invalid reading layout override\n";return 2;}}
+    else if(arg=="--preview-text-scale"||arg=="--text-scale"){if(i+1>=argc){std::cerr<<"Missing text scale override\n";return 2;}const std::string scale=argv[++i];if(scale!="1"&&scale!="1.25"&&scale!="1.5"&&scale!="2"){std::cerr<<"Invalid text scale override\n";return 2;}text_override=std::stod(scale);}
+    else if(arg=="--report-checkpoints-only")report_checkpoints_only=true;
     else if(arg=="--editor-events")editor_events=true;
-    else if(arg=="--help"){std::cout<<"Raising Player --bundle FOLDER [--save FILE] [--seed UINT32] [--automation FILE --report FILE] [--frames N] [--hidden] [--preview-screen ID --preview-element ID --preview-state normal|hover|pressed|focus|disabled]\n";return 0;}
+    else if(arg=="--help"){std::cout<<"Raising Player --bundle FOLDER [--save FILE] [--seed UINT32] [--automation FILE --report FILE [--report-checkpoints-only]] [--frames N] [--hidden] [--reading-layout auto|on --text-scale 1|1.25|1.5|2] [--preview-screen ID --preview-element ID --preview-state normal|hover|pressed|focus|disabled]\n";return 0;}
   }
     const auto bundle=read_json(bundle_root/"game.json");
     validate_bundle(bundle,bundle_root);
+    const auto host_title=application_title(bundle);
     if(!editor_directory.empty()){
-#ifndef _WIN32
-      throw std::runtime_error("Embedded editor preview currently requires Windows");
+#if !defined(_WIN32) && !defined(SDL_PLATFORM_MACOS)
+      throw std::runtime_error("Live editor preview currently requires Windows or macOS");
 #endif
       if(preview_inspection_file.empty()||preview_screen.empty()||!automation_file.empty())throw std::runtime_error("Live editor preview requires an inspection snapshot and no automation file");
       fs::create_directories(editor_directory);save_file=editor_directory/"save.json";recording_file.clear();editor_events=false;
@@ -776,35 +952,44 @@ int main(int argc,char** argv) {
     if(!preview_screen.empty()){bool found=false;for(const auto& screen:bundle.at("content").at("project").at("visual").at("screens"))if(screen.at("id")==preview_screen)found=true;if(!found)throw std::runtime_error("Unknown preview screen: "+preview_screen);}
     SDL_SetMainReady();
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");
-#ifdef SDL_PLATFORM_ANDROID
-    const auto& visual=bundle.at("content").at("project").at("visual");
-    SDL_SetHint(SDL_HINT_ORIENTATIONS,visual.at("width").get<int>()>=visual.at("height").get<int>()?"LandscapeLeft LandscapeRight":"Portrait PortraitUpsideDown");
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+    const auto& visual=bundle.contains("presentationRevision")&&bundle.at("presentationRevision").contains("visual")?bundle.at("presentationRevision").at("visual"):bundle.at("content").at("project").at("visual");
+    SDL_SetHint(SDL_HINT_ORIENTATIONS,visual.contains("readableLayout")?"Portrait LandscapeLeft LandscapeRight":visual.at("width").get<int>()>=visual.at("height").get<int>()?"LandscapeLeft LandscapeRight":"Portrait PortraitUpsideDown");
 #endif
     if(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_GAMEPAD))throw std::runtime_error(SDL_GetError());
     if(save_file.empty()) {auto* pref=SDL_GetPrefPath("RaisingEngine",bundle.at("content").at("project").value("gameId","game").c_str());if(!pref)throw std::runtime_error(SDL_GetError());save_file=fs::u8path(pref)/"slot-1.json";SDL_free(pref);}
     auto flags=SDL_WINDOW_RESIZABLE|SDL_WINDOW_HIGH_PIXEL_DENSITY|(hidden?SDL_WINDOW_HIDDEN:0);
-    auto* window=SDL_CreateWindow(bundle.at("content").at("project").value("title","Raising Player").c_str(),1280,720,flags);
+    auto* window=SDL_CreateWindow(host_title.c_str(),1280,720,flags);
     if(!window)throw std::runtime_error(SDL_GetError());
     auto* renderer=SDL_CreateRenderer(window,nullptr);if(!renderer)throw std::runtime_error(SDL_GetError());
     SDL_SetRenderVSync(renderer,1);
     {
-      EditorClockSystem system;system.SetWindow(window);RenderInterface_SDL render(renderer);DensityFontEngine fonts;
-      Rml::SetSystemInterface(&system);Rml::SetRenderInterface(&render);Rml::SetFontEngineInterface(&fonts);if(!Rml::Initialise())throw std::runtime_error("RmlUi initialization failed");
+      Json last_keyboard_report;EditorClockSystem system;system.SetWindow(window);system.SetRenderer(renderer);RenderInterface_SDL render(renderer);DensityFontEngine fonts;Utf8FileInterface files;
+      Rml::SetSystemInterface(&system);Rml::SetFileInterface(&files);Rml::SetRenderInterface(&render);Rml::SetFontEngineInterface(&fonts);if(!Rml::Initialise())throw std::runtime_error("RmlUi initialization failed");
       static Rml::ElementInstancerGeneric<ExtensionElement> extension_instancer;Rml::Factory::RegisterElementInstancer("raising-extension",&extension_instancer);
-#ifdef SDL_PLATFORM_ANDROID
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
       const auto font=bundle_root/"fonts/NotoSansKR.ttf";
 #else
       const auto font=fs::u8path(SDL_GetBasePath())/"fonts/NotoSansKR.ttf";
 #endif
       if(!Rml::LoadFontFace(font.generic_u8string(),true))throw std::runtime_error("Cannot load bundled Korean font");
+      // The Korean family omits common Japanese variants (for example 説/込/戻).
+      // RmlUi tries fallback faces in registration order, not weight order. Register
+      // regular explicitly so a variable font does not fall back to its 100 weight.
+      const auto japanese_font=font.parent_path()/"NotoSansJP.ttf";
+      if(!Rml::LoadFontFace(japanese_font.generic_u8string(),true,Rml::Style::FontWeight::Normal))throw std::runtime_error("Cannot load bundled Japanese fallback font");
       std::map<std::string,std::vector<Rml::byte>> font_buffers;
       for(const auto& asset:bundle.at("content").at("assets"))if(asset.value("kind","")=="font") {
         const auto id=asset.at("id").get<std::string>();const auto file=bundle_root/fs::u8path(bundle.at("assets").at(id).get<std::string>());
         std::ifstream input(file,std::ios::binary);auto& bytes=font_buffers[id];bytes.assign(std::istreambuf_iterator<char>(input),{});
         if(bytes.empty()||!Rml::LoadFontFace(Rml::Span<const Rml::byte>(bytes.data(),bytes.size()),"engine-"+id,Rml::Style::FontStyle::Normal))throw std::runtime_error("Cannot load project font: "+id);
+        system.RegisterKeyboardFont("engine-"+id,file.generic_u8string());
       }
       PlayerApplication app(bundle,bundle_root,window,renderer,save_file);
       EditorPreviewControl editor;editor.directory=editor_directory;app.editor_live=!editor_directory.empty();app.editor_paused=app.editor_live;
+      // Live preview clears its screen override once play starts. Keep onboarding
+      // suppression independent of that mutable routing state.
+      app.markup.planning_guide_suppressed=app.editor_live||!preview_screen.empty();
       ExtensionElement::host=&app.extensions;
       app.game.seed=requested_seed;app.recording.file=recording_file;
       if(!preview_screen.empty()){app.markup.preview_screen=preview_screen;app.markup.preview_scene=preview_scene;app.preview_element=preview_element;app.preview_state=preview_state;if(preview_screen!="title"||!preview_scene.is_null())app.game.start();}
@@ -818,17 +1003,21 @@ int main(int argc,char** argv) {
       if(!requested_locale.empty()){app.markup.locale=requested_locale;app.dirty=true;}
       app.editor_events=editor_events;
       if(!app.preview())app.initialize_player_preferences();
+    if(!reading_override.empty())app.markup.player_preferences["readingLayout"]=reading_override;
+    if(text_override>0)app.markup.player_preferences["textScale"]=text_override;
       if(app.editor_live){
         system.pause(true);app.audio.suspend(true);app.gallery_audio.suspend(true);
 #ifdef _WIN32
         const auto handle=reinterpret_cast<uintptr_t>(SDL_GetPointerProperty(SDL_GetWindowProperties(window),SDL_PROP_WINDOW_WIN32_HWND_POINTER,nullptr));
         std::cout<<Json({{"editorPreview",{{"ready",true},{"windowHandle",std::to_string(handle)}}}}).dump()<<std::endl;
+#else
+        std::cout<<Json({{"editorPreview",{{"ready",true},{"embedded",false}}}}).dump()<<std::endl;
 #endif
       }
-#ifdef SDL_PLATFORM_ANDROID
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
       app.restore_autosave();
 #endif
-      auto automation=automation_file.empty()?Json::array():read_json(automation_file);size_t step=0;int frames=0,wait_frames=0;Json report={{"steps",Json::array()}};uint64_t timeline_clock=SDL_GetTicks();
+      auto automation=automation_file.empty()?Json::array():read_json(automation_file);size_t step=0;int frames=0,wait_frames=0;uint64_t wait_until=0;const uint64_t automation_started=SDL_GetTicks();Json report={{"steps",Json::array()}};uint64_t timeline_clock=SDL_GetTicks();
       app.timeline_manual_clock=!automation.empty();
       while(app.running) {
         const auto timeline_now=SDL_GetTicks();const double timeline_delta=double(timeline_now-timeline_clock);timeline_clock=timeline_now;
@@ -844,14 +1033,17 @@ int main(int argc,char** argv) {
         }
         SDL_Event event;while(SDL_PollEvent(&event))app.event(event);
         if(app.backgrounded){SDL_Delay(50);continue;}
+        app.poll_portable();
         app.drain_actions();
         if(!app.timeline_manual_clock&&!app.editor_paused){app.advance_recollection_clock(std::min(250.0,timeline_delta));app.advance_timeline_clock(timeline_delta);app.advance_schedule_clock(timeline_delta);app.advance_dialogue_clock(std::min(250.0,timeline_delta));app.extension_dt+=timeline_delta;if(app.editor_live)editor.elapsed+=timeline_delta;}
         if(app.dirty)app.rebuild();
         SDL_FRect display_rect{};SDL_GetRenderLogicalPresentationRect(renderer,&display_rect);
         fonts.set_output_scale(display_rect.h/std::max(1,app.active_markup().height));
-        app.apply_preview();app.update_timeline_visual();app.update_extensions();app.update_dialogue_visual();app.context->Update();app.update_tooltip();app.context->Update();SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();app.after_slot_frame();
+        app.apply_preview();app.update_timeline_visual();app.update_extensions();app.update_dialogue_visual();app.context->Update();app.update_tooltip();app.context->Update();system.UpdateKeyboard();
+        if(app.editor_events){const auto keyboard_report=system.KeyboardReport();if(app.editor_input_dirty||keyboard_report!=last_keyboard_report){app.editor_input_dirty=false;last_keyboard_report=keyboard_report;std::cout<<Json({{"event","editor-view"},{"command",Json::object()},{"view",app.ui_state()}}).dump()<<std::endl;}}
+        SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();app.after_slot_frame();app.capture_reading_frame();
         if(wait_frames>0)--wait_frames;
-        else if(!automation.empty()&&frames%3==2&&step<automation.size()) {
+        else if(SDL_GetTicks()>=wait_until&&!automation.empty()&&frames%3==2&&step<automation.size()) {
           const auto command=automation[step++];
           if(command.contains("click"))app.click(command.at("click"));
           if(command.contains("hover")){auto* e=app.document->GetElementById(command.at("hover").get<std::string>());if(!e)throw std::runtime_error("Hover target missing");const auto p=e->GetAbsoluteOffset(),size=e->GetBox().GetSize();app.context->ProcessMouseMove(int(p.x+size.x/2),int(p.y+size.y/2),0);}
@@ -862,6 +1054,9 @@ int main(int argc,char** argv) {
             const auto wheel=command.at("wheelWindow");SDL_Event input{};input.type=SDL_EVENT_MOUSE_MOTION;input.motion.windowID=SDL_GetWindowID(window);input.motion.x=wheel.at("x");input.motion.y=wheel.at("y");app.event(input);
             input={};input.type=SDL_EVENT_MOUSE_WHEEL;input.wheel.windowID=SDL_GetWindowID(window);input.wheel.y=wheel.at("deltaY");input.wheel.mouse_x=wheel.at("x");input.wheel.mouse_y=wheel.at("y");input.wheel.direction=SDL_MOUSEWHEEL_NORMAL;app.event(input);
           }
+          if(command.contains("safeArea")){app.test_safe_area=command.at("safeArea");app.dirty=true;}
+          if(command.contains("scrollIntoView")){auto* element=app.find_element(command.at("scrollIntoView").get<std::string>());if(!element)throw std::runtime_error("Scroll target missing");element->ScrollIntoView(true);app.context->Update();}
+          if(command.contains("touchDrag")){const auto drag=command.at("touchDrag");int ww,wh;SDL_GetWindowSize(window,&ww,&wh);const int count=8;for(int i=0;i<=count+1;i++){const float t=std::min(1.f,float(i)/count);SDL_Event input{};input.type=i==0?SDL_EVENT_FINGER_DOWN:i==count+1?SDL_EVENT_FINGER_UP:SDL_EVENT_FINGER_MOTION;input.tfinger.windowID=SDL_GetWindowID(window);input.tfinger.touchID=1;input.tfinger.fingerID=1;input.tfinger.x=(drag.at("fromX").get<float>()+(drag.at("toX").get<float>()-drag.at("fromX").get<float>())*t)/ww;input.tfinger.y=(drag.at("fromY").get<float>()+(drag.at("toY").get<float>()-drag.at("fromY").get<float>())*t)/wh;app.event(input);}}
           if(command.contains("touchWindow"))app.window_click(command.at("touchWindow"),true,command.value("cancelTouch",false));
           if(command.contains("lifecycle"))for(const auto& transition:command.at("lifecycle")) {
             SDL_Event lifecycle{};const auto phase=transition.get<std::string>();
@@ -871,13 +1066,20 @@ int main(int argc,char** argv) {
           }
           if(command.value("restoreAutosave",false))app.restore_autosave();
           if(command.contains("key")) {
-            const auto key=command.at("key").get<std::string>();const auto code=key=="Tab"||key=="ShiftTab"?SDLK_TAB:key=="Enter"?SDLK_RETURN:key=="Escape"?SDLK_ESCAPE:key=="F2"?SDLK_F2:key=="F5"?SDLK_F5:key=="F9"?SDLK_F9:key=="ArrowDown"?SDLK_DOWN:key=="ArrowUp"?SDLK_UP:key=="Space"?SDLK_SPACE:key=="Backspace"?SDLK_BACKSPACE:key=="CtrlA"?SDLK_A:SDLK_UNKNOWN;
+            const auto key=command.at("key").get<std::string>();const auto code=key=="Tab"||key=="ShiftTab"?SDLK_TAB:key=="Enter"?SDLK_RETURN:key=="Escape"?SDLK_ESCAPE:key=="F2"?SDLK_F2:key=="F5"?SDLK_F5:key=="F9"?SDLK_F9:key=="ArrowDown"?SDLK_DOWN:key=="ArrowUp"?SDLK_UP:key=="Home"?SDLK_HOME:key=="End"?SDLK_END:key=="PageUp"?SDLK_PAGEUP:key=="PageDown"?SDLK_PAGEDOWN:key=="Space"?SDLK_SPACE:key=="Backspace"?SDLK_BACKSPACE:key=="CtrlA"?SDLK_A:SDLK_UNKNOWN;
             if(code==SDLK_UNKNOWN)throw std::runtime_error("Unknown automation key: "+key);
             const auto previous_modifiers=SDL_GetModState();const auto modifiers=key=="ShiftTab"?SDL_KMOD_SHIFT:key=="CtrlA"?SDL_KMOD_CTRL:SDL_KMOD_NONE;SDL_SetModState(modifiers);
             SDL_Event input{};input.type=SDL_EVENT_KEY_DOWN;input.key.key=code;input.key.mod=modifiers;app.event(input);input.type=SDL_EVENT_KEY_UP;app.event(input);SDL_SetModState(previous_modifiers);
             app.drain_actions(); // Report this key's effects, not the previous frame.
           }
           if(command.contains("waitFrames"))wait_frames=command.at("waitFrames").get<int>();
+          // Wall-clock holds keep endurance duration independent of rendering cost.
+          // The event/render loop remains active throughout the hold.
+          if(command.contains("waitMs")){
+            const double delay=command.at("waitMs").get<double>();
+            if(!std::isfinite(delay)||delay<0||delay>3600000)throw std::runtime_error("Automation waitMs must be between 0 and 3600000");
+            wait_until=SDL_GetTicks()+static_cast<uint64_t>(std::ceil(delay));
+          }
           if(command.contains("recollectionAdvanceMs"))app.advance_recollection_clock(command.at("recollectionAdvanceMs").get<double>());
           if(command.contains("timelineRealtime")){app.timeline_manual_clock=!command.at("timelineRealtime").get<bool>();app.extension_dt=0;}
           if(command.contains("timelineAdvanceMs")){app.advance_timeline_clock(command.at("timelineAdvanceMs").get<double>());app.advance_extensions(command.at("timelineAdvanceMs").get<double>());}
@@ -892,17 +1094,18 @@ int main(int argc,char** argv) {
           }
           if(command.contains("screenshot"))app.screenshot(fs::u8path(command.at("screenshot").get<std::string>()));
           if(command.contains("expectScreen")&&app.markup.screen_id!=command.at("expectScreen"))throw std::runtime_error("Unexpected screen: "+app.markup.screen_id);
-          report["steps"].push_back({{"command",command},{"ui",app.ui_state()}});
+          // Long routes can retain exact checkpoints without duplicating full history every frame.
+          if(!report_checkpoints_only||command.contains("checkpoint"))report["steps"].push_back({{"command",command},{"elapsedMs",SDL_GetTicks()-automation_started},{"ui",app.ui_state()}});
         }
         SDL_RenderPresent(renderer);
         if(!control.is_null())std::cout<<Json({{"editorPreview",{{"serial",editor.serial},{"paused",editor.paused},{"elapsedMs",editor.elapsed},{"ui",app.ui_state()}}}}).dump()<<std::endl;
         frames++;SDL_Delay(8);
         if(max_frames&&frames>=max_frames)break;
-        if(!automation.empty()&&step==automation.size()&&frames%3==0&&app.pending.empty()&&wait_frames==0)break;
+        if(!automation.empty()&&step==automation.size()&&frames%3==0&&app.pending.empty()&&wait_frames==0&&SDL_GetTicks()>=wait_until)break;
       }
-      report["final"]=app.ui_state();report["ok"]=true;
+      report["final"]=app.ui_state();report["elapsedMs"]=SDL_GetTicks()-automation_started;report["ok"]=true;
       if(!report_file.empty()){fs::create_directories(report_file.parent_path());std::ofstream out(report_file);out<<report.dump(2);}
-      if(app.document)app.document->Close();Rml::Shutdown();
+      system.CloseKeyboard();if(app.document)app.document->Close();Rml::Shutdown();
     }
     SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();return 0;
   } catch(const std::exception& error) {

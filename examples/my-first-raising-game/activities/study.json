@@ -1,0 +1,43 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "study",
+  "label": "Train",
+  "description": "Spend 5 money and 10 energy to gain 10 skill and 5 stress.",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [
+    {
+      "attributeId": "money",
+      "amount": 5
+    },
+    {
+      "attributeId": "stamina",
+      "amount": 10
+    }
+  ],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "skill"
+      },
+      "value": {
+        "op": "literal",
+        "value": 10
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": 5
+      }
+    }
+  ]
+}

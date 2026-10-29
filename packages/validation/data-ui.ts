@@ -26,6 +26,7 @@ export function checkDataUi(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
     const component=objectItems(visual.components).find(x=>x.id===element.componentId);
     if(!component){ctx.report(doc,p+'/componentId','UI_COMPONENT_REFERENCE','연결된 재사용 UI가 없습니다.');continue;}
     const children=componentLeaves(visual,String(component.id)),bindings=objectItems(element.bindings),fields:Record<string,string>={...(sourceFields[kind]??{})};
+    if(children.some(child=>['schedule','stats','result'].includes(String(child.kind))))ctx.report(doc,p+'/componentId','UI_COLLECTION_SHARED_WIDGET','Schedules, stats and activity results describe the whole game; place this component on a screen instead of repeating it as data rows.');
     let table:JsonObject|undefined;
     if(kind==='table'){
       table=ctx.resolve(tables,String(source.tableId),doc,p+'/source/tableId','데이터 표')?.data;

@@ -1,3 +1,7 @@
+import {requestPhaseForecast,type PhaseForecastReply} from '../player-service/phase-forecast.js';
+import {deriveLastCommittedPlan,hasPlanReuse,type LastCommittedPlan} from '../player-service/plan-reuse.js';
+import type {SaveSlotsView,SaveSlotAction} from './save-slots.js';
+import type { CalendarProject } from '../core/calendar.js';
 import { scheduleStep } from '../player-service/schedule.js';
 import {battleUiTypes,selectBattle,type BattleSelection,type BattleUiAction} from '../player-service/battle.js';
 import { loadProject } from '../project-service/loader.js';
@@ -15,6 +19,11 @@ import {projectDataUi,type DataUiProjection} from '../visual/data-ui-projection.
 import {PlayerPresentation,type TimelineView,type TimelineAction} from './presentation.js';
 
 export interface PlayerView {
+  scheduleDraft?:import('./save-metadata.js').ScheduleDraft;
+  lastCommittedPlan?:LastCommittedPlan;
+  /** Stable identity for game-local presentation preferences; omitted in detached previews. */
+  gameId?: string;
+  saveSlots?:SaveSlotsView;
   rosterCharacterIds?: readonly string[];
   choiceFeedback?:string;
   choiceHints?:Readonly<Record<string,string>>;
@@ -30,6 +39,7 @@ export interface PlayerView {
   generation: number;
   title: string;
   description: string;
+  calendarProject?: CalendarProject;
   durationMonths: number;
   periodsPerMonth?: number;
   schedulePlayback?: 'manual' | 'continuous';
@@ -61,6 +71,10 @@ export type PlayerAction = GameplayCommand | SystemsCommand | TimelineAction | B
   | { type: 'commitPlan'; activityIds: string[] }
   | { type: 'scheduleStep' } | { type: 'execute' } | { type: 'continue' } | { type: 'choose'; choiceId: string };
 export interface PlayerBridge {
+  setScheduleDraft?(draft:import('./save-metadata.js').ScheduleDraft,owner:import('./activity-board.js').ScheduleDraftOwner,version:Version,expected:import('./save-metadata.js').ScheduleDraft):Promise<PlayerReply>;
+  forecastPhase?(activityIds:string[],version:Version):Promise<PhaseForecastReply|null>;
+  slots?(action:SaveSlotAction,version:Version|null):Promise<PlayerReply>;
+  checkpoint?(version:Version):Promise<PlayerReply>;
   setLocale?(locale:string):Promise<PlayerReply>;
   view(): Promise<PlayerReply>;
   newRun(version: Version | null, userValues?: Record<string, string>): Promise<PlayerReply>;
@@ -88,12 +102,15 @@ export class PlayerController {
     return {
       ...(c.project.localization?{localization:c.project.localization,locale:localeId(c.project.localization)}:{}),
       ...(c.project.userFields?.length ? { userFields: c.project.userFields, userValues: state?.userValues ?? Object.fromEntries(c.project.userFields.map(f => [f.id, f.initial])) } : {}),
+      ...(hasPlanReuse(c)?{lastCommittedPlan:deriveLastCommittedPlan(this.session?.commands??[],c.project.periodsPerMonth,c.activities.map(a=>a.id))}:{}),
+      gameId: c.project.gameId,
       generation: this.generation, title: c.project.title, description: c.project.description ?? '', initialState: c.project.initialState,
       rosterCharacterIds: c.project.roster?.members.map(member=>member.characterId)??[],
+      ...(c.project.calendar?{calendarProject:{startYear:c.project.startYear,startMonth:c.project.startMonth,periodsPerMonth:c.project.periodsPerMonth,calendar:c.project.calendar}}:{}),
       durationMonths: c.project.durationMonths, periodsPerMonth: c.project.periodsPerMonth, schedulePlayback: c.project.schedulePlayback ?? 'manual', attributes: c.attributes, characters: c.characters,
       activities: c.activities, assets: c.assets, state, relationshipChanges:this.session?.relationshipChanges,
       visual: c.project.visual ?? null,
-      timeline: this.presentation.view(c,state),
+      timeline: this.presentation.view(c,state,localeId(c.project.localization)),
       battleSelection:this.presentation.selectedBattle(c,state),
       dataUi: projectDataUi(c,state,projection.gameplay,nativeRequest, {systems:projection.systems,battleSelection:this.presentation.selectedBattle(c,state)}),
       gameplayDefinition: c.project.gameplay ?? null, gameplay: projection.gameplay,
@@ -117,6 +134,10 @@ export class PlayerController {
     return v.generation === this.generation && v.revision === this.session.state.stateRevision;
   }
 
+  forecastPhase(activityIds:unknown,version:unknown):PhaseForecastReply|null {
+    if(!this.content||!this.session||!this.isCurrent(version)||!Array.isArray(activityIds)||activityIds.some(id=>typeof id!=='string'))return null;
+    return requestPhaseForecast(this.content,this.session.state,activityIds,nativeRequest);
+  }
   async openProject(root: string): Promise<PlayerReply> {
     const loaded = await loadProject(root);
     const built = await buildSnapshot(loaded);
@@ -146,7 +167,7 @@ export class PlayerController {
     if (!this.content || !this.session) return this.reply('새 게임을 시작해 주세요.');
     if (!action || typeof action !== 'object') return this.reply('알 수 없는 동작입니다.');
     let a = action as Partial<PlayerAction>;
-    if(a.type==='scheduleStep'){const next=scheduleStep(this.session.state,this.content.project.schedulePlayback,this.presentation.view(this.content,this.session.state));if(!next)return this.reply();a={type:next};}
+    if(a.type==='scheduleStep'){const next=scheduleStep(this.session.state,this.content.project.schedulePlayback,this.presentation.view(this.content,this.session.state),this.content.project.visual?.activityTimelineCompletion);if(!next)return this.reply();a={type:next};}
     if(['timelineTick','timelinePause','timelineSpeed','timelineSkip'].includes(a.type??''))return this.reply(this.presentation.act(this.content,this.session.state,a as TimelineAction));
     const timeline=this.presentation.view(this.content,this.session.state);
     if(timeline&&(a.type!=='continue'||!timeline.cursor.completed))return this.reply('활동 연출을 마치거나 건너뛴 뒤 다음으로 진행해 주세요.');

@@ -52,7 +52,7 @@ export interface GoalRouteReport {
 }
 /** Replay original commands on the CURRENT snapshot, never inject old recorded states. */
 export async function runGoalRoute(content: ContentSnapshot, input: unknown,
-  options: { timeoutMs?: number; cancelled?: () => boolean } = {}): Promise<GoalRouteReport> {
+  options: { timeoutMs?: number; cancelled?: () => boolean; progress?: (value: { executed:number; commands:number; saves:number }) => void } = {}): Promise<GoalRouteReport> {
   const route = validateGoalRoute(input), target = routeTarget(route), started = Date.now();
   const report: GoalRouteReport = { id: route.id, name: route.name, ok: false, status: 'running',
     contentFingerprint: content.contentFingerprint, recordedFingerprint: route.recordedFingerprint,
@@ -70,7 +70,7 @@ export async function runGoalRoute(content: ContentSnapshot, input: unknown,
   const checkpoints = new Set([0, ...route.checkpoints, route.commands.length]);
   for (let n = route.checkpointEvery; n < route.commands.length; n += route.checkpointEvery) checkpoints.add(n);
   for (let index = 0; index <= route.commands.length; ++index) {
-    if (index % 16 === 0) await new Promise<void>(resolve => setImmediate(resolve));
+    if (index % 16 === 0) { options.progress?.({executed:report.executed,commands:report.commands,saves:report.saves}); await new Promise<void>(resolve => setImmediate(resolve)); }
     if (options.cancelled?.()) return reject(index, route.commands[index] ?? null, 'CANCELLED', '검증을 취소했습니다.');
     if (Date.now() - started > (options.timeoutMs ?? 60000)) return reject(index, route.commands[index] ?? null, 'TIMEOUT', '시간 제한으로 검사를 끝내지 못했습니다.');
     if (checkpoints.has(index)) {

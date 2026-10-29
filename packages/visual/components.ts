@@ -38,7 +38,7 @@ export function intersectClip(a:ClipRect|undefined,b:ClipRect):ClipRect {
   return {x,y,width:Math.max(0,Math.min(a.x+a.width,b.x+b.width)-x),height:Math.max(0,Math.min(a.y+a.height,b.y+b.height)-y)};
 }
 /** Flatten local group scopes in stable preorder. Invalid drafts omit disconnected/cyclic subtrees. */
-export function resolveElementHierarchy(sources:readonly Readonly<Element>[],reference:ViewportSize,actual:ViewportSize,options:{offset?:{x:number;y:number};inherited?:ResolvedElement;idPrefix?:string}={}):ResolvedElement[]{
+export function resolveElementHierarchy(sources:readonly Readonly<Element>[],reference:ViewportSize,actual:ViewportSize,options:{offset?:{x:number;y:number};inherited?:ResolvedElement;idPrefix?:string;ignoreClipping?:boolean}={}):ResolvedElement[]{
   const result:ResolvedElement[]=[],byId=new Map(sources.map(x=>[x.id,x])),children=new Map<string,Readonly<Element>[]>();
   for(const source of sources)if(source.parentId&&byId.get(source.parentId)?.kind==='group'){const siblings=children.get(source.parentId)??[];siblings.push(source);children.set(source.parentId,siblings);}
   const visiting=new Set<string>();
@@ -54,8 +54,8 @@ export function resolveElementHierarchy(sources:readonly Readonly<Element>[],ref
       const parentWhen=parent.visibleWhen??'always',childWhen=element.visibleWhen??'always';
       if(parentWhen!=='always'){if(childWhen!=='always'&&childWhen!==parentWhen)element.hidden=true;else element.visibleWhen=parentWhen;}
       let clip=parent._clipRect;
-      if(parent.kind==='group'&&(parent.clipChildren||parent.overflow==='hidden'||parent.overflow==='scroll'))clip=intersectClip(clip,{x:parent.x,y:parent.y,width:parent.width,height:parent.height});
-      if(clip){element._clipRect={...clip};const visible=intersectClip(clip,element);if((visible.width<=0||visible.height<=0)&&!['group','component'].includes(element.kind))element.hidden=true;}
+      if(!options.ignoreClipping&&parent.kind==='group'&&(parent.clipChildren||parent.overflow==='hidden'||parent.overflow==='scroll'))clip=intersectClip(clip,{x:parent.x,y:parent.y,width:parent.width,height:parent.height});
+      if(!options.ignoreClipping&&clip){element._clipRect={...clip};const visible=intersectClip(clip,element);if((visible.width<=0||visible.height<=0)&&!['group','component'].includes(element.kind))element.hidden=true;}
     }
     result.push(element);
     if(source.kind==='group')for(const child of flowChildren(children.get(source.id)??[],element))visit(child,element,element.flowLayout?element:source,element,{x:element.x,y:element.y},depth+1);
@@ -65,17 +65,17 @@ export function resolveElementHierarchy(sources:readonly Readonly<Element>[],ref
   return result;
 }
 /** Expand nested instances with path-local cycle detection and a bounded output. */
-export function expandComponents(design:ReadonlyDesign,elements:ResolvedElement[],stack:readonly string[]=[],budget={remaining:10000}):ResolvedElement[]{
+export function expandComponents(design:ReadonlyDesign,elements:ResolvedElement[],stack:readonly string[]=[],budget={remaining:10000},options:{ignoreClipping?:boolean}={}):ResolvedElement[]{
   const result:ResolvedElement[]=[];
   for(const instance of elements){if(--budget.remaining<0)throw new Error('UI expansion exceeds 10000 elements');
     if(instance.kind!=='component'){result.push(instance);continue;}
     const id=instance.componentId??'';if(stack.includes(id)||stack.length>=8)throw new Error('UI component cycle or depth exceeds 8');
     const component=design.components?.find(c=>c.id===id);if(!component)continue;
     const children=component.elements.map(child=>({...child,...instance.overrides?.find(o=>o.elementId===child.id)?.values})as Element);
-    result.push(...expandComponents(design,resolveElementHierarchy(children,component,instance,{offset:{x:instance.x,y:instance.y},inherited:instance,idPrefix:instance.id+'__'}),[...stack,id],budget));
+    result.push(...expandComponents(design,resolveElementHierarchy(children,component,instance,{offset:{x:instance.x,y:instance.y},inherited:instance,idPrefix:instance.id+'__',...options}),[...stack,id],budget,options));
   }return result;
 }
-export function resolveScreenElements(design:ReadonlyDesign,screenId:ScreenId,size:ViewportSize={width:design.width,height:design.height}):ResolvedElement[]{
+export function resolveScreenElements(design:ReadonlyDesign,screenId:ScreenId,size:ViewportSize={width:design.width,height:design.height},options:{ignoreClipping?:boolean}={}):ResolvedElement[]{
   const screen=design.screens.find(s=>s.id===screenId);if(!screen)return [];
-  return expandComponents(design,resolveElementHierarchy(screen.elements as readonly Element[],design,size));
+  return expandComponents(design,resolveElementHierarchy(screen.elements as readonly Element[],design,size,options),[],{remaining:10000},options);
 }

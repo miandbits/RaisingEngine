@@ -3,7 +3,7 @@ import type { SystemsCommand } from '../systems/model.js';
 import type {BattleUiAction} from '../player-service/battle.js';
 import type {RunState} from '../core/model.js';
 
-export type WidgetCommand = SystemsCommand | BattleUiAction
+export type WidgetCommand = SystemsCommand | BattleUiAction | import('./planner-entry.js').OpenPlannerCommand
   | { type: 'navigate'; screenId: string }
   | { type: 'visit'; locationId: string }
   | { type: 'buy'; shopId: string; itemId: string; quantity: number }
@@ -30,6 +30,7 @@ export function widgetCommand(element: Element, state?:RunState|null): WidgetCom
     if (element.battleAction === 'useItem') return element.itemId ? { type: 'battleAction', action: 'useItem', itemId: element.itemId } : null;
     return { type: 'battleAction', action: element.battleAction };
   }
+  if(element.action==='openPlanner'&&element.screenId&&element.plannerElementId)return {type:'openPlanner',screenId:element.screenId,plannerElementId:element.plannerElementId,...(element.plannerGroupId?{plannerGroupId:element.plannerGroupId}:{}),...(element.plannerActivityId?{plannerActivityId:element.plannerActivityId}:{})};
   if (element.action === 'navigate' && element.screenId) return { type: 'navigate', screenId: element.screenId };
   if (element.action === 'visit' && element.locationId) return { type: 'visit', locationId: element.locationId };
   if (element.action === 'buy' && element.shopId && element.itemId) return { type: 'buy', shopId: element.shopId, itemId: element.itemId, quantity: element.quantity ?? 1 };
