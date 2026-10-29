@@ -6,6 +6,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {QtStudioService} from '../../apps/qt-studio/service.mjs';
 import {saveAndWait} from '../helpers/save-check.mjs';
 import {mkdirSync,rmdirSync} from 'node:fs';
+import {randomUUID} from 'node:crypto';
 
 async function fixture(t){
   await mkdir('.cache/save-background',{recursive:true});
@@ -20,6 +21,19 @@ async function fixture(t){
   return {service,root,call,ordinary,long};
 }
 async function wait(call,predicate){const end=Date.now()+30000;while(Date.now()<end){const check=(await call('goalSaveCheckStatus')).goalSaveCheck;if(predicate(check))return check;await delay(20);}throw Error('Saved check wait expired');}
+async function assertCompleted(check,phase){
+  if(check.status==='completed')return;
+  // Keep diagnostics in the already-uploaded public-fixture smoke directory.
+  // Do not copy content snapshots or unbounded command/observation histories.
+  const clip=value=>typeof value==='string'?value.slice(0,4096):value;
+  const failure=value=>value?{code:value.code,step:value.step,message:clip(value.message),messageTruncated:typeof value.message==='string'&&value.message.length>4096}:undefined;
+  const summary=value=>({id:value.id,batchId:value.batchId,status:value.status,ok:value.ok,stale:value.stale,error:clip(value.error),errorTruncated:typeof value.error==='string'&&value.error.length>4096,stopReason:value.stopReason,completed:value.completed,reports:value.reports?.slice(0,128).map(r=>({id:r.id,status:r.status,ok:r.ok,executed:r.executed,commands:r.commands,failure:failure(r.failure)})),comparison:value.goalImpact?{id:value.goalImpact.id,ok:value.goalImpact.ok,complete:value.goalImpact.complete,stale:value.goalImpact.stale,archived:value.goalImpact.archived,error:clip(value.goalImpact.error),archiveError:clip(value.goalImpact.archiveError),counts:value.goalImpact.counts}:null});
+  const diagnostic={phase,platform:process.platform,node:process.version,check:summary(check)};
+  if(check.file)try{diagnostic.persisted=summary(JSON.parse(await readFile(check.file,'utf8')));}catch(error){diagnostic.readError=clip(error.message);}
+  await mkdir('.cache/creator-smoke',{recursive:true});
+  const file=path.resolve('.cache/creator-smoke/background-save-failure-'+randomUUID()+'.json');await writeFile(file,JSON.stringify(diagnostic,null,2));
+  assert.equal(check.status,'completed',JSON.stringify({...diagnostic,file}));
+}
 
 test('save returns while long work runs; edits stay responsive, repeated saves coalesce, captured inputs remain immutable',{timeout:60000},async t=>{
   const {service,root,call,ordinary,long}=await fixture(t);
@@ -96,14 +110,19 @@ test('cancellation during worker handoff retires the newly created automatic wor
   assert.equal((await call('goalSaveCheckStatus')).goalSaveCheck.status,'cancelled');
 });
 
-test('expired retained history stays readable as stale and the next save creates a fresh check',{timeout:15000},async t=>{
+test('expired retained history stays readable through twenty fresh saved-check replacements',{timeout:120000},async t=>{
   const {service,call}=await fixture(t);
-  const first=(await saveAndWait(service)).goalSaveCheck;
-  // Other manual batches can evict the older automatic entry from the bounded map.
-  service.goalRouteBatches.jobs.delete(first.batchId);
-  const expired=(await call('goalSaveCheckStatus')).goalSaveCheck;
-  assert.equal(expired.id,first.id);assert.equal(expired.historyExpired,true);assert.equal(expired.stale,true);assert.match(expired.error,/retained batch history/);
-  const next=(await saveAndWait(service)).goalSaveCheck;assert.notEqual(next.id,first.id);assert.equal(next.status,'completed');assert.equal(next.stale,false);
+  let previous=(await saveAndWait(service)).goalSaveCheck;
+  await assertCompleted(previous,'initial saved check');
+  // Each cycle must pass on its first attempt. Repeated owned-worker retirement
+  // exercises the intermittent Windows failure without retrying failed checks.
+  for(let cycle=1;cycle<=20;cycle++){
+    // Other manual batches can evict the older automatic entry from the bounded map.
+    service.goalRouteBatches.jobs.delete(previous.batchId);
+    const expired=(await call('goalSaveCheckStatus')).goalSaveCheck;
+    assert.equal(expired.id,previous.id);assert.equal(expired.historyExpired,true);assert.equal(expired.stale,true);assert.match(expired.error,/retained batch history/);
+    const next=(await saveAndWait(service)).goalSaveCheck;assert.notEqual(next.id,previous.id);await assertCompleted(next,'replacement cycle '+cycle+' after retained-history expiry');assert.equal(next.stale,false);previous=next;
+  }
 });
 
 test('a delayed cancellation token cannot stop the automatic check from a newer save',{timeout:15000},async t=>{
