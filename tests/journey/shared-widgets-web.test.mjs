@@ -72,18 +72,27 @@ test('exported shared widgets retain contextual planning, forecast, growth and p
       await page.locator('[data-reading-id="engine-phase-forecast-close"]').click();
       await page.screenshot({path:join(out,name+'-plan.png')});
       await action('advance').click();await idle();
-      assert.equal((await snapshot()).state.phase,'ready');
-      await action('advance').click();
+      // This fixture uses continuous playback: confirming the plan schedules
+      // its first execution. A second click can wait through the presentation
+      // and acknowledge that result instead of starting the first activity.
+      await page.waitForFunction(()=>window.player.session.state.phase==='activity-result');
       const growth=page.locator(`[data-element-id="${ids.result}"] [data-growth-summary="activity"]`);
       await growth.waitFor();await idle();
       await page.locator('[data-testid="timeline-overlay"]').waitFor({state:'detached'});
       const result=await snapshot();
       assert.equal(result.state.phase,'activity-result');
-      assert.deepEqual(result.commands.filter(c=>c.type==='setSchedule'),[{type:'setSchedule',activityIds:plan}]);
+      assert.equal(result.state.periodIndex,0);
+      assert.equal(result.state.lastActivityResult.activityId,'study');
+      assert.deepEqual(result.commands,[...entered.commands,{type:'setSchedule',activityIds:plan},{type:'executeActivity'}],'Continuous confirmation executes exactly one activity without acknowledging its result');
       assert.equal(result.state.attributes.skill,10);
       assert.match(await growth.innerText(),/\+10/);
       assert.equal(await page.locator(`[data-element-id="${ids.stats}"] [data-testid="stat-skill"]`).innerText(),'10');
       assert.equal(await page.locator('[data-testid="timeline-overlay"]').count(),0);
+      // Outlast both schedule-driver delays (150/700 ms). Reveal-result must
+      // hold the same canonical result until the player's explicit Continue.
+      await page.waitForTimeout(850);
+      assert.deepEqual(await snapshot(),result,'Shared growth review remains stable during continuous playback');
+      assert.match(await growth.innerText(),/\+10/);
       const download=page.waitForEvent('download');await action('save').click();
       const save=join(out,name+'-save.json');await(await download).saveAs(save);
       await page.screenshot({path:join(out,name+'-growth.png')});
