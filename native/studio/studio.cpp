@@ -18,6 +18,7 @@
 #include "hierarchy-tree.hpp"
 #include "hierarchy-lock.hpp"
 #include "inspector-wheel.hpp"
+#include "wrapping-button.hpp"
 #include "logic-editor.hpp"
 #include <QTreeWidgetItemIterator>
 #include "renderer-preview.hpp"
@@ -391,6 +392,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
       dock(tr("계층"), "hierarchyDock", treePanel, Qt::LeftDockWidgetArea);
   treeDock->setMinimumWidth(320);
   auto scroll = new QScrollArea;
+  scroll->setObjectName("inspectorScroll");
   scroll->setWidgetResizable(true);
   scroll->setMinimumWidth(310);
   scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -402,9 +404,9 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   selectedTitle = new QLabel(tr("요소를 선택하세요"));
   selectedTitle->setStyleSheet("font-size:16px;font-weight:600");
   selectedTitle->setWordWrap(true);
-  auto batch=new QPushButton(tr("선택 요소 일괄 편집 · 정렬…"));batch->setObjectName("selectionBatch");formLayout->addWidget(batch);connect(batch,&QPushButton::clicked,this,&StudioWindow::editSelectedElements);
-  auto source=new QPushButton(tr("부품 원본 편집 · 모든 배치에 반영…"));source->setObjectName("componentSource");formLayout->addWidget(source);connect(source,&QPushButton::clicked,this,&StudioWindow::openComponentSource);
-  auto followLinks=new QPushButton(tr("데이터 · 행동 · 후속 사건 따라가기…"));
+  auto batch=new WrappingButton(tr("선택 요소 일괄 편집 · 정렬…"));batch->setObjectName("selectionBatch");formLayout->addWidget(batch);connect(batch,&QPushButton::clicked,this,&StudioWindow::editSelectedElements);
+  auto source=new WrappingButton(tr("부품 원본 편집 · 모든 배치에 반영…"));source->setObjectName("componentSource");formLayout->addWidget(source);connect(source,&QPushButton::clicked,this,&StudioWindow::openComponentSource);
+  auto followLinks=new WrappingButton(tr("데이터 · 행동 · 후속 사건 따라가기…"));
   followLinks->setObjectName("elementConnections");
   connect(followLinks,&QPushButton::clicked,this,&StudioWindow::followSelectedElement);
   auto group = [formLayout](QString name) {
@@ -421,6 +423,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
         "text-align:left;padding:7px;background:#303741;font-weight:600");
     auto body = new QWidget;
     auto f = new QFormLayout(body);
+    f->setRowWrapPolicy(QFormLayout::WrapLongRows);
     f->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     f->setContentsMargins(4, 3, 4, 6);
     f->setSpacing(7);
@@ -477,7 +480,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   for(auto p:QList<QPair<QString,QString>>{{QObject::tr("위"),"top"},{QObject::tr("가운데"),"center"},{QObject::tr("아래"),"bottom"},{QObject::tr("상하 늘이기"),"stretch"}})anchorYField->addItem(p.first,p.second);
   pairRow(tr("앵커 가로 / 세로"),anchorXField,anchorYField);
   for(auto p:{qMakePair(anchorXField,QString("anchorX")),qMakePair(anchorYField,QString("anchorY"))})connect(p.first,qOverload<int>(&QComboBox::activated),this,[this,p]{if(!filling)updateElement([p](QJsonObject&e){e[p.second]=p.first->currentData().toString();});});
-  auto instanceSettings=new QPushButton(tr("부품 문구·행동 덮어쓰기…"));instanceSettings->setObjectName("componentOverrides");
+  auto instanceSettings=new WrappingButton(tr("부품 문구·행동 덮어쓰기…"));instanceSettings->setObjectName("componentOverrides");
   basic->addRow(instanceSettings);connect(instanceSettings,&QPushButton::clicked,this,&StudioWindow::editComponentInstance);
   lockedField = new QCheckBox(tr("배치 잠금"));
   lockedField->setObjectName("elementLocked");
@@ -485,10 +488,10 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   hiddenField->setObjectName("elementHidden");
   layout->addRow(lockedField);
   layout->addRow(hiddenField);
-  visibleConditionField = new QPushButton(tr("표시 조건 편집…"));
+  visibleConditionField = new WrappingButton(tr("표시 조건 편집…"));
   visibleConditionField->setObjectName("elementVisibleCondition");
   visibleConditionField->setToolTip(tr("능력·자원·플래그 조건을 만족할 때 표시합니다. 부모 조건·게임에서 숨김·실행 단계 설정도 함께 적용됩니다."));
-  clearVisibleConditionField = new QPushButton(tr("표시 조건 해제"));
+  clearVisibleConditionField = new WrappingButton(tr("표시 조건 해제"));
   clearVisibleConditionField->setObjectName("elementVisibleConditionClear");
   clearVisibleConditionField->setToolTip(tr("이 요소의 수치·플래그 조건만 제거합니다. 부모 조건·숨김·실행 단계 설정은 유지합니다."));
   layout->addRow(visibleConditionField);
@@ -508,7 +511,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   connect(controlStyleField,qOverload<int>(&QComboBox::activated),this,[this]{
     if(!filling)updateElement([this](QJsonObject& e){if(!supportsControlStyle(e.value("kind").toString()))return;const auto id=controlStyleField->currentData().toString();if(id.isEmpty())e.remove("controlStyleId");else e["controlStyleId"]=id;});
   });
-  auto inherit = new QPushButton(tr("개별 모양 지우고 스타일 상속"));
+  auto inherit = new WrappingButton(tr("개별 모양 지우고 스타일 상속"));
   inherit->setObjectName("inheritStyle");
   appearance->addRow(inherit);
   connect(styleField, qOverload<int>(&QComboBox::activated), this, [this] {
@@ -532,11 +535,11 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   appearance->addRow(tr("배경 색"), fillField);
   appearance->addRow(tr("문자 색"), colorField);
   appearance->addRow(tr("글자 크기"), fontField);
-  auto surfaceButton=new QPushButton(tr("배경 표면…"));surfaceButton->setObjectName("elementSurface");appearance->addRow(surfaceButton);connect(surfaceButton,&QPushButton::clicked,this,&StudioWindow::editSelectedSurface);
+  auto surfaceButton=new WrappingButton(tr("배경 표면…"));surfaceButton->setObjectName("elementSurface");appearance->addRow(surfaceButton);connect(surfaceButton,&QPushButton::clicked,this,&StudioWindow::editSelectedSurface);
   auto dataForm = group(tr("이미지 · 데이터 연결"));
   dataForm->setObjectName("elementDataForm");
-  auto dataBindingButton=new QPushButton(tr("표시할 데이터 찾기 · 연결…"));dataBindingButton->setObjectName("dataBindingPicker");dataForm->addRow(dataBindingButton);connect(dataBindingButton,&QPushButton::clicked,this,&StudioWindow::editDataBinding);
-  auto variantsButton=new QPushButton(tr("조건별 표현 · 이미지·동작 연결…"));variantsButton->setObjectName("presentationVariants");dataForm->addRow(variantsButton);connect(variantsButton,&QPushButton::clicked,this,&StudioWindow::editPresentationVariants);
+  auto dataBindingButton=new WrappingButton(tr("표시할 데이터 찾기 · 연결…"));dataBindingButton->setObjectName("dataBindingPicker");dataForm->addRow(dataBindingButton);connect(dataBindingButton,&QPushButton::clicked,this,&StudioWindow::editDataBinding);
+  auto variantsButton=new WrappingButton(tr("조건별 표현 · 이미지·동작 연결…"));variantsButton->setObjectName("presentationVariants");dataForm->addRow(variantsButton);connect(variantsButton,&QPushButton::clicked,this,&StudioWindow::editPresentationVariants);
   imageField = new QComboBox;
   imageField->setObjectName("imageAsset");
   bindingField = new QComboBox;
@@ -603,8 +606,8 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   bindingHint->setWordWrap(true);
   bindingHint->setObjectName("bindingHint");
   dataForm->addRow(bindingHint);
-  auto batchBinding=new QPushButton(tr("다른 화면에 이 텍스트 연결 적용…"));batchBinding->setObjectName("textBindingBatch");dataForm->addRow(batchBinding);connect(batchBinding,&QPushButton::clicked,this,&StudioWindow::applyTextBindingBatch);
-  auto widgetSettings = new QPushButton(tr("위젯 구성 · 분류 / 표시 항목"));
+  auto batchBinding=new WrappingButton(tr("다른 화면에 이 텍스트 연결 적용…"));batchBinding->setObjectName("textBindingBatch");dataForm->addRow(batchBinding);connect(batchBinding,&QPushButton::clicked,this,&StudioWindow::applyTextBindingBatch);
+  auto widgetSettings = new WrappingButton(tr("위젯 구성 · 분류 / 표시 항목"));
   widgetSettings->setObjectName("widgetSettings");
   connect(widgetSettings, &QPushButton::clicked, this, &StudioWindow::editWidgetSettings);
   connect(imageField, qOverload<int>(&QComboBox::activated), this, [this] {
@@ -720,7 +723,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   actionHelp->setWordWrap(true);
   actionHelp->setStyleSheet("color:#a9bbc9");
   action->addRow(actionHelp);
-  auto openTarget = new QPushButton(tr("대상 화면 열기"));
+  auto openTarget = new WrappingButton(tr("대상 화면 열기"));
   openTarget->setObjectName("openActionTarget");
   action->addRow(openTarget);
   connect(openTarget, &QPushButton::clicked, this, [this] {
@@ -748,7 +751,7 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   pluginPropsField->setObjectName("pluginProps");
   pluginPropsField->setToolTip(tr("플러그인이 정의한 표시 속성 · 예: {\"scale\":1,\"flipX\":false}"));
   pluginForm->addRow(tr("속성 JSON"), pluginPropsField);
-  pluginEditButton = new QPushButton(tr("편집…"));
+  pluginEditButton = new WrappingButton(tr("편집…"));
   pluginEditButton->setObjectName("pluginEdit");
   pluginForm->addRow(pluginEditButton);
   connect(pluginRefField, qOverload<int>(&QComboBox::activated), this, [this] {
@@ -759,6 +762,11 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   connect(pluginPropsField, &QLineEdit::editingFinished, this, &StudioWindow::editPluginProps);
   connect(pluginEditButton, &QPushButton::clicked, this, &StudioWindow::editPluginElement);
   pluginGroup->hide();
+  // Item names and translated options must not determine the dock's width.
+  for(auto combo:inspector->findChildren<QComboBox*>()){
+    combo->setMinimumContentsLength(8);combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    combo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+  }
   formLayout->addStretch();
   scroll->setWidget(inspector);
   new InspectorWheelGuard(inspector, scroll);
