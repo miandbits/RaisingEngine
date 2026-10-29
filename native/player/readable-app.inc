@@ -80,13 +80,13 @@
       dirty=true;return true;
     }
     if(markup.plan_reuse_open){
-      if(type=="readingReuseCancel"||type=="uiBack"){markup.plan_reuse_open=false;reading_focus=markup.activity_board_widget(markup.reuse_element)?markup.reuse_element+"__board-reuse":"board-reuse";dirty=true;return true;}
+      if(type=="readingReuseCancel"||type=="uiBack"){markup.plan_reuse_open=false;reading_focus=markup.activity_board_widget(markup.reuse_element)?markup.reuse_element+"__board-reuse":widget_control_id(markup.reuse_element,"board-reuse");dirty=true;return true;}
       if(type=="readingReuseApply"){
         if(markup.reuse_review_valid()){
           markup.plan=markup.reuse_candidate.at("activityIds").get<std::vector<std::string>>();
           markup.plan_selected=(1<<game.periods())-1;markup.plan_slot=markup.reuse_candidate.at("firstEditableSlot");markup.plan_group.clear();
         }
-        markup.plan_reuse_open=false;reading_focus=markup.activity_board_widget(markup.reuse_element)?markup.reuse_element+"__board-reuse":"board-reuse";dirty=true;return true;
+        markup.plan_reuse_open=false;reading_focus=markup.activity_board_widget(markup.reuse_element)?markup.reuse_element+"__board-reuse":widget_control_id(markup.reuse_element,"board-reuse");dirty=true;return true;
       }
       // A visible review is a presentation modal. Background actions, shortcuts
       // and delayed authored controls cannot confirm, load or alter its draft.
@@ -124,11 +124,11 @@
     if(type=="planningGuideDismiss") {if(markup.planning_guide)acknowledge_planning_guidance();dirty=true;return true;}
     if(type=="readingMenu") {markup.planning_guide=false;markup.compact_picker=false;markup.reading_options=false;markup.reading_menu=action.value("open",false);dirty=true;return true;}
     if(type=="readingOptions") {markup.planning_guide=false;markup.compact_picker=false;markup.reading_menu=false;markup.reading_options=action.value("open",false);dirty=true;return true;}
-    if(type=="readingPlanCancel") {markup.compact_picker=false;dirty=true;return true;}
+    if(type=="readingPlanCancel") {markup.compact_picker=false;reading_focus=widget_control_id(markup.compact_element,"board-slot-"+std::to_string(markup.compact_slot));dirty=true;return true;}
     if(type=="uiBack"&&markup.reading_overlay()) {
       if(markup.planning_guide)acknowledge_planning_guidance();
       else if(markup.reading_options)markup.reading_options=false;
-      else if(markup.compact_picker)markup.compact_picker=false;
+      else if(markup.compact_picker){markup.compact_picker=false;reading_focus=widget_control_id(markup.compact_element,"board-slot-"+std::to_string(markup.compact_slot));}
       else markup.reading_menu=false;
       dirty=true;return true;
     }
@@ -145,7 +145,7 @@
       if(type=="readingPlanGroup") {markup.compact_group=action.value("group","");reading_jump="board-group-all";}
       if(type=="readingPlanActivity")for(const auto& a:game.content.at("activities"))if(a.at("id")==action.value("activityId",Json())){markup.compact_activity=a.at("id");reading_jump="board-details";break;}
       if(type=="readingPlanApply"&&!markup.compact_activity.empty()){
-        markup.plan_slot=markup.compact_slot;markup.plan[markup.plan_slot]=markup.compact_activity;markup.plan_selected|=1<<markup.plan_slot;markup.compact_picker=false;
+        markup.plan_slot=markup.compact_slot;markup.plan[markup.plan_slot]=markup.compact_activity;markup.plan_selected|=1<<markup.plan_slot;markup.compact_picker=false;reading_focus=widget_control_id(markup.compact_element,"board-slot-"+std::to_string(markup.compact_slot));
       }
     }
     dirty=true;return true;

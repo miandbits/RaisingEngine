@@ -20,7 +20,7 @@ bool selectionDependent(const QJsonObject& element){
 bool collectLeaves(const QJsonObject& visual,const QJsonArray& children,const QString& prefix,QStringList& leaves,QSet<QString> stack,int& budget,QString& error){
   if(stack.size()>8){error=QObject::tr("중첩 부품의 깊이를 확인하세요.");return false;}
   for(auto value:children){if(--budget<0){error=QObject::tr("부품 수 또는 요소 수 한도를 초과합니다.");return false;}const auto e=value.toObject();const auto kind=e.value("kind").toString(),id=e.value("id").toString();
-    if(!QStringList{"panel","text","image","button","meter","group","input","component"}.contains(kind)){error=QObject::tr("공유할 수 없는 위젯입니다: %1 (%2). 원래 화면에 유지하세요.").arg(id,kind);return false;}
+    if(!QStringList{"panel","text","image","button","meter","group","input","component","schedule","stats","result"}.contains(kind)){error=QObject::tr("공유할 수 없는 위젯입니다: %1 (%2). 원래 화면에 유지하세요.").arg(id,kind);return false;}
     if(kind=="component"){
       const auto cid=e.value("componentId").toString();const auto c=find(visual.value("components").toArray(),cid);
       if(c.isEmpty()||stack.contains(cid)){error=QObject::tr("부품 참조 또는 순환을 먼저 수정하세요: %1").arg(cid);return false;}
@@ -38,6 +38,28 @@ void remapReading(QJsonObject& screen,const QMap<QString,QString>& map){
   for(int i=0;i<items.size();++i){auto item=items[i].toObject();item["elementId"]=remapped(item.value("elementId").toString(),map);items[i]=item;}layout["items"]=items;
   if(layout.contains("actions")){auto actions=layout.value("actions").toArray();for(int i=0;i<actions.size();++i)actions[i]=remapped(actions[i].toString(),map);layout["actions"]=actions;}
   if(layout.contains("primaryAction"))layout["primaryAction"]=remapped(layout.value("primaryAction").toString(),map);screen["readableLayout"]=layout;
+}
+void remapPlannerTargets(QJsonObject& visual,const QString& screenId,const QMap<QString,QString>& map){
+  const auto definitions=visual.value("components").toArray();
+  auto remapElement=[&](QJsonObject element){
+    if(element.value("action")=="openPlanner"&&element.value("screenId")==screenId)
+      element["plannerElementId"]=remapped(element.value("plannerElementId").toString(),map);
+    auto overrides=element.value("overrides").toArray();
+    const auto children=find(definitions,element.value("componentId").toString()).value("elements").toArray();
+    for(int i=0;i<overrides.size();++i){auto override=overrides[i].toObject(),values=override.value("values").toObject();const auto base=find(children,override.value("elementId").toString());auto effective=base;
+      for(auto it=values.begin();it!=values.end();++it)effective[it.key()]=it.value();
+      if(effective.value("action")=="openPlanner"){
+        const auto old=effective.value("plannerElementId").toString();const auto next=effective.value("screenId")==screenId?remapped(old,map):old;
+        const auto inherited=base.value("action")=="openPlanner"&&base.value("screenId")==screenId?remapped(base.value("plannerElementId").toString(),map):base.value("plannerElementId").toString();
+        // Keep inherited links inherited. Add an override only when this instance
+        // targets another screen whose local path must not follow the source edit.
+        if(values.contains("plannerElementId")||next!=inherited)values["plannerElementId"]=next;
+        override["values"]=values;overrides[i]=override;
+      }
+    }
+    if(element.contains("overrides"))element["overrides"]=overrides;return element;
+  };
+  for(const auto key:{"screens","components"}){auto rows=visual.value(key).toArray();for(int i=0;i<rows.size();++i){auto owner=rows[i].toObject();auto elements=owner.value("elements").toArray();for(int j=0;j<elements.size();++j)elements[j]=remapElement(elements[j].toObject());owner["elements"]=elements;rows[i]=owner;}visual[key]=rows;}
 }
 void localizePaths(QJsonObject& project,const QString& oldPrefix,const QString& newPrefix,bool move){
   auto localization=project.value("localization").toObject();if(localization.isEmpty())return;
@@ -66,7 +88,7 @@ bool prepare(const QJsonObject& project,const QString& screenId,const QStringLis
     // Keep painter order: roots not in the section must not be interleaved with selected roots.
     bool seen=false,ended=false;for(auto v:elements){auto e=v.toObject();if(e.contains("parentId"))continue;const bool chosen=source.selected.contains(e.value("id").toString());if(chosen&&ended){error=QObject::tr("겹침 순서를 유지하려면 레이어 목록에서 연속된 최상위 영역을 선택하세요.");return false;}if(chosen)seen=true;else if(seen)ended=true;}
     for(auto v:selected){const auto e=v.toObject();
-      for(const auto key:{"layout","showActivityRules","gap","rowFilter","showChoiceEffects","showActivityDescription","rowHeight","showPhaseForecast","bindings","extension","columns","source"})if(e.contains(key)){error=QObject::tr("부품에서 지원하지 않는 설정이 있습니다: %1 / %2").arg(e.value("id").toString(),key);return false;}
+      for(const auto key:{"layout","gap","rowFilter","showChoiceEffects","rowHeight","bindings","extension","columns","source"})if(e.contains(key)){error=QObject::tr("부품에서 지원하지 않는 설정이 있습니다: %1 / %2").arg(e.value("id").toString(),key);return false;}
     }
     source.componentId=fresh(visual.value("components").toArray(),"shared-section");
     // Full canvas reference preserves every child's existing responsive anchor and group geometry.
@@ -81,6 +103,7 @@ bool apply(const QJsonObject& project,const Source& source,const QString& label,
   review={};error.clear();if(source.convert&&label.trimmed().isEmpty()){error=QObject::tr("공유 영역의 이름을 입력하세요.");return false;}
   auto next=project,visual=next.value("visual").toObject();auto screens=visual.value("screens").toArray();auto components=visual.value("components").toArray();
   if(source.convert){auto definition=source.definition;definition["label"]=label.trimmed();components.append(definition);visual["components"]=components;}
+  QMap<QString,QString> convertedReferences;
   QSet<QString> requested;for(auto target:targets)requested.insert(target.screenId);
   if(source.convert&&!requested.contains(source.screenId)){error=QObject::tr("원본 화면을 공유 영역으로 전환해야 합니다.");return false;}
   for(auto target:targets){
@@ -96,6 +119,7 @@ bool apply(const QJsonObject& project,const Source& source,const QString& label,
     for(auto v:elements){auto e=v.toObject();const auto id=e.value("id").toString();if(convert&&source.selected.contains(id)){remap[id]=instanceId+"__"+id;if(!inserted){kept.append(instance);inserted=true;}continue;}kept.append(e);}
     if(!inserted)kept.append(instance);screen["elements"]=kept;
     if(convert){
+      convertedReferences=remap;
       remapReading(screen,remap);review.sourceInstanceId=instanceId;
       auto resume=visual.value("resumeContext").toObject();if(resume.value("screenId")==source.screenId){auto ids=resume.value("elementIds").toArray();for(int i=0;i<ids.size();++i)ids[i]=remapped(ids[i].toString(),remap);resume["elementIds"]=ids;visual["resumeContext"]=resume;}
       for(auto id:source.selected)localizePaths(next,"/project/visual/screens/@"+source.screenId+"/elements/@"+id,"/project/visual/components/@"+source.componentId+"/elements/@"+id,true);
@@ -113,7 +137,7 @@ bool apply(const QJsonObject& project,const Source& source,const QString& label,
     screens[at]=screen;++review.added;
   }
   if(!review.added){error=QObject::tr("새로 배치할 대상 화면을 선택하세요. 같은 부품이 있는 화면은 건너뜁니다.");return false;}
-  visual["screens"]=screens;next["visual"]=visual;review.project=next;return true;
+  visual["screens"]=screens;if(!convertedReferences.isEmpty())remapPlannerTargets(visual,source.screenId,convertedReferences);next["visual"]=visual;review.project=next;return true;
 }
 }
 
@@ -132,7 +156,7 @@ void StudioWindow::shareScreenSection(){
     int row=targets->rowCount();targets->insertRow(row);auto item=new QTableWidgetItem(s.value("label").toString(id)+" ("+id+")"+(exists?tr(" · 이미 배치됨"):QString()));item->setData(Qt::UserRole,id);item->setCheckState(source.convert&&id==openedScreen?Qt::Checked:Qt::Unchecked);if(exists||(source.convert&&id==openedScreen))item->setFlags(item->flags()&~Qt::ItemIsEnabled);targets->setItem(row,0,item);
     auto choice=new QComboBox;choice->setObjectName("sharedReading-"+id);choice->addItem(tr("지원 항목을 읽기 본문 끝에 추가"),true);choice->addItem(tr("캔버스만 · 읽기 목록에 추가 안 함"),false);if(!s.contains("readableLayout")){choice->clear();choice->addItem(tr("읽기 배치 없음 · 캔버스 유지"),false);choice->setEnabled(false);}if(source.convert&&id==openedScreen){choice->clear();choice->addItem(tr("원본 읽기 목록 유지 · 참조만 갱신"),false);choice->setEnabled(false);}if(exists)choice->setEnabled(false);targets->setCellWidget(row,1,choice);
   }
-  auto readingHelp=new QLabel(tr("읽기 본문에는 문구·이미지·버튼·게이지·입력만 추가합니다. 버튼도 본문에 배치하며, 기존 하단 행동과 대표 행동은 바꾸지 않습니다. 장식 패널·그룹은 읽기 배치에 추가하지 않습니다. 겹침과 휴대폰 배치는 적용 후 미리보기에서 확인하세요."));readingHelp->setWordWrap(true);layout->addWidget(readingHelp);
+  auto readingHelp=new QLabel(tr("읽기 본문에는 문구·이미지·버튼·게이지·입력·일정·능력치·성장 결과를 추가합니다. 버튼도 본문에 배치하며, 원본의 읽기 설정과 기존 하단 행동·대표 행동은 유지합니다. 장식 패널·그룹은 읽기 배치에 추가하지 않습니다. 겹침과 휴대폰 배치는 적용 후 미리보기에서 확인하세요."));readingHelp->setWordWrap(true);layout->addWidget(readingHelp);
   auto reviewText=new QPlainTextEdit;reviewText->setObjectName("sharedSectionReview");reviewText->setReadOnly(true);reviewText->setMinimumHeight(120);layout->addWidget(reviewText);
   auto error=new QLabel;error->setObjectName("sharedSectionError");error->setWordWrap(true);outer->addWidget(error);
   auto buttons=new QDialogButtonBox(QDialogButtonBox::Apply|QDialogButtonBox::Cancel);buttons->setObjectName("sharedSectionButtons");auto reviewButton=buttons->addButton(tr("배치 검토"),QDialogButtonBox::ActionRole);reviewButton->setObjectName("reviewSharedSection");auto applyButton=buttons->button(QDialogButtonBox::Apply);applyButton->setEnabled(false);outer->addWidget(buttons);

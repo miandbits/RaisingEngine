@@ -1,4 +1,5 @@
 #pragma once
+#include "components.hpp"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
@@ -45,7 +46,7 @@ public:
     if(value.value("kind")=="button"){
       auto box=new QGroupBox(tr("활동 계획 열기"));auto form=new QFormLayout(box);layout->addWidget(box);open=new QCheckBox(tr("이 버튼으로 활동 계획 열기"));open->setObjectName("openPlannerEnabled");open->setChecked(value.value("action")=="openPlanner");form->addRow(open);
       board=new QComboBox;board->setObjectName("openPlannerBoard");group=new QComboBox;group->setObjectName("openPlannerGroup");activity=new QComboBox;activity->setObjectName("openPlannerActivity");
-      for(auto row:project.value("visual").toObject().value("screens").toArray()){auto s=row.toObject();if(s.value("modal").toBool())continue;for(auto item:s.value("elements").toArray()){auto e=item.toObject();if(e.value("kind")!="schedule"||e.value("scheduleLayout")!="activity-board")continue;boards.append(QJsonObject{{"screenId",s.value("id")},{"board",e}});board->addItem(s.value("label").toString(s.value("id").toString())+" / "+e.value("label").toString(e.value("id").toString()));if(s.value("id")==value.value("screenId")&&e.value("id")==value.value("plannerElementId"))board->setCurrentIndex(board->count()-1);}}
+      for(auto row:project.value("visual").toObject().value("screens").toArray()){auto s=row.toObject();if(s.value("modal").toBool())continue;for(auto item:canvasElements(project.value("visual").toObject(),s.value("elements").toArray(),QSize(project.value("visual").toObject().value("width").toInt(1280),project.value("visual").toObject().value("height").toInt(720)))){auto e=item.toObject();if(e.value("kind")!="schedule"||e.value("scheduleLayout")!="activity-board")continue;boards.append(QJsonObject{{"screenId",s.value("id")},{"board",e}});board->addItem(s.value("label").toString(s.value("id").toString())+" / "+e.value("label").toString(e.value("id").toString()));if(s.value("id")==value.value("screenId")&&e.value("id")==value.value("plannerElementId"))board->setCurrentIndex(board->count()-1);}}
       if(open->isChecked()){bool found=false;for(auto b:boards)if(b.toObject().value("screenId")==value.value("screenId")&&b.toObject().value("board").toObject().value("id")==value.value("plannerElementId"))found=true;if(!found){boards.append(QJsonObject{});board->addItem(tr("없는 대상: ")+value.value("plannerElementId").toString());board->setCurrentIndex(board->count()-1);}}
       fillGroups(value.value("plannerGroupId").toString(),value.value("plannerActivityId").toString());
       connect(board,qOverload<int>(&QComboBox::currentIndexChanged),this,[this]{fillGroups();});connect(group,qOverload<int>(&QComboBox::activated),this,[this]{fillActivities(QString(""));});

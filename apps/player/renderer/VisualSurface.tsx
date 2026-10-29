@@ -139,7 +139,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
     return null;
   };
   const schedulePrompt=context.calendarProject?.calendar?`${calendarLabels(context.calendarProject.calendar,context.locale).month} · ${calendarLabels(context.calendarProject.calendar,context.locale).period} ${planning.planner.slot+1}`:planning.planner.mask!==((1<<(context.periodsPerMonth??3))-1)?`스케줄 결정.\n이번 달 딸의 예정은? 제 ${planning.planner.slot+1}회`:context.schedulePlayback==='continuous'?'이번 달 일정을 연속으로 진행합니다.':context.period===0?'예, 스케줄에 편성하겠습니다.\n첫 일정을 시작하시겠습니까?':`이번 달 ${context.period}번째 일정을 마쳤습니다.\n다음 일정을 진행하시겠습니까?`;
-  const scheduleGroups=elements.find(e=>e.kind==='schedule'&&e.scheduleLayout==='menu')?.scheduleGroups??design.screens.flatMap(s=>s.elements).find(e=>e.kind==='schedule'&&e.scheduleLayout==='menu')?.scheduleGroups??[];
+  const scheduleGroups=elements.find(e=>e.kind==='schedule'&&e.scheduleLayout==='menu')?.scheduleGroups??design.screens.flatMap(s=>resolveScreenElements(design,s.id)).find(e=>e.kind==='schedule'&&e.scheduleLayout==='menu')?.scheduleGroups??[];
   const fontIds=[...new Set([...elements,...(design.components??[]).flatMap(c=>c.elements)].map(e=>resolveElementStyle(design,e).fontAssetId).filter((id):id is string=>!!id))];
   const fontCss=fontIds.map(id=>`@font-face{font-family:"engine-${id}";src:url(${JSON.stringify(assetUrl(id))});font-display:block;}`).join('\n');
   const conditionPasses=(condition:Element['visibleCondition'])=>!condition||context.dataUi?.conditions[JSON.stringify(condition)]===true;

@@ -16,6 +16,8 @@ The inspector hides image, value-binding and button-action rows that do not appl
 
 ## Reading order before detailed styling
 
+The Content stage also provides [activity, conditions and presentation editing](manual/activity-workflow.md) in one draft. The Design stage's [shared screen sections](manual/shared-screen-sections.md) can include schedule, stats and growth-result widgets. Their component source uses the same widget settings as an ordinary screen element.
+
 In **Screen → Readable layout**, screen selection, reading order, bottom actions and preview size remain in the basic view. **Appearance and detailed settings** reveals the global style, dimensions and selected-item options. Collapsing the section does not reset values or remove authored fields. Invalid background colors and invalid selected-item settings reveal the relevant advanced controls for repair. The fixed Save/Cancel footer and scrolling settings body retain their short-window behavior.
 
 Screen and element names use authored labels, names or text where available. Known bindings and unnamed widgets use friendly descriptions such as Calendar or Activity plan. Duplicate names show the stable ID as secondary text; IDs always remain in selection data and tooltips. Unnamed screens or unknown element kinds retain their IDs. The primary action picker displays its authored button name rather than exposing an ID as the normal label.

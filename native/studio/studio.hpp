@@ -182,6 +182,8 @@ private:
   QString componentToOpen;
   void editDataUi();
   void editTimelines();
+  void editActivityWorkflow(QString activityId = {});
+  bool editTimelineDraft(QJsonObject &draft, const QJsonArray &documents, QWidget *owner, QString activityId = {}, QString preferredTimelineId = {});
   void editBattleHud();
   void editExpeditions();
   void createProgressionActivity();

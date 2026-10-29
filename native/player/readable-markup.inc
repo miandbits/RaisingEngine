@@ -129,8 +129,11 @@
     const std::string kind=e.value("kind","");const double font=std::max(visual.at("readableLayout").value("fontSize",18.0),item.value("fontSize",visual.at("readableLayout").value("fontSize",18.0)))*player_preferences.value("textScale",1.0);
     e["fontSize"]=font;e["width"]=std::max(44.0,std::min(double(safe_area.value("width",window_width)),visual.at("readableLayout").value("maxWidth",760.0))-2*visual.at("readableLayout").value("padding",16.0));
     e["statsLayout"]="bars";e["x"]=0;e["y"]=0;e["height"]=item.value("imageHeight",160.0);
+    const auto prior_owner=widget_control_owner;widget_control_owner=kind=="schedule"?e.value("id",""):"";
     std::string body=kind=="saveSlots"||kind=="loadSlots"?readable_slots(e):kind=="playerSettings"?readable_settings(e):kind=="schedule"?(e.value("scheduleLayout","")=="activity-board"?activity_board(e):item.value("schedulePresentation","")=="compact"?compact_schedule(e,item.value("planningGuidance","")=="first-use",item.value("planReuse","")=="last-committed"):readable_schedule(e)):element_body(e);
     if(kind=="schedule"&&e.value("scheduleLayout","")!="activity-board")body=phase_forecast_launcher(e)+body;
+    if(kind=="schedule")body=scope_widget_controls(body,widget_control_owner);
+    widget_control_owner=prior_owner;
     if(kind=="schedule"||kind=="saveSlots"||kind=="loadSlots"||kind=="playerSettings")body=colored_controls(body,control_colors(e,true));
     if(kind=="text"||kind=="dialogue")body=readable_text(e.value("id",""),kind=="dialogue"?bind("story"):e.value("binding","none")=="none"?e.value("text",""):bind(e.value("binding","none"),e));
     if(body.empty())return "";

@@ -34,7 +34,7 @@ inline void showCreatorTasks(QMainWindow* window,std::function<bool()> projectRe
     for(const auto& id:ids){auto action=window->findChild<QAction*>(id);if(!action)continue;auto button=new QPushButton(action->text());button->setObjectName("creatorTask-"+id);button->setMinimumHeight(40);layout->addWidget(button);const bool needsProject=!QStringList{"newProject","showProjectManager","firstGameChecklist"}.contains(id);entries->push_back({action,button,needsProject});QPointer<QAction> command=action;QObject::connect(button,&QPushButton::clicked,dock,[invoke,command,needsProject]{invoke(command,needsProject);});}
     layout->addStretch();
   };
-  page(QObject::tr("콘텐츠 만들기"),"creatorContentTasks",{"newProject","showProjectManager","showAuthoringWorkspace","storyFlowAction","editRoster"});
+  page(QObject::tr("콘텐츠 만들기"),"creatorContentTasks",{"newProject","showProjectManager","activityWorkflow","showAuthoringWorkspace","storyFlowAction","editRoster"});
   page(QObject::tr("화면 디자인"),"creatorDesignTasks",{"raisingScreenFlow","shareScreenSection","editTimelines","screenSettings","editDesignSystem","readableLayout","editComponents"});
   page(QObject::tr("플레이 확인"),"creatorCheckTasks",{"inspectRenderer","validateProject","playProject","showAnalysis"});
   page(QObject::tr("출시 준비"),"creatorReleaseTasks",{"projectSettings","saveProject","exportGame"});

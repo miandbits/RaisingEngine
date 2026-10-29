@@ -73,7 +73,7 @@ jobs:
       BUILD_JOBS: '3'
       QT_ROOT: C:/Qt/6.10.1/mingw_64
       QT_COMPILER: C:/Qt/Tools/mingw1310_64/bin
-      QT_BUILD_TARGETS: RaisingStudioQt,qt-canvas-state-test,qt-first-game-test,qt-studio-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-editor-language-test,qt-readable-layout-test,qt-update-compatibility-test,qt-analysis-priorities-test,qt-resume-context-test,qt-route-batches-test,qt-editor-interaction-test,qt-layout-diagnostics-test,qt-surface-authoring-test,qt-creator-workflow-test,qt-release-settings-test,qt-analysis-periods-test,qt-presentation-update-test,qt-activity-board-test,qt-growth-authoring-test,qt-raising-screen-flow-test,qt-shared-section-test,qt-timeline-batch-test
+      QT_BUILD_TARGETS: RaisingStudioQt,qt-canvas-state-test,qt-first-game-test,qt-studio-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-editor-language-test,qt-readable-layout-test,qt-update-compatibility-test,qt-analysis-priorities-test,qt-resume-context-test,qt-route-batches-test,qt-editor-interaction-test,qt-layout-diagnostics-test,qt-surface-authoring-test,qt-creator-workflow-test,qt-release-settings-test,qt-analysis-periods-test,qt-presentation-update-test,qt-activity-board-test,qt-growth-authoring-test,qt-raising-screen-flow-test,qt-shared-section-test,qt-timeline-batch-test,qt-activity-workflow-test
       QT_PACKAGE_OUT: release/qt-ci/RaisingStudio
       QT_INSTALLER_OUT: release/qt-ci/RaisingStudio-P1-Windows.exe
       QT_QPA_PLATFORM: offscreen
@@ -211,7 +211,7 @@ jobs:
       PLAYWRIGHT_CHANNEL: chromium
       RAISING_BROWSER_CHANNEL: chromium
       BUILD_JOBS: '3'
-      QT_BUILD_TARGETS: RaisingStudioQt,qt-canvas-state-test,qt-first-game-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-readable-layout-test,qt-update-compatibility-test,qt-analysis-priorities-test,qt-resume-context-test,qt-route-batches-test,qt-editor-interaction-test,qt-layout-diagnostics-test,qt-surface-authoring-test,qt-creator-workflow-test,qt-release-settings-test,qt-analysis-periods-test,qt-presentation-update-test,qt-activity-board-test,qt-growth-authoring-test,qt-raising-screen-flow-test,qt-shared-section-test,qt-timeline-batch-test
+      QT_BUILD_TARGETS: RaisingStudioQt,qt-canvas-state-test,qt-first-game-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-readable-layout-test,qt-update-compatibility-test,qt-analysis-priorities-test,qt-resume-context-test,qt-route-batches-test,qt-editor-interaction-test,qt-layout-diagnostics-test,qt-surface-authoring-test,qt-creator-workflow-test,qt-release-settings-test,qt-analysis-periods-test,qt-presentation-update-test,qt-activity-board-test,qt-growth-authoring-test,qt-raising-screen-flow-test,qt-shared-section-test,qt-timeline-batch-test,qt-activity-workflow-test
       MACOS_STUDIO_OUT: dist/macos/RaisingStudio.app
     steps:
       - uses: actions/checkout@v4

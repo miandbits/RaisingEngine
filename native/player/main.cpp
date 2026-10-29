@@ -307,32 +307,37 @@ public:
       }
     }
     if(event.GetType()=="change") {
-      auto* element=event.GetTargetElement();std::string id=element->GetId();
+      auto* element=event.GetTargetElement();std::string id=markup.widget_local_control(element->GetId());
       if(id.rfind("roster-",0)==0)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(element)){markup.roster_draft[id.substr(7)]=select->GetValue();dirty=true;}
-      if(id.rfind("plan-",0)==0)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(element)) {
+      if(!syncing_user_inputs&&id.rfind("plan-",0)==0)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(element)) {
         const int index=std::stoi(id.substr(5));if(index>=0&&index<game.periods()&&markup.plan.size()==size_t(game.periods())){
           markup.plan[index]=select->GetValue();
+          syncing_user_inputs=true;
+          for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule")if(auto* other=dynamic_cast<Rml::ElementFormControlSelect*>(document->GetElementById(widget_control_id(entry.value("id",""),"plan-"+std::to_string(index)))))if(other!=select&&other->GetValue()!=select->GetValue())other->SetValue(select->GetValue());
+          syncing_user_inputs=false;
           // Preserve the live dropdown and keyboard focus while updating the
           // shared detail pane; replacing the document would close the list.
           for(const auto& entry:markup.render_elements)if(auto* detail=document->GetElementById("plan-details-"+entry.value("id",""))){
             markup.plan_slot=index;detail->SetInnerRML(markup.schedule_detail(entry,index));detail->SetScrollTop(0);
-            for(int i=0;i<game.periods();++i)if(auto* review=document->GetElementById("plan-review-"+std::to_string(i)))review->SetClass("selected",i==index);
+            for(int i=0;i<game.periods();++i)if(auto* review=document->GetElementById(widget_control_id(entry.value("id",""),"plan-review-"+std::to_string(i))))review->SetClass("selected",i==index);
           }
 
           if(!markup.progress_pending())for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="button"&&entry.value("action","")=="advance"&&entry.value("autoLabel",true)) {
             const auto id=entry.value("id","");if(auto* control=document->GetElementById(id)){const auto label=markup.advance_label();control->SetInnerRML(escape(label));markup.labels[id]=label;}
           }
-          if(auto* summary=document->GetElementById("plan-summary-"+std::to_string(index))) {
+          for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule") {
+          if(auto* summary=document->GetElementById(widget_control_id(entry.value("id",""),"plan-summary-"+std::to_string(index)))) {
             std::string value;for(const auto& activity:markup.display_content.at("activities"))if(activity.at("id")==markup.plan[index])value=markup.activity_preview(activity);
             summary->SetInnerRML(escape(value));
           }
-          if(auto* description=document->GetElementById("plan-description-"+std::to_string(index))) {
+          if(auto* description=document->GetElementById(widget_control_id(entry.value("id",""),"plan-description-"+std::to_string(index)))) {
             std::string value;for(const auto& activity:markup.display_content.at("activities"))if(activity.at("id")==markup.plan[index])value=activity.value("description","");
             description->SetInnerRML(escape(value));
           }
-          if(auto* rules=document->GetElementById("plan-rules-"+std::to_string(index))) {
+          if(auto* rules=document->GetElementById(widget_control_id(entry.value("id",""),"plan-rules-"+std::to_string(index)))) {
             std::string value;for(const auto& activity:markup.display_content.at("activities"))if(activity.at("id")==markup.plan[index])value=markup.activity_rules(activity);
             rules->SetInnerRML(value);
+          }
           }
         }
       }
@@ -400,7 +405,7 @@ public:
     if(document)document->Close();
     document=replacement;
     document->AddEventListener("mouseover",this);document->AddEventListener("mouseout",this);document->AddEventListener("focus",this,true);document->AddEventListener("blur",this,true);document->AddEventListener("keydown",this);document->AddEventListener("click",this);document->AddEventListener("change",this);document->AddEventListener("input",this);document->Show();
-    for(int i=0;i<game.periods();i++)if(auto* select=document->GetElementById("plan-"+std::to_string(i))) {
+    for(const auto& owner:markup.render_elements)if(owner.value("kind","")=="schedule")for(int i=0;i<game.periods();i++)if(auto* select=document->GetElementById(widget_control_id(owner.value("id",""),"plan-"+std::to_string(i)))) {
       if(auto* box=select->QuerySelector("selectbox"))box->SetProperty("width",number(std::max(60.f,select->GetProperty<float>("width")))+"px");
       if(auto* arrow=select->QuerySelector("selectarrow"))arrow->SetInnerRML("▾");
     }
@@ -752,7 +757,7 @@ public:
         {"fontSize",element->GetProperty("font-size")->ToString()},
         {"color",element->GetProperty("color")->ToString()}});
     }
-    Json controls=Json::array(),options=Json::array();for(int i=0;i<game.periods();i++)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(document->GetElementById("plan-"+std::to_string(i)))){
+    Json controls=Json::array(),options=Json::array();for(const auto& owner:markup.render_elements)if(owner.value("kind","")=="schedule")for(int i=0;i<game.periods();i++)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(document->GetElementById(widget_control_id(owner.value("id",""),"plan-"+std::to_string(i))))){
       auto offset=select->GetAbsoluteOffset();auto size=select->GetBox().GetSize();controls.push_back({{"id",select->GetId()},{"value",select->GetValue()},{"x",offset.x},{"y",offset.y},{"width",size.x},{"height",size.y}});
       for(int j=0;j<select->GetNumOptions();j++)if(auto* option=select->GetOption(j)) {
         auto point=option->GetAbsoluteOffset();auto extent=option->GetBox().GetSize();auto* box=option->GetParentNode();auto clip=box->GetAbsoluteOffset();auto bounds=box->GetBox().GetSize();
@@ -760,7 +765,7 @@ public:
         options.push_back({{"id",option->GetId()},{"visible",visible},{"x",point.x},{"y",point.y},{"width",extent.x},{"height",extent.y},{"clipY",clip.y},{"clipHeight",bounds.y}});
       }
     }
-    Json texts=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="schedule"||entry.value("kind","")=="text"||entry.value("kind","")=="dialogue"||entry.value("kind","")=="equipment"||entry.value("kind","")=="quests"||entry.value("kind","")=="expedition"||entry.value("kind","")=="battle"||entry.value("kind","")=="relationship-stages"||entry.value("kind","")=="plugin") {
+    Json texts=Json::object();for(const auto& entry:markup.render_elements)if(entry.value("kind","")=="stats"||entry.value("kind","")=="result"||entry.value("kind","")=="schedule"||entry.value("kind","")=="text"||entry.value("kind","")=="dialogue"||entry.value("kind","")=="equipment"||entry.value("kind","")=="quests"||entry.value("kind","")=="expedition"||entry.value("kind","")=="battle"||entry.value("kind","")=="relationship-stages"||entry.value("kind","")=="plugin") {
       const auto id=entry.value("id","");if(auto* element=document->GetElementById("node-"+id))texts[id]=element->GetInnerRML();
     }
     if(auto* history=document->GetElementById("engine-reading-history-panel"))texts["engine-reading-history-panel"]=history->GetInnerRML();
@@ -843,7 +848,7 @@ public:
   Rml::Element* find_element(const std::string& id) {
     if(auto* element=document->GetElementById(id))return element;
     // RmlUi keeps dropdown options under non-DOM widget children.
-    for(int i=0;i<game.periods();i++)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(document->GetElementById("plan-"+std::to_string(i))))for(int j=0;j<select->GetNumOptions();j++)if(auto* option=select->GetOption(j);option&&option->GetId()==id)return option;
+    for(const auto& owner:markup.render_elements)if(owner.value("kind","")=="schedule")for(int i=0;i<game.periods();i++)if(auto* select=dynamic_cast<Rml::ElementFormControlSelect*>(document->GetElementById(widget_control_id(owner.value("id",""),"plan-"+std::to_string(i)))))for(int j=0;j<select->GetNumOptions();j++)if(auto* option=select->GetOption(j);option&&option->GetId()==id)return option;
     return nullptr;
   }
   void click(const std::string& id) {

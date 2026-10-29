@@ -172,6 +172,11 @@ target_link_libraries(qt-timeline-batch-test PRIVATE studio-ui Qt6::Test)
 add_test(NAME qt-timeline-batch COMMAND qt-timeline-batch-test)
 set_tests_properties(qt-timeline-batch PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+add_executable(qt-activity-workflow-test activity-workflow-test.cpp)
+target_link_libraries(qt-activity-workflow-test PRIVATE studio-ui Qt6::Test)
+add_test(NAME qt-activity-workflow COMMAND qt-activity-workflow-test)
+set_tests_properties(qt-activity-workflow PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # Saved-project checks stay independent of foreground authoring requests.
 target_sources(studio-ui PRIVATE goal-save-checks.cpp)
 

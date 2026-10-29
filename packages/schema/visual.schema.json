@@ -1264,7 +1264,12 @@
             "timelineSkip"
           ]
         },
-        "plannerElementId": {"$ref": "common.schema.json#/$defs/id"},
+        "plannerElementId": {
+          "type": "string",
+          "maxLength": 600,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:__[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$",
+          "description": "Resolved element ID on the target screen, including component instance paths separated by __."
+        },
         "plannerGroupId": {"$ref": "common.schema.json#/$defs/id"},
         "plannerActivityId": {"$ref": "common.schema.json#/$defs/id"},
         "screenId": {
@@ -1543,7 +1548,12 @@
                       "timelineSkip"
                     ]
                   },
-                  "plannerElementId": {"$ref": "common.schema.json#/$defs/id"},
+                  "plannerElementId": {
+                    "type": "string",
+                    "maxLength": 600,
+                    "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:__[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$",
+                    "description": "Resolved element ID on the target screen, including component instance paths separated by __."
+                  },
                   "plannerGroupId": {"$ref": "common.schema.json#/$defs/id"},
                   "plannerActivityId": {"$ref": "common.schema.json#/$defs/id"},
                   "screenId": {
@@ -3173,7 +3183,10 @@
             "component",
             "saveSlots",
             "playerSettings",
-            "loadSlots"
+            "loadSlots",
+            "schedule",
+            "stats",
+            "result"
           ]
         },
         "label": {
@@ -3419,7 +3432,12 @@
             "timelineSkip"
           ]
         },
-        "plannerElementId": {"$ref": "common.schema.json#/$defs/id"},
+        "plannerElementId": {
+          "type": "string",
+          "maxLength": 600,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:__[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$",
+          "description": "Resolved element ID on the target screen, including component instance paths separated by __."
+        },
         "plannerGroupId": {"$ref": "common.schema.json#/$defs/id"},
         "plannerActivityId": {"$ref": "common.schema.json#/$defs/id"},
         "screenId": {
@@ -3872,7 +3890,12 @@
                       "timelineSkip"
                     ]
                   },
-                  "plannerElementId": {"$ref": "common.schema.json#/$defs/id"},
+                  "plannerElementId": {
+                    "type": "string",
+                    "maxLength": 600,
+                    "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:__[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$",
+                    "description": "Resolved element ID on the target screen, including component instance paths separated by __."
+                  },
                   "plannerGroupId": {"$ref": "common.schema.json#/$defs/id"},
                   "plannerActivityId": {"$ref": "common.schema.json#/$defs/id"},
                   "screenId": {
@@ -4154,6 +4177,18 @@
               }
             }
           }
+        },
+        "showActivityDescription": {
+          "type": "boolean",
+          "description": "Show the selected activity's authored description below each schedule column. Off by default."
+        },
+        "showActivityRules": {
+          "type": "boolean",
+          "description": "Show authored costs and base attribute effects in schedule columns or roster assignments. Not a prediction. Off by default."
+        },
+        "showPhaseForecast": {
+          "type": "boolean",
+          "description": "Offer a read-only forecast of the current phase draft. Distinguishes determined changes from assumptions and blockers. Off by default."
         }
       },
       "required": [

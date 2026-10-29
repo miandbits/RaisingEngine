@@ -18,6 +18,7 @@ await run('phase-forecast-core',['--test','tests/native/phase-forecast.test.mjs'
 await run('ui-surfaces-core',['--test','--test-concurrency=1','tests/validation/ui-surfaces.test.mjs','tests/validation/ui-control-colors.test.mjs']);
 await run('raising-flow-contract',['--test','--test-concurrency=1','tests/visual/planner-entry.test.mjs','tests/visual/growth-summary.test.mjs','tests/visual/activity-card-summary.test.mjs','tests/validation/growth-authoring.test.mjs']);
 await run('activity-board-contract',['--test','tests/validation/activity-board.test.mjs']);
+await run('shared-widget-contract',['--test','tests/validation/shared-widgets.test.mjs']);
 await run('response-wait',['--test','tests/native/response-wait.test.mjs']);
 await run('balance-priorities',['--test','--test-concurrency=1','tests/analysis/priorities.test.mjs']);
 await run('release-readiness',['--test','--test-concurrency=1','tests/qt-studio/release-metadata.test.mjs','tests/runtime/qt-export.test.mjs']);
@@ -33,6 +34,7 @@ if(args.includes('--web')&&args.includes('--desktop'))await run('calendar-player
 if(args.includes('--web')&&args.includes('--desktop'))await run('presentation-update-players',['--test','--test-concurrency=1','tests/journey/presentation-update-players.test.mjs','tests/journey/release-branding-players.test.mjs']);
 if(args.includes('--web'))await run('plan-reuse-projection',['--test','tests/player/plan-reuse.test.mjs']);
 if(args.includes('--web')){
+  await run('web-shared-widgets',['--test','tests/journey/shared-widgets-web.test.mjs']);
   await run('web-growth-result',['--test','tests/visual/growth-summary-web.test.mjs']);
   await run('web-activity-board',['--test','--test-concurrency=1','tests/native/activity-board-web-controller.test.mjs','tests/journey/activity-board-web.test.mjs']);
   // Each thematic group keeps the same bounded deadline. The combined suite
@@ -46,6 +48,7 @@ if(args.includes('--web')){
   await run('web-resume-context',['--test','--test-concurrency=1','tests/journey/resume-context-web.test.mjs']);
 }
 if(args.includes('--desktop')){
+  await run('native-shared-widgets',['--test','tests/native-player/shared-widgets.test.mjs']);
   await run('native-growth-result',['--test','tests/native-player/growth-summary.test.mjs']);
   await run('native-activity-board',['--test','--test-concurrency=1','tests/native-player/activity-board.test.mjs']);
   await run('editor',['scripts/test-first-game-ui.mjs']);
@@ -71,7 +74,7 @@ if(args.includes('--desktop')){
   await runQt('surface-authoring',{QT_QPA_PLATFORM:'offscreen',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'surface-history.ini')},executable('qt-surface-authoring-test'));
   const canvasLog=path.join(out,'canvas-selection.qt.txt');
   await run('canvas-selection',['runtimeGeometryKeepsAuthoredCoordinates','runtimeSelectionMatchesRenderedPixels','-o',canvasLog+',txt'],{QT_QPA_PLATFORM:'offscreen'},executable('qt-canvas-state-test'),canvasLog);
-  for(const [name,test]of [['creator-workflow','qt-creator-workflow-test'],['release-settings','qt-release-settings-test'],['balance-periods','qt-analysis-periods-test'],['presentation-update','qt-presentation-update-test'],['activity-board','qt-activity-board-test'],['growth','qt-growth-authoring-test'],['screen-flow','qt-raising-screen-flow-test'],['shared-section','qt-shared-section-test'],['timeline-batch','qt-timeline-batch-test']])await runQt(name+'-authoring',{QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_EDITOR_LANGUAGE:'en',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,name+'-history.ini')},executable(test));
+  for(const [name,test]of [['creator-workflow','qt-creator-workflow-test'],['release-settings','qt-release-settings-test'],['balance-periods','qt-analysis-periods-test'],['presentation-update','qt-presentation-update-test'],['activity-board','qt-activity-board-test'],['growth','qt-growth-authoring-test'],['screen-flow','qt-raising-screen-flow-test'],['shared-section','qt-shared-section-test'],['timeline-batch','qt-timeline-batch-test'],['activity-workflow','qt-activity-workflow-test']])await runQt(name+'-authoring',{QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_EDITOR_LANGUAGE:'en',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,name+'-history.ini')},executable(test));
   await runQt('readable-authoring',{QT_QPA_PLATFORM:'offscreen',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'readable-history.ini')},executable('qt-readable-layout-test'));
   await runQt('update-compatibility-authoring',{QT_QPA_PLATFORM:'offscreen',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'update-compatibility-history.ini')},executable('qt-update-compatibility-test'));
   await runQt('analysis-priorities-authoring',{QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_EDITOR_LANGUAGE:'en',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'analysis-priorities-history.ini')},executable('qt-analysis-priorities-test'));

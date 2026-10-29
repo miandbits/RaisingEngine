@@ -51,7 +51,8 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
       if(e.action==='openPlanner'){
         if(e.kind!=='button')ctx.report(doc,ep+'/action','UI_PLANNER_ACTION_KIND','Open planner requires a button.');
         if(!visual.routing)ctx.report(doc,ep+'/action','UI_ROUTING_REQUIRED','Configure screen routing before opening a planner.');
-        const screen=objectItems(visual.screens).find(s=>s.id===e.screenId&&!s.modal),board=screen&&objectItems(screen.elements).find(item=>item.id===e.plannerElementId&&item.kind==='schedule'&&item.scheduleLayout==='activity-board');
+        const screen=objectItems(visual.screens).find(s=>s.id===e.screenId&&!s.modal);
+        let board:JsonObject|undefined;try{board=screen&&resolveScreenElements(visual as unknown as ReadonlyDesign,String(screen.id)).find(item=>item.id===e.plannerElementId&&item.kind==='schedule'&&item.scheduleLayout==='activity-board') as unknown as JsonObject|undefined;}catch{/* Expansion diagnostics are reported separately. */}
         if(!board)ctx.report(doc,ep+'/plannerElementId','UI_PLANNER_TARGET','Choose an activity board on an ordinary screen.');
         if(e.plannerGroupId!==undefined&&board&&!objectItems(board.scheduleGroups).some(g=>g.id===e.plannerGroupId))ctx.report(doc,ep+'/plannerGroupId','UI_PLANNER_GROUP','The chosen category does not exist on the target activity board.');
         if(e.plannerGroupId!==undefined&&e.plannerActivityId!==undefined&&board){const group=objectItems(board.scheduleGroups).find(g=>g.id===e.plannerGroupId);if(group&&!((group.activityIds??[]) as string[]).includes(String(e.plannerActivityId)))ctx.report(doc,ep+'/plannerActivityId','UI_PLANNER_ACTIVITY_GROUP','Choose an activity in the selected planner category.');}
@@ -163,7 +164,7 @@ export function checkVisual(ctx:SemanticContext,doc:ProjectDocument,visual:JsonO
     checkHierarchy(ctx,doc,objectItems(component.elements),cp+'/elements');
     for(const [j,child] of objectItems(component.elements).entries()) {
       const ep=`${cp}/elements/${j}`;
-      if(!['panel','text','image','button','meter','group','input','component'].includes(String(child.kind)))ctx.report(doc,ep+'/kind','UI_COMPONENT_CHILD_KIND','재사용 UI 안에는 패널·텍스트·이미지·버튼·게이지·그룹만 배치할 수 있습니다. 중첩 구성은 지원하지 않습니다.');
+      if(!['panel','text','image','button','meter','group','input','component','schedule','stats','result'].includes(String(child.kind)))ctx.report(doc,ep+'/kind','UI_COMPONENT_CHILD_KIND','This widget is not supported in a reusable component.');
       if(ids.has(String(child.id)))ctx.report(doc,ep+'/id','UI_ELEMENT_DUPLICATE','재사용 UI 안의 요소 ID가 중복되었습니다.');
       ids.add(String(child.id));
       const boundFields=componentBindings.get(id)?.get(String(child.id));

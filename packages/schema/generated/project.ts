@@ -3893,6 +3893,9 @@ export type Element = {
     | "timelinePause"
     | "timelineSpeed"
     | "timelineSkip";
+  /**
+   * Resolved element ID on the target screen, including component instance paths separated by __.
+   */
   plannerElementId?: string;
   plannerGroupId?: string;
   plannerActivityId?: string;
@@ -4008,6 +4011,9 @@ export type Element = {
         | "timelinePause"
         | "timelineSpeed"
         | "timelineSkip";
+      /**
+       * Resolved element ID on the target screen, including component instance paths separated by __.
+       */
       plannerElementId?: string;
       plannerGroupId?: string;
       plannerActivityId?: string;
@@ -8440,7 +8446,10 @@ export type ComponentChild = {
     | "component"
     | "saveSlots"
     | "playerSettings"
-    | "loadSlots";
+    | "loadSlots"
+    | "schedule"
+    | "stats"
+    | "result";
   label?: string;
   x: number;
   y: number;
@@ -9372,6 +9381,9 @@ export type ComponentChild = {
     | "timelinePause"
     | "timelineSpeed"
     | "timelineSkip";
+  /**
+   * Resolved element ID on the target screen, including component instance paths separated by __.
+   */
   plannerElementId?: string;
   plannerGroupId?: string;
   plannerActivityId?: string;
@@ -11600,6 +11612,9 @@ export type ComponentChild = {
         | "timelinePause"
         | "timelineSpeed"
         | "timelineSkip";
+      /**
+       * Resolved element ID on the target screen, including component instance paths separated by __.
+       */
       plannerElementId?: string;
       plannerGroupId?: string;
       plannerActivityId?: string;
@@ -13812,6 +13827,18 @@ export type ComponentChild = {
     activityId: string;
     imageAssetId: string;
   }[];
+  /**
+   * Show the selected activity's authored description below each schedule column. Off by default.
+   */
+  showActivityDescription?: boolean;
+  /**
+   * Show authored costs and base attribute effects in schedule columns or roster assignments. Not a prediction. Off by default.
+   */
+  showActivityRules?: boolean;
+  /**
+   * Offer a read-only forecast of the current phase draft. Distinguishes determined changes from assumptions and blockers. Off by default.
+   */
+  showPhaseForecast?: boolean;
 };
 export type Effects = (
   | {

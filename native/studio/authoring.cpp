@@ -1,3 +1,4 @@
+#include "widget-settings.hpp"
 #include "genre-widget-settings.hpp"
 #include "rule-extensions.hpp"
 #include "control-style-editor.hpp"
@@ -25,15 +26,17 @@
 #include <QVBoxLayout>
 #include <limits>
 #include <functional>
+#include <QPixmap>
+#include <QApplication>
+#include <QDockWidget>
+#include "activity-workflow.inc"
 
-void StudioWindow::editWidgetSettings() {
-  if (bridge.busy() || currentElement().isEmpty()) return;
-  if (currentElement()["kind"] == "collection") { editDataUi(); return; }
-  if (currentElement()["kind"] == "policies") { editRules(); return; }
-  if (QStringList{"services", "diets", "sell"}.contains(currentElement()["kind"].toString())) { editFacilities(); return; }
-  auto value = currentElement();
-  const auto openedRevision=view.value("revision"),openedRoot=view.value("root");
-  QDialog dialog(this); dialog.setObjectName("widgetSettingsDialog");
+bool editWidgetConfiguration(QWidget* parent,const QJsonObject& project,const QJsonArray& documents,
+                             const QJsonArray& assets,QJsonObject& element,QJsonObject& visualOptions,
+                             const std::function<bool()>& current) {
+  auto tr=[](const char* text){return StudioWindow::tr(text);};
+  auto value=element;
+  QDialog dialog(parent); dialog.setObjectName("widgetSettingsDialog");
   dialog.setWindowTitle(tr("위젯 구성")); dialog.resize(720, 600);
   auto shell = new QVBoxLayout(&dialog);
   auto scroll=new QScrollArea;scroll->setObjectName("widgetSettingsScroll");scroll->setWidgetResizable(true);scroll->setFrameShape(QFrame::NoFrame);shell->addWidget(scroll,1);
@@ -48,7 +51,7 @@ void StudioWindow::editWidgetSettings() {
   auto appearance = new QComboBox;
   appearance->setObjectName("widgetTheme");
   appearance->addItem(tr("기본"), "default"); appearance->addItem(tr("고전 프레임"), "ornate");
-  appearance->setCurrentIndex(appearance->findData(projectData()["visual"].toObject()["widgetTheme"].toString("default")));
+  appearance->setCurrentIndex(appearance->findData(project["visual"].toObject()["widgetTheme"].toString("default")));
   form->addRow(tr("프로젝트 위젯 테마"), appearance);
   QMap<QString,QComboBox*> frameFields;
   for(const auto &key: {QString("frameAssetId"),QString("entryFrameAssetId")}) {
@@ -56,7 +59,7 @@ void StudioWindow::editWidgetSettings() {
     form->addRow(key=="frameAssetId"?tr("분류 메뉴 프레임"):tr("활동·상품 카드 프레임"),field);
   }
   auto confirm = new QCheckBox(tr("상품 구매 전 확인 창"));
-  confirm->setChecked(projectData()["visual"].toObject()["confirmPurchases"].toBool()); form->addRow(confirm);
+  confirm->setChecked(project["visual"].toObject()["confirmPurchases"].toBool()); form->addRow(confirm);
   auto mode = new QComboBox; mode->setObjectName("widgetLayout"); QString key;
   const auto kind = value["kind"].toString();
   if (kind == "schedule") {key="scheduleLayout"; mode->addItem(tr("일정 칸 목록"),"columns"); mode->addItem(tr("월간 달력"),"calendar"); mode->addItem(tr("분류 → 활동 메뉴"),"menu"); mode->addItem(tr("활동 카드 · 계획 · 예상 변화"),"board");mode->addItem(tr("활동 보드 · 카드와 일정 칸"),"activity-board");}
@@ -67,8 +70,8 @@ void StudioWindow::editWidgetSettings() {
   if (!key.isEmpty()) {mode->setCurrentIndex(qMax(0,mode->findData(value[key].toString())));form->addRow(tr("표시 방식"),mode);}
   else mode->hide();
   auto boardHelp=new QLabel(tr("활동 보드는 카드를 살펴본 뒤 일정 칸에 적용합니다. 모든 활동 필터는 항상 제공되며, 분류에 없는 활동도 선택할 수 있습니다. 다인 육성은 지원하지 않습니다."));boardHelp->setObjectName("activityBoardHelp");boardHelp->setWordWrap(true);
-  if(kind=="schedule"){form->addRow(boardHelp);boardHelp->setVisible(mode->currentData()=="activity-board");connect(mode,&QComboBox::currentIndexChanged,&dialog,[=]{boardHelp->setVisible(mode->currentData()=="activity-board");});}else boardHelp->hide();
-  auto controlStyle=new QComboBox;controlStyle->setObjectName("widgetControlStyle");fillControlStyles(controlStyle,projectData()["visual"].toObject(),value.value("controlStyleId").toString());
+  if(kind=="schedule"){form->addRow(boardHelp);boardHelp->setVisible(mode->currentData()=="activity-board");QObject::connect(mode,&QComboBox::currentIndexChanged,&dialog,[=]{boardHelp->setVisible(mode->currentData()=="activity-board");});}else boardHelp->hide();
+  auto controlStyle=new QComboBox;controlStyle->setObjectName("widgetControlStyle");fillControlStyles(controlStyle,project["visual"].toObject(),value.value("controlStyleId").toString());
   auto colorHelp=new QLabel(controlStyleHelp());colorHelp->setWordWrap(true);if(supportsControlStyle(kind)){form->addRow(tr("컨트롤 색 스타일"),controlStyle);form->addRow(colorHelp);}else{controlStyle->hide();colorHelp->hide();}
   auto autoLabel = new QCheckBox(tr("진행 버튼 이름을 현재 단계에 맞춰 자동 변경"));
   auto phaseForecast = new QCheckBox(tr("일정 전체 예상 결과 표시"));
@@ -87,7 +90,7 @@ void StudioWindow::editWidgetSettings() {
   activityDescription->setChecked(value.value("showActivityDescription").toBool());
   if(kind=="schedule")form->addRow(activityDescription);else activityDescription->hide();
   bool boardDefaultsApplied=false;
-  if(kind=="schedule")connect(mode,&QComboBox::currentIndexChanged,&dialog,[&]{
+  if(kind=="schedule")QObject::connect(mode,&QComboBox::currentIndexChanged,&dialog,[&]{
     if(mode->currentData()!="activity-board"||value.value("scheduleLayout")=="activity-board"||boardDefaultsApplied)return;
     if(!value.contains("showActivityRules"))activityRules->setChecked(true);
     if(!value.contains("showActivityDescription"))activityDescription->setChecked(true);
@@ -97,14 +100,14 @@ void StudioWindow::editWidgetSettings() {
   auto activityIcons=value.value("activityIcons").toArray();
   if(kind=="schedule"){
     auto iconsButton=new QPushButton(tr("활동별 아이콘 선택…"));iconsButton->setObjectName("scheduleIconsButton");form->addRow(iconsButton);
-    connect(iconsButton,&QPushButton::clicked,&dialog,[&]{
+    QObject::connect(iconsButton,&QPushButton::clicked,&dialog,[&]{
       QDialog iconsDialog(&dialog);iconsDialog.setObjectName("scheduleIconsDialog");iconsDialog.setWindowTitle(tr("활동별 아이콘"));iconsDialog.resize(540,400);
       auto iconsLayout=new QVBoxLayout(&iconsDialog);auto scroll=new QScrollArea;scroll->setWidgetResizable(true);auto content=new QWidget;auto fields=new QFormLayout(content);scroll->setWidget(content);iconsLayout->addWidget(scroll);QMap<QString,QComboBox*> iconFields;
-      for(const auto& row:view["documents"].toArray())if(row.toObject()["kind"]=="activity"){
+      for(const auto& row:documents)if(row.toObject()["kind"]=="activity"){
         const auto activity=row.toObject()["data"].toObject();const auto id=activity["id"].toString();QString selectedIcon;for(const auto& icon:activityIcons)if(icon.toObject()["activityId"]==id)selectedIcon=icon.toObject()["imageAssetId"].toString();auto field=imagePicker(selectedIcon,"scheduleIcon-"+id);
         fields->addRow(activity["label"].toString(),field);iconFields[id]=field;
       }
-      auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);iconsLayout->addWidget(buttons);connect(buttons,&QDialogButtonBox::accepted,&iconsDialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&iconsDialog,&QDialog::reject);
+      auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);iconsLayout->addWidget(buttons);QObject::connect(buttons,&QDialogButtonBox::accepted,&iconsDialog,&QDialog::accept);QObject::connect(buttons,&QDialogButtonBox::rejected,&iconsDialog,&QDialog::reject);
       if(iconsDialog.exec()==QDialog::Accepted){activityIcons=QJsonArray();for(auto it=iconFields.begin();it!=iconFields.end();++it)if(!it.value()->currentData().toString().isEmpty())activityIcons.append(QJsonObject{{"activityId",it.key()},{"imageAssetId",it.value()->currentData().toString()}});}
     });
   }
@@ -114,47 +117,47 @@ void StudioWindow::editWidgetSettings() {
   for(int i=0;i<groups.size();i++){auto g=groups[i].toObject();table->setItem(i,0,new QTableWidgetItem(g["id"].toString()));table->setItem(i,1,new QTableWidgetItem(g["label"].toString()));table->setCellWidget(i,2,imagePicker(g["iconAssetId"].toString(),"scheduleGroupIcon"));}
   auto list = new QListWidget;list->setObjectName("widgetEntries");list->setMinimumHeight(140);
   auto decreasing = new QListWidget;decreasing->setObjectName("decreasingAttributes");decreasing->setMaximumHeight(110);
-  for(auto d:view["documents"].toArray())if(d.toObject()["kind"]=="attributes")for(auto v:d.toObject()["data"].toObject()["attributes"].toArray()){
+  for(auto d:documents)if(d.toObject()["kind"]=="attributes")for(auto v:d.toObject()["data"].toObject()["attributes"].toArray()){
     auto a=v.toObject();auto item=new QListWidgetItem(a["label"].toString(),decreasing);item->setData(Qt::UserRole,a["id"].toString());
     item->setCheckState(value.value("decreasingAttributeIds").toArray().contains(a["id"])?Qt::Checked:Qt::Unchecked);
   }
   if(kind=="schedule")form->addRow(tr("예상에서 낮아질수록 좋은 항목"),decreasing);else decreasing->hide();
   QJsonArray entries;
-  for(auto d:view["documents"].toArray()){
+  for(auto d:documents){
     auto doc=d.toObject();auto data=doc["data"].toObject();
     if(kind=="schedule"&&doc["kind"]=="activity")entries.append(data);
     if(kind=="stats"&&doc["kind"]=="attributes")entries=data["attributes"].toArray();
   }
   const auto selectionField=kind=="actions"?QString("actionIds"):QString("attributeIds");
-  if(kind=="actions")entries=ruleSelectableActions(projectData(),value.value("actionIds").toArray());
+  if(kind=="actions")entries=ruleSelectableActions(project,value.value("actionIds").toArray());
   for(auto v:entries){auto a=v.toObject();auto item=new QListWidgetItem(a.value("label").toString(a.value("name").toString())+" · "+a["id"].toString(),list);item->setData(Qt::UserRole,a["id"].toString());item->setCheckState(value.value(selectionField).toArray().contains(a["id"])?Qt::Checked:Qt::Unchecked);}
   int selected=-1;
   auto storeGroup=[&]{if(selected<0||selected>=groups.size())return;QJsonArray ids;for(int i=0;i<list->count();i++)if(list->item(i)->checkState()==Qt::Checked)ids.append(list->item(i)->data(Qt::UserRole).toString());auto g=groups[selected].toObject();g["activityIds"]=ids;groups[selected]=g;};
-  connect(table,&QTableWidget::currentCellChanged,&dialog,[&](int row,int,int,int){storeGroup();selected=row;auto ids=row>=0&&row<groups.size()?groups[row].toObject()["activityIds"].toArray():QJsonArray();for(int i=0;i<list->count();i++)list->item(i)->setCheckState(ids.contains(list->item(i)->data(Qt::UserRole).toString())?Qt::Checked:Qt::Unchecked);});
+  QObject::connect(table,&QTableWidget::currentCellChanged,&dialog,[&](int row,int,int,int){storeGroup();selected=row;auto ids=row>=0&&row<groups.size()?groups[row].toObject()["activityIds"].toArray():QJsonArray();for(int i=0;i<list->count();i++)list->item(i)->setCheckState(ids.contains(list->item(i)->data(Qt::UserRole).toString())?Qt::Checked:Qt::Unchecked);});
   auto buttons = new QHBoxLayout;auto add=new QPushButton(tr("분류 추가"));auto remove=new QPushButton(tr("분류 삭제"));add->setObjectName("scheduleGroupAdd");remove->setObjectName("scheduleGroupRemove");buttons->addWidget(add);buttons->addWidget(remove);
-  connect(add,&QPushButton::clicked,&dialog,[&]{if(table->rowCount()>=12)return;storeGroup();QSet<QString> ids;for(int i=0;i<table->rowCount();++i)ids.insert(table->item(i,0)->text());int suffix=1;while(ids.contains(QString("group-%1").arg(suffix)))++suffix;const auto id=QString("group-%1").arg(suffix);auto row=table->rowCount();groups.append(QJsonObject{{"id",id},{"label",tr("새 분류")},{"activityIds",QJsonArray()}});table->insertRow(row);table->setItem(row,0,new QTableWidgetItem(id));table->setItem(row,1,new QTableWidgetItem(tr("새 분류")));table->setCellWidget(row,2,imagePicker({},"scheduleGroupIcon"));table->setCurrentCell(row,1);add->setEnabled(table->rowCount()<12);});
-  connect(remove,&QPushButton::clicked,&dialog,[&]{int row=table->currentRow();if(row<0)return;selected=-1;groups.removeAt(row);table->removeRow(row);if(table->rowCount())table->setCurrentCell(qMin(row,table->rowCount()-1),0);add->setEnabled(true);});
+  QObject::connect(add,&QPushButton::clicked,&dialog,[&]{if(table->rowCount()>=12)return;storeGroup();QSet<QString> ids;for(int i=0;i<table->rowCount();++i)ids.insert(table->item(i,0)->text());int suffix=1;while(ids.contains(QString("group-%1").arg(suffix)))++suffix;const auto id=QString("group-%1").arg(suffix);auto row=table->rowCount();groups.append(QJsonObject{{"id",id},{"label",tr("새 분류")},{"activityIds",QJsonArray()}});table->insertRow(row);table->setItem(row,0,new QTableWidgetItem(id));table->setItem(row,1,new QTableWidgetItem(tr("새 분류")));table->setCellWidget(row,2,imagePicker({},"scheduleGroupIcon"));table->setCurrentCell(row,1);add->setEnabled(table->rowCount()<12);});
+  QObject::connect(remove,&QPushButton::clicked,&dialog,[&]{int row=table->currentRow();if(row<0)return;selected=-1;groups.removeAt(row);table->removeRow(row);if(table->rowCount())table->setCurrentCell(qMin(row,table->rowCount()-1),0);add->setEnabled(true);});
   add->setEnabled(table->rowCount()<12);
   if(kind=="schedule"){layout->addWidget(new QLabel(tr("분류를 선택한 뒤 포함할 활동을 체크하세요.")));layout->addWidget(table);layout->addLayout(buttons);layout->addWidget(list);if(!groups.empty())table->setCurrentCell(0,0);}
   else {table->hide();add->hide();remove->hide();if(kind=="stats"||kind=="actions"){layout->addWidget(new QLabel(tr("표시할 항목 (선택하지 않으면 전체)")));layout->addWidget(list);}else list->hide();}
-  auto genreSettings=new GenreWidgetSettings(value,projectData(),view.value("documents").toArray());if(kind=="schedule"||kind=="button")layout->addWidget(genreSettings);else genreSettings->hide();
+  auto genreSettings=new GenreWidgetSettings(value,project,documents);if(kind=="schedule"||kind=="button")layout->addWidget(genreSettings);else genreSettings->hide();
   if(kind=="result"){auto help=new QLabel(tr("이번 활동 성장 표시는 확정된 한 활동의 수치만 비교합니다. 기간 전체 합계나 예상 결과가 아닙니다."));help->setWordWrap(true);layout->addWidget(help);}
   auto error=new QLabel;error->setObjectName("widgetSettingsError");error->setWordWrap(true);error->hide();shell->addWidget(error);
   auto ok = new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);ok->setObjectName("widgetSettingsButtons");shell->addWidget(ok);
-  connect(ok,&QDialogButtonBox::accepted,&dialog,[&]{
+  QObject::connect(ok,&QDialogButtonBox::accepted,&dialog,[&]{
     auto fail=[&](const QString& message){error->setText(message);error->show();};
     const auto genreError=genreSettings->validate(mode->currentData().toString(),activityRules->isChecked(),phaseForecast->isChecked());if(!genreError.isEmpty()){fail(genreError);return;}
-    if(view.value("revision")!=openedRevision||view.value("root")!=openedRoot){fail(tr("프로젝트가 변경되었습니다. 취소한 뒤 다시 열어 주세요."));return;}
+    if(!current()){fail(tr("프로젝트가 변경되었습니다. 취소한 뒤 다시 열어 주세요."));return;}
     if(kind=="schedule"){
-      if(mode->currentData()=="activity-board"&&projectData().contains("roster")){fail(tr("활동 보드는 한 명을 육성하는 프로젝트에서 사용할 수 있습니다. 다인 육성에서는 다른 표시 방식을 선택하세요."));return;}
+      if(mode->currentData()=="activity-board"&&project.contains("roster")){fail(tr("활동 보드는 한 명을 육성하는 프로젝트에서 사용할 수 있습니다. 다인 육성에서는 다른 표시 방식을 선택하세요."));return;}
       storeGroup();QSet<QString> ids;
       for(int i=0;i<groups.size();++i){const auto id=table->item(i,0)->text().trimmed();
         if(id.size()>64||!QRegularExpression("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$").match(id).hasMatch()||ids.contains(id)||table->item(i,1)->text().trimmed().isEmpty()||groups[i].toObject()["activityIds"].toArray().isEmpty()){fail(tr("각 분류에는 중복 없는 영문 소문자 ID, 표시 이름, 활동이 하나 이상 필요합니다."));table->setCurrentCell(i,0);scroll->ensureWidgetVisible(table);return;}ids.insert(id);
       }
     }
     dialog.accept();
-  });connect(ok,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
-  if(dialog.exec()!=QDialog::Accepted)return;
+  });QObject::connect(ok,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+  if(dialog.exec()!=QDialog::Accepted)return false;
   storeGroup();if(!key.isEmpty())value[key]=mode->currentData().toString();
   for(auto it=frameFields.begin();it!=frameFields.end();++it){auto id=it.value()->currentData().toString();if(id.isEmpty())value.remove(it.key());else value[it.key()]=id;}
   if(kind=="schedule") {for(int i=0;i<groups.size();i++){auto g=groups[i].toObject();g["id"]=table->item(i,0)->text().trimmed();g["label"]=table->item(i,1)->text();const auto icon=qobject_cast<QComboBox*>(table->cellWidget(i,2))->currentData().toString();if(icon.isEmpty())g.remove("iconAssetId");else g["iconAssetId"]=icon;groups[i]=g;}value["scheduleGroups"]=groups;}
@@ -168,9 +171,24 @@ void StudioWindow::editWidgetSettings() {
   if(kind=="schedule"){if(phaseForecast->isChecked())value["showPhaseForecast"]=true;else value.remove("showPhaseForecast");}
   if(kind=="schedule"){if(activityRules->isChecked())value["showActivityRules"]=true;else if(value["scheduleLayout"]=="activity-board"||value.contains("showActivityRules"))value["showActivityRules"]=false;else value.remove("showActivityRules");}
   if(kind=="schedule"){if(activityDescription->isChecked())value["showActivityDescription"]=true;else if(value["scheduleLayout"]=="activity-board"||value.contains("showActivityDescription"))value["showActivityDescription"]=false;else value.remove("showActivityDescription");}
+  visualOptions={{"widgetTheme",appearance->currentData().toString()},{"confirmPurchases",confirm->isChecked()}};
+  element=value;return true;
+}
+
+void StudioWindow::editWidgetSettings() {
+  if (bridge.busy() || currentElement().isEmpty()) return;
+  if (currentElement()["kind"] == "collection") { editDataUi(); return; }
+  if (currentElement()["kind"] == "policies") { editRules(); return; }
+  if (QStringList{"services", "diets", "sell"}.contains(currentElement()["kind"].toString())) { editFacilities(); return; }
+  auto value=currentElement();QJsonObject options;
+  const auto openedRevision=view.value("revision"),openedRoot=view.value("root");
+  const auto openedScreen=screenId,openedSelection=selection;
+  if(!editWidgetConfiguration(this,projectData(),view.value("documents").toArray(),assets,value,options,[&]{
+    return !bridge.busy()&&view.value("revision")==openedRevision&&view.value("root")==openedRoot&&screenId==openedScreen&&selection==openedSelection;
+  }))return;
   auto project=projectData();auto visual=project["visual"].toObject();auto screens=visual["screens"].toArray();
   for(int i=0;i<screens.size();i++){auto s=screens[i].toObject();if(s["id"]!=screenId)continue;auto elements=s["elements"].toArray();for(int j=0;j<elements.size();j++)if(elements[j].toObject()["id"]==selection)elements[j]=value;s["elements"]=elements;screens[i]=s;}
-  visual["screens"]=screens;visual["widgetTheme"]=appearance->currentData().toString();visual["confirmPurchases"]=confirm->isChecked();project["visual"]=visual;replaceProject(project);
+  visual["screens"]=screens;for(auto it=options.begin();it!=options.end();++it)visual[it.key()]=it.value();project["visual"]=visual;replaceProject(project);
 }
 
 void StudioWindow::addElement(const QString &kind, const QString &assetId) {
@@ -391,10 +409,10 @@ void StudioWindow::editContent() {
   const bool isActivity = data.contains("requirements") && data.contains("costs") && data.contains("baseEffects");
   QDialog dialog(this);
   dialog.setObjectName("contentEditor");
-  dialog.setWindowTitle(tr("콘텐츠 편집 · ") + file);
+  dialog.setWindowTitle(isActivity ? tr("활동 · 조건 · 연출 함께 편집 · %1").arg(data.value("label").toString()) : tr("콘텐츠 편집 · ") + file);
   dialog.resize(760, 600);
   auto layout = new QVBoxLayout(&dialog);
-  auto tabs = new QTabWidget;
+  auto tabs = new QTabWidget;tabs->setObjectName("contentTabs");
   layout->addWidget(tabs);
   auto formPage = new QWidget;
   auto form = new QFormLayout(formPage);
@@ -650,6 +668,17 @@ void StudioWindow::editContent() {
     connect(addDetail, &QPushButton::clicked, &dialog, [appendPreview] { appendPreview({}); });
     connect(removeDetail, &QPushButton::clicked, &dialog, [previewAttributes] { if (previewAttributes->currentRow() >= 0) previewAttributes->removeRow(previewAttributes->currentRow()); });
     tabs->addTab(detailsPage, tr("일정 선택 정보 · 현재 값"));
+  }
+  ActivityPresentationEditor *presentation=nullptr;
+  if(isActivity){
+    auto scroll=new QScrollArea;scroll->setObjectName("activityPresentationScroll");scroll->setWidgetResizable(true);scroll->setFrameShape(QFrame::NoFrame);
+    presentation=new ActivityPresentationEditor(projectData(),data,assets,[&](QJsonObject &draft,QString timeline){
+      auto documents=view.value("documents").toArray();for(int n=0;n<documents.size();++n){auto doc=documents[n].toObject();if(doc["file"]!=file)continue;auto activity=doc["data"].toObject();activity["label"]=label->text();activity["description"]=description->toPlainText();doc["data"]=activity;documents[n]=doc;}
+      return editTimelineDraft(draft,documents,&dialog,data.value("id").toString(),timeline);
+    },scroll);scroll->setWidget(presentation);tabs->addTab(scroll,tr("배경 · 연결된 연출"));
+    connect(label,&QLineEdit::textChanged,presentation,[=](QString value){presentation->activityLabel=value;presentation->refreshSummary();});
+    connect(qApp,&QApplication::focusChanged,&dialog,[=](QWidget*,QWidget *next){if(next&&presentation->isAncestorOf(next))scroll->ensureWidgetVisible(next);});
+    auto shortcut=new QPushButton(tr("배경 · 연결된 연출 편집…"));shortcut->setObjectName("contentPresentationQuick");form->addRow(shortcut);connect(shortcut,&QPushButton::clicked,&dialog,[=]{tabs->setCurrentWidget(scroll);});
   }
   auto rows = data.value("attributes").toArray();
   auto table = new QTableWidget(0, 6);
@@ -911,6 +940,7 @@ void StudioWindow::editContent() {
       }
       result["nodes"] = a;
     }
+    if(presentation){if(!presentation->scene.isEmpty()||data.contains("presentation"))result["presentation"]=presentation->scene;else result.remove("presentation");}
     return result;
   };
   // Merely viewing JSON must not lock the forms. Only actual raw edits do.
@@ -979,13 +1009,18 @@ void StudioWindow::editContent() {
       }
       if (!missing.isEmpty()) { error->setText(tr("표정 '%1'은 대본 또는 화면에서 사용 중입니다. 연결을 먼저 바꾸거나 같은 표정 ID의 이미지를 교체하세요.").arg(missing)); return; }
     }
-    if (!result.isEmpty())
-      dialog.accept();
+    if(!result.isEmpty()&&presentation){
+      const auto problem=presentation->validation();if(!problem.isEmpty()){error->setText(problem);return;}
+    }
+    if(result.isEmpty())return;
+    QJsonArray edits;if(result!=data)edits.append(QJsonObject{{"type","replace"},{"file",file},{"data",result}});
+    if(presentation&&presentation->project!=projectData())for(auto value:view.value("documents").toArray()){auto doc=value.toObject();if(doc["kind"]=="project")edits.append(QJsonObject{{"type","replace"},{"file",doc["file"]},{"data",presentation->project}});}
+    if(edits.isEmpty()){dialog.accept();return;}
+    buttons->setEnabled(false);QPointer<QDialog> guard(&dialog);
+    const auto edit=edits.size()==1?edits[0].toObject():QJsonObject{{"type","batch"},{"edits",edits}};
+    request("edit",{{"edit",edit}},[&,guard](QJsonObject reply){if(!guard)return;buttons->setEnabled(true);const auto problem=reply.value("error").toString();if(!problem.isEmpty()){error->setText(problem);return;}dialog.accept();});
   });
-  if (dialog.exec() == QDialog::Accepted)
-    request("edit", {{"edit", QJsonObject{{"type", "replace"},
-                                          {"file", file},
-                                          {"data", result}}}});
+  dialog.exec();
   if (!table->parent())
     delete table;
   if (!dialogue->parent())

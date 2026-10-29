@@ -47,9 +47,9 @@ test('missing, wrong-kind and duplicate board artwork/activity references produc
 test('board kind and roster restrictions cannot be bypassed through component declarations or expansion',async()=>{
  const f=await fixture();f.board.kind='panel';let result=await validate(f);assert.ok(result.diagnostics.some(d=>d.code==='UI_ACTIVITY_BOARD_KIND'));
  f.board.kind='schedule';f.project.roster={localAttributeIds:['skill','stamina','stress'],members:[{activityId:'study',characterId:'apprentice',initialAttributes:{skill:0,stamina:80,stress:0}}]};result=await validate(f);assert.ok(result.diagnostics.some(d=>d.code==='UI_ACTIVITY_BOARD_ROSTER'));delete f.project.roster;
- const child={id:'planner',kind:'panel',x:0,y:0,width:300,height:200,scheduleLayout:'activity-board'};f.project.visual.components=[{id:'planner-card',label:'Unsupported board carrier',width:300,height:200,elements:[child]}];f.screen.elements.push({id:'planner-instance',kind:'component',componentId:'planner-card',x:0,y:0,width:300,height:200});
+ const child={id:'planner',kind:'panel',x:0,y:0,width:300,height:200,scheduleLayout:'activity-board'};f.project.visual.components=[...(f.project.visual.components??[]),{id:'planner-card',label:'Unsupported board carrier',width:300,height:200,elements:[child]}];f.screen.elements.push({id:'planner-instance',kind:'component',componentId:'planner-card',x:0,y:0,width:300,height:200});
  const expanded=resolveScreenElements(f.project.visual,'schedule').find(e=>e.id==='planner-instance__planner');assert.equal(expanded.kind,'panel');assert.equal(expanded.scheduleLayout,'activity-board');result=await validate(f);assert.ok(result.diagnostics.some(d=>d.code==='UI_ACTIVITY_BOARD_KIND'&&d.pointer.includes('/components/')));
- child.kind='schedule';result=await validate(f);assert.ok(result.diagnostics.some(d=>d.code==='SCHEMA_INVALID'&&d.pointer.includes('/components/')),'Schedule children remain outside supported component authoring.');
+ child.kind='schedule';result=await validate(f);assert.equal(result.valid,true,JSON.stringify(result.diagnostics));
 });
 
 test('new board and its icons have one independent capability; legacy board and opaque plugin data stay separate',async()=>{

@@ -22,7 +22,7 @@
     if(e.value("showActivityRules",false))out+="<div id=\"plan-rules-"+std::to_string(slot)+"\" class=\"schedule-detail-text\">"+activity_rules(*activity)+"</div>";
     const auto summary=activity_preview(*activity);
     if(!summary.empty())out+="<div id=\"plan-summary-"+std::to_string(slot)+"\" class=\"schedule-detail-text\">"+escape(summary)+"</div>";
-    return out;
+    return scope_widget_controls(out,e.value("id",""));
   }
   std::string detailed_schedule_columns(const Json& e) {
     ensure_plan();if(game.state.is_null())return "";

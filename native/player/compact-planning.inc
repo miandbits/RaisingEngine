@@ -18,7 +18,7 @@
   }
   Json compact_groups(const Json& e) const {
     auto groups=e.value("scheduleGroups",Json::array());
-    if(e.value("scheduleLayout","")!="activity-board"&&groups.empty())for(const auto& screen:display_content.at("project").at("visual").at("screens"))for(const auto& item:screen.at("elements"))
+    if(e.value("scheduleLayout","")!="activity-board"&&groups.empty())for(const auto& screen:display_content.at("project").at("visual").at("screens"))for(const auto& item:expanded_elements(display_content.at("project").at("visual"),screen,width,height,"planning"))
       if(item.value("scheduleLayout","")=="menu"&&!item.value("scheduleGroups",Json::array()).empty()){groups=item.at("scheduleGroups");break;}
     return groups;
   }

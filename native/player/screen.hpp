@@ -1,6 +1,7 @@
 #pragma once
 #include "session.hpp"
 #include "planner-entry.hpp"
+#include "widget-controls.hpp"
 #include "save-slots.hpp"
 #include "styles.hpp"
 #include "surface.hpp"
@@ -126,6 +127,13 @@ public:
   }
   int pending_revision=-1;
   std::map<std::string,int> quantities;
+  std::string widget_control_owner;
+  std::string widget_local_control(const std::string& id) const {
+    for(const auto& e:render_elements)if(e.value("kind","")=="schedule") {
+      const auto owner=e.value("id","");if(owner.find("__")!=std::string::npos&&id.rfind(owner+"__",0)==0)return id.substr(owner.size()+2);
+    }
+    return id;
+  }
   std::map<std::string,Json> actions;
   std::map<std::string,std::string> labels;
   int width=1280, height=720;
@@ -546,6 +554,7 @@ public:
   }
   std::string button(std::string id, const std::string& label, Json action, bool enabled=true, std::string reason="") {
     // Prefixing makes authored IDs collision-free with the screen root and list container IDs.
+    id=widget_control_id(widget_control_owner,id);
     std::string base=id; for(int i=2;actions.count(id);i++)id=base+"-"+std::to_string(i);
     const bool receipt=action.value("type","")=="choose";actions[id]=std::move(action); labels[id]=label;
     return "<button id=\""+escape(id)+"\""+(enabled?"":" disabled=\"disabled\"")+">"+(receipt?history_text(label):escape(label))+"</button>"+(reason.empty()?"":"<div class=\"reason\">"+escape(player_reason(reason))+"</div>");
@@ -662,7 +671,7 @@ public:
     if(plan.size()!=size_t(game.periods())){plan.assign(game.periods(),display_content.at("activities").at(0).value("id",""));for(const auto& a:display_content.at("activities"))if(a.value("id","")=="rest")plan.assign(game.periods(),"rest");}
     plan_slot=std::clamp(plan_slot,period,game.periods()-1);
     auto groups=e.value("scheduleGroups",Json::array());
-    if(groups.empty())for(const auto& s:display_content.at("project").at("visual").at("screens"))for(const auto& el:s.at("elements"))if(el.value("scheduleLayout","")=="menu")groups=el.value("scheduleGroups",Json::array());
+    if(groups.empty())for(const auto& s:display_content.at("project").at("visual").at("screens"))for(const auto& el:expanded_elements(display_content.at("project").at("visual"),s,width,height,"planning"))if(el.value("scheduleLayout","")=="menu")groups=el.value("scheduleGroups",Json::array());
     auto label=[this](const std::string& id){for(const auto& a:display_content.at("activities"))if(a.at("id")==id)return a.value("label",id);return id;};
     std::string out;
     if(e.value("scheduleLayout","")=="calendar") {
@@ -677,7 +686,7 @@ public:
       const auto weeks=locale.rfind("ko",0)==0?weeks_ko:weeks_en;
       for(int i=0;i<7;i++)out+="<div style=\"position:absolute;left:"+number(i*cw)+"px;top:40px;width:"+number(cw)+"px;text-align:center;font-size:20px;\">"+escape(config.custom?config.weekdays[i]:weeks[i])+"</div>";
       for(int d=1;d<=days;d++){int cell=offset+d-1,slot=raising::dates::day_slot(d,game.periods(),days,config.custom);std::string icon;if(plan_selected&(1<<slot))for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[slot])icon=asset(a.value("iconAssetId",Json()));
-        const auto id="calendar-day-"+std::to_string(d);actions[id]={{"type","planSlot"},{"slot",slot}};labels[id]=(config.custom?config.day+" "+std::to_string(d):std::to_string(d)+"일")+" · "+label(plan[slot]);
+        const auto id=widget_control_id(e.value("id",""),"calendar-day-"+std::to_string(d));actions[id]={{"type","planSlot"},{"slot",slot}};labels[id]=(config.custom?config.day+" "+std::to_string(d):std::to_string(d)+"일")+" · "+label(plan[slot]);
         out+="<button class=\"calendar-cell\" id=\""+id+"\" style=\"position:absolute;left:"+number((cell%7)*cw)+"px;top:"+number(80+(cell/7)*ch)+"px;width:"+number(cw)+"px;height:"+number(ch)+"px;border-color:"+(slot==plan_slot?"#dfc579":"#967769")+";\""+(!editable||slot<period?" disabled=\"disabled\"":"")+"><div>"+std::to_string(d)+"</div>";
         if(!icon.empty())out+="<div style=\"width:28px;height:28px;margin-left:16px;decorator:image(&quot;"+escape(icon)+"&quot; contain);\"></div>";
         else if(plan_selected&(1<<slot))out+="<div class=\"calendar-activity-name\" style=\"font-size:12px;line-height:16px;height:32px;width:"+number(std::max(1.0,cw-4))+"px;text-align:center;white-space:normal;word-break:break-word;\">"+escape(calendar_short_label(label(plan[slot])))+"</div>";
@@ -737,7 +746,10 @@ public:
     if(kind=="schedule"&&display_content.at("project").contains("roster"))style+="overflow:hidden;";
     if(kind=="schedule"&&e.value("scheduleLayout","")=="calendar"&&!e.value("showPhaseForecast",false))style+="overflow:auto;pointer-events:auto;";
     if(kind=="schedule"&&e.value("scheduleLayout","columns")=="menu")for(const auto& a:display_content.at("activities"))if(!a.value("previewAttributes",Json::array()).empty()){style+="overflow-x:hidden;overflow-y:auto;pointer-events:auto;";break;}
+    const auto prior_owner=widget_control_owner;widget_control_owner=kind=="schedule"?e.value("id",""):"";
     auto body=element_body(e);
+    if(kind=="schedule")body=scope_widget_controls(body,widget_control_owner);
+    widget_control_owner=prior_owner;
     if(kind=="schedule"||kind=="saveSlots"||kind=="loadSlots")body=colored_controls(body,control_colors(e));
     if(!e.value("_boundEnabled",true)||(e.contains("enabledCondition")&&!visual_condition(e.at("enabledCondition")))) {
       for(const std::string tag:{"<button ","<select ","<input "})for(size_t at=0;(at=body.find(tag,at))!=std::string::npos;) {
@@ -1064,7 +1076,7 @@ public:
     refreshDisplay();
     readable_active=false;readable_screen_id.clear();
     if(extensions&&!authored_gallery())extensions->begin_sync();
-    actions.clear(); labels.clear(); authored_timeline_controls=0;
+    actions.clear(); labels.clear(); widget_control_owner.clear(); authored_timeline_controls=0;
     const auto& visual=display_content.at("project").at("visual");
     const auto dimensions=logical_viewport(visual,viewport_width,viewport_height);width=dimensions.first;height=dimensions.second;
     const auto raw_phase=game.state.is_null()?"title":game.state.value("phase","");
