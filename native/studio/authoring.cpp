@@ -672,7 +672,14 @@ void StudioWindow::editContent() {
   ActivityPresentationEditor *presentation=nullptr;
   if(isActivity){
     auto scroll=new QScrollArea;scroll->setObjectName("activityPresentationScroll");scroll->setWidgetResizable(true);scroll->setFrameShape(QFrame::NoFrame);
-    presentation=new ActivityPresentationEditor(projectData(),data,assets,[&](QJsonObject &draft,QString timeline){
+    // The service preview list contains images/fonts only; the draft manifest
+    // is the complete source of image and audio choices.
+    QJsonArray presentationAssets;
+    for(auto row:view.value("documents").toArray())if(row.toObject().value("kind")=="assets")
+      for(auto value:row.toObject().value("data").toObject().value("assets").toArray()){
+        auto registered=value.toObject();for(auto preview:assets)if(preview.toObject().value("id")==registered.value("id")){registered["absolutePath"]=preview.toObject().value("absolutePath");break;}presentationAssets.append(registered);
+      }
+    presentation=new ActivityPresentationEditor(projectData(),data,presentationAssets,[&](QJsonObject &draft,QString timeline){
       auto documents=view.value("documents").toArray();for(int n=0;n<documents.size();++n){auto doc=documents[n].toObject();if(doc["file"]!=file)continue;auto activity=doc["data"].toObject();activity["label"]=label->text();activity["description"]=description->toPlainText();doc["data"]=activity;documents[n]=doc;}
       return editTimelineDraft(draft,documents,&dialog,data.value("id").toString(),timeline);
     },scroll);scroll->setWidget(presentation);tabs->addTab(scroll,tr("배경 · 연결된 연출"));
