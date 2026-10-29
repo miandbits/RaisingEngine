@@ -9,6 +9,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTest>
+#include <QTableWidget>
 #include <QSignalSpy>
 #include <QTimer>
 #include <QTemporaryDir>
@@ -405,7 +406,8 @@ void contentSearchSelectsVisibleDocument() {
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());QTemporaryDir temp(engine+"/.cache/qt-content-filter-XXXXXX");QVERIFY(temp.isValid());QVERIFY(copyInteractionFixture(engine+"/examples/starlight-three-months",temp.path()));
   StudioWindow window(engine);window.show();window.openProject(temp.path());QTRY_VERIFY_WITH_TIMEOUT(!window.busy()&&!window.projectData().isEmpty(),20000);auto search=window.findChild<QLineEdit*>("contentSearch");auto list=window.findChild<QListWidget*>("contentList");auto edit=window.findChild<QPushButton*>("contentEdit");QVERIFY(search&&list&&edit);auto tabs=window.findChild<QTabWidget*>("bottomTabs");QVERIFY(tabs);tabs->setCurrentWidget(list->parentWidget());
   auto find=[&](QString suffix)->QListWidgetItem*{for(int i=0;i<list->count();++i)if(list->item(i)->data(Qt::UserRole).toString().endsWith(suffix))return list->item(i);return nullptr;};auto attributes=find("attributes.json");QVERIFY(attributes);list->setCurrentItem(attributes);search->setText("activities/rest.json");QVERIFY(attributes->isHidden());QVERIFY(list->currentItem());QVERIFY(!list->currentItem()->isHidden());QVERIFY(list->currentItem()->data(Qt::UserRole).toString().endsWith("activities/rest.json"));QVERIFY(edit->isEnabled());
-  bool opened=false;auto inspect=[&]{auto dialog=window.findChild<QDialog*>("contentEditor");QVERIFY(dialog);QVERIFY(dialog->windowTitle().endsWith("activities/rest.json"));opened=true;dialog->reject();};QTimer::singleShot(20,&window,inspect);edit->click();QVERIFY(opened);
+  QJsonObject expectedActivity;for(const auto row:window.currentView().value("documents").toArray()){const auto document=row.toObject();if(document.value("kind")=="activity"&&document.value("data").toObject().value("id")=="rest")expectedActivity=document.value("data").toObject();}QVERIFY(!expectedActivity.isEmpty());
+  bool opened=false;auto inspect=[&]{auto dialog=window.findChild<QDialog*>("contentEditor");QVERIFY(dialog);auto label=dialog->findChild<QLineEdit*>("contentLabel");QVERIFY(label);QCOMPARE(label->text(),expectedActivity.value("label").toString());bool hasActivityId=false;for(auto field:dialog->findChildren<QLabel*>())if(field->text()==expectedActivity.value("id").toString())hasActivityId=true;QVERIFY(hasActivityId);auto effects=dialog->findChild<QTableWidget*>("content-baseEffects");QVERIFY(effects);QCOMPARE(effects->rowCount(),expectedActivity.value("baseEffects").toArray().size());opened=true;dialog->reject();};QTimer::singleShot(20,&window,inspect);edit->click();QVERIFY(opened);
   // A service refresh must not restore the earlier hidden current row.
   window.findChild<QAction*>("saveProject")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!window.busy(),10000);QVERIFY(list->currentItem()&&!list->currentItem()->isHidden());QVERIFY(list->currentItem()->data(Qt::UserRole).toString().endsWith("activities/rest.json"));
   opened=false;window.activateWindow();list->setFocus();QTRY_VERIFY(list->hasFocus());QTimer::singleShot(20,&window,inspect);QTest::keyClick(list,Qt::Key_Return);QTRY_VERIFY(opened);
