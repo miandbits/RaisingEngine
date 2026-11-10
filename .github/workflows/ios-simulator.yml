@@ -1,4 +1,4 @@
-name: iOS Simulator
+name: iOS export and Simulator Files
 on:
   push:
     paths: &ios-paths
@@ -16,6 +16,11 @@ on:
   pull_request:
     paths: *ios-paths
   workflow_dispatch:
+    inputs:
+      run_voiceover:
+        description: Run the actual VoiceOver test on the Xcode 27 hosted Simulator
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,15 +30,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  public-starter:
+  build-public-starter:
+    name: Build the public iOS export and VoiceOver harness
     runs-on: xcode-27
     timeout-minutes: 50
     env:
       BUILD_JOBS: '3'
       DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      RAISING_IOS_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17e
-      RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-0
       RAISING_NATIVE_TRANSPORT: process
     steps:
       - uses: actions/checkout@v4
@@ -50,8 +54,6 @@ jobs:
           mkdir -p .cache/ios-simulator-ci
           {
             echo "source=$(git rev-parse HEAD)"
-            echo "testRuntime=$RAISING_IOS_SIMULATOR_RUNTIME"
-            echo "testDeviceType=$RAISING_IOS_SIMULATOR_DEVICE_TYPE"
             xcodebuild -version
             xcrun simctl list runtimes available
           } | tee .cache/ios-simulator-ci/environment.txt
@@ -81,41 +83,125 @@ jobs:
           }
           JS
       - name: Build the exported iOS application
-        id: build_ios
         run: npm run build:ios -- --project .cache/ios-simulator-ci/export
-      - name: Test the actual Files picker on iPhone Simulator
-        id: files_picker
-        run: |
-          result=0
-          node scripts/test-ios-system-ui.mjs .cache/ios-simulator-ci/export \
-            --project .cache/ios-simulator-ci/starter --family iphone --test files-roundtrip --text-scale 2 || result=$?
-          if [ -f .cache/ios-system-ui/latest.json ]; then
-            evidence=$(jq -r .out .cache/ios-system-ui/latest.json)
-            if jq -e '.deletedDevice == true' "$evidence/result.json" >/dev/null; then
-              echo "simulator_clean=true" >> "$GITHUB_OUTPUT"
-            fi
-          fi
-          exit "$result"
-      - name: Test VoiceOver navigation and speech on iPhone Simulator
-        if: ${{ !cancelled() && steps.build_ios.outcome == 'success' && steps.files_picker.outputs.simulator_clean == 'true' }}
+      - name: Compile the VoiceOver XCTest harness without starting a Simulator
         run: |
           node scripts/test-ios-voiceover.mjs \
-            .cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator/RaisingPlayer.app
+            .cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator/RaisingPlayer.app \
+            --build-only
+      - name: Archive the exact public Simulator app for Files testing
+        shell: bash
+        run: |
+          transfer=.cache/ios-simulator-ci/transfer
+          bundle=.cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator
+          app="$bundle/RaisingPlayer.app"
+          mkdir -p "$transfer"
+          test "$(plutil -extract MinimumOSVersion raw "$app/Info.plist")" = 16.0
+          git rev-parse HEAD > "$transfer/source.txt"
+          shasum -a 256 "$app/RaisingPlayer" "$app/game/game.json" > "$transfer/bundle.sha256"
+          tar -cf "$transfer/starter-app.tar" -C "$bundle" RaisingPlayer.app
+          (cd "$transfer" && shasum -a 256 source.txt bundle.sha256 starter-app.tar > transfer.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-starter-ios-simulator-app
+          path: |
+            .cache/ios-simulator-ci/transfer/source.txt
+            .cache/ios-simulator-ci/transfer/bundle.sha256
+            .cache/ios-simulator-ci/transfer/starter-app.tar
+            .cache/ios-simulator-ci/transfer/transfer.sha256
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+      - name: Run actual VoiceOver focus and speech on iPhone Simulator
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_voiceover }}
+        env:
+          RAISING_IOS_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17e
+          RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-0
+        run: |
+          node scripts/test-ios-voiceover.mjs \
+            .cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator/RaisingPlayer.app \
+            .cache/ios-voiceover-execution
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: public-starter-ios-simulator-evidence
+          name: public-starter-ios-build-and-voiceover-evidence
           path: |
             .cache/ios-simulator-ci/environment.txt
             .cache/ios-simulator-ci/export/ios-build.json
             .cache/ios-simulator-ci/export/xcode-*.log
+            .cache/ios-voiceover/run-*/result.json
+            .cache/ios-voiceover/run-*/*.log
+            .cache/ios-voiceover-execution/run-*/result.json
+            .cache/ios-voiceover-execution/run-*/*.log
+            .cache/ios-voiceover-execution/run-*/*.xcresult
+          include-hidden-files: true
+          retention-days: 14
+
+  public-starter-files:
+    name: Test the actual Files picker on iOS 26 Simulator
+    needs: build-public-starter
+    runs-on: macos-26
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      RAISING_IOS_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17e
+      RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          name: public-starter-ios-simulator-app
+          path: .cache/ios-simulator-ci/transfer
+      - name: Verify source and unpack the exact exported app
+        shell: bash
+        run: |
+          transfer=.cache/ios-simulator-ci/transfer
+          bundle=.cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator
+          (cd "$transfer" && shasum -a 256 -c transfer.sha256)
+          test "$(git rev-parse HEAD)" = "$(cat "$transfer/source.txt")"
+          mkdir -p "$bundle"
+          tar -xf "$transfer/starter-app.tar" -C "$bundle"
+          shasum -a 256 -c "$transfer/bundle.sha256"
+      - name: Record the Files test toolchain
+        shell: bash
+        run: |
+          test -x "$DEVELOPER_DIR/usr/bin/xcodebuild"
+          {
+            echo "source=$(git rev-parse HEAD)"
+            echo "testRuntime=$RAISING_IOS_SIMULATOR_RUNTIME"
+            echo "testDeviceType=$RAISING_IOS_SIMULATOR_DEVICE_TYPE"
+            xcodebuild -version
+            xcrun simctl list runtimes available
+          } | tee .cache/ios-simulator-ci/files-environment.txt
+      - run: npm ci
+      - name: Build the project service used by the public Files fixture
+        run: |
+          node scripts/generate-types.mjs
+          npx --no-install tsc -p tsconfig.json
+          node scripts/copy-schemas.mjs
+      - name: Test export and import through the actual Files picker
+        run: |
+          node scripts/test-ios-system-ui.mjs .cache/ios-simulator-ci/export \
+            --project examples/my-first-raising-game --family iphone --test files-roundtrip --text-scale 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: public-starter-ios-files-evidence
+          path: |
+            .cache/ios-simulator-ci/files-environment.txt
+            .cache/ios-simulator-ci/transfer/*.txt
+            .cache/ios-simulator-ci/transfer/*.sha256
             .cache/ios-system-ui/latest.json
             .cache/ios-system-ui/run-*/result.json
             .cache/ios-system-ui/run-*/*-staging.json
             .cache/ios-system-ui/run-*/*.log
             .cache/ios-system-ui/run-*/*.xcresult
-            .cache/ios-voiceover/run-*/result.json
-            .cache/ios-voiceover/run-*/*.log
-            .cache/ios-voiceover/run-*/*.xcresult
           include-hidden-files: true
           retention-days: 14
