@@ -71,5 +71,11 @@ test('baseline comparison obeys each route budget independently of the longer ov
  const bounded=await checkGoalImpacts(root,content,service.editor.revision,{timeoutMs:10000,routeTimeoutMs:1,onRoute:index=>progress.push(index)});
  assert.equal(bounded.complete,false);assert.ok(bounded.counts.incomplete>0);assert.equal(bounded.rows.length,routes.length);assert.deepEqual(progress,routes.flatMap((_,index)=>[index,null]));
  for(const row of bounded.rows.filter(r=>r.status==='incomplete')){assert.equal(row.timeoutMs,1);assert.match(row.error,/\(1ms\)/);assert.doesNotMatch(row.error,/60초/);}
+ const zeroProgress=[];
+ const zero=await checkGoalImpacts(root,content,service.editor.revision,{timeoutMs:10000,routeTimeoutMs:0,onRoute:index=>zeroProgress.push(index)});
+ assert.equal(zero.complete,false);assert.equal(zero.ok,false);assert.equal(zero.counts.incomplete,routes.length);assert.deepEqual(zeroProgress,[],'An exhausted per-route budget must not start any replay.');
+ for(const row of zero.rows){assert.equal(row.timeoutMs,0);assert.match(row.error,/\(0ms\)/);}
+ await assert.rejects(checkGoalImpacts(root,content,service.editor.revision,{timeoutMs:-1}));
+ await assert.rejects(checkGoalImpacts(root,content,service.editor.revision,{routeTimeoutMs:-1}));
  const enough=await checkGoalImpacts(root,content,service.editor.revision,{timeoutMs:10000,routeTimeoutMs:3000});assert.equal(enough.complete,true);assert.equal(enough.ok,true);assert.equal(enough.counts.unchanged,routes.length);
 });

@@ -69,7 +69,9 @@ function summarize(pair){
 }
 export async function checkGoalImpacts(root,content,revision,{timeoutMs=60000,routeTimeoutMs=timeoutMs,runtimePolicy='strict',capturedRoutes,onRoute}={}){
   if(!['strict','verify-replay'].includes(runtimePolicy))throw Error('지원하지 않는 런타임 검사 정책입니다.');
-  for(const value of [timeoutMs,routeTimeoutMs])if(!Number.isSafeInteger(value)||value<1||value>3600000)throw Error('비교 시간 제한은 1~3600000 밀리초여야 합니다.');
+  // Internal callers use zero to request an already-exhausted budget. The
+  // designer-facing batch RPC separately requires at least one second.
+  for(const value of [timeoutMs,routeTimeoutMs])if(!Number.isSafeInteger(value)||value<0||value>3600000)throw Error('비교 시간 제한은 0~3600000 밀리초여야 합니다.');
   const started=Date.now(),routes=capturedRoutes??await listGoalRoutes(root),baselines=await listGoalBaselines(root),runtime=await runtimeIdentity(),selection=await goalBaselineSelection(root,baselines);
   const report={version:1,runtimePolicy,id:randomUUID(),createdAt:new Date().toISOString(),fingerprint:content.contentFingerprint,testedRevision:revision,runtime,selectionRevision:selection.revision,routesDigest:routeDigest(routes.map(e=>e.route??{file:path.basename(e.file),error:e.error})),limits:{timeoutMs,routeTimeoutMs},rows:[],baselineErrors:baselines.filter(b=>b.error),stale:false};
   for(const entry of routes){
@@ -80,6 +82,7 @@ export async function checkGoalImpacts(root,content,revision,{timeoutMs=60000,ro
     if(!baselineInfo){report.rows.push({...row,status:'missing-baseline',message:'기준 기록이 없습니다. 수정 전에 기준을 저장하세요.'});continue;}
     row.baselineId=baselineInfo.id;row.baselineName=baselineInfo.name;row.baselineCreatedAt=baselineInfo.createdAt;
     if(Date.now()-started>=timeoutMs){report.rows.push({...row,status:'incomplete',error:`저장 비교 전체 시간 제한(${timeoutMs}ms)에 도달했습니다. 저장 검사에서 제한을 늘려 다시 검사하세요.`});continue;}
+    if(routeTimeoutMs===0){report.rows.push({...row,status:'incomplete',timeoutMs:0,error:'경로 비교 시간 제한(0ms)에 도달했습니다. 저장 검사에서 제한을 늘려 다시 검사하세요.'});continue;}
     try{
       onRoute?.(routes.indexOf(entry));
       const baseline=await readGoalBaseline(root,baselineInfo.id);row.baselineChecksum=baseline.checksum;
