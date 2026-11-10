@@ -68,7 +68,9 @@ class Center final:public QDialog {
     const bool ready=!waiting&&!running(),selected=!releaseId().isEmpty();
     for(auto b:{registerButton,exportButton,refreshButton})b->setEnabled(ready);releases->setEnabled(!waiting);
     openRelease->setEnabled(!current.value("directory").toString().isEmpty());
-    for(auto b:{addCase,checkAll,checkRelease,verifyRecovery,restore,applyDistribution})b->setEnabled(ready&&selected);
+    for(auto b:{addCase,checkAll,checkRelease,verifyRecovery,restore})b->setEnabled(ready&&selected);
+    const bool distributionSelected=distribution->currentItem()!=nullptr;
+    applyDistribution->setEnabled(ready&&selected&&distributionSelected);distributionStatus->setEnabled(distributionSelected);distributionNote->setEnabled(distributionSelected);
     checkSelected->setEnabled(ready&&selected&&!selectedCase().isEmpty());
     const auto c=caseValue();const auto checks=current.value("checks").toObject();const auto recovery=checks.value("recovery").toObject();const bool integrity=checks.value("release").toObject().value("status")=="passed";
     migrate->setEnabled(ready&&integrity&&migrationSourceMatches()&&!c.value("sourceProject").toString().isEmpty()&&!recovery.value("directory").toString().isEmpty()&&recovery.value("status")=="passed"&&recovery.value("restored").toBool());
@@ -85,15 +87,26 @@ class Center final:public QDialog {
     if(!active.isEmpty())job=active;else if(job.value("releaseId").toString()!=releaseId()||running())job={};
     if(running()){showJob();poll.start();}else {poll.stop();if(job.isEmpty()){status->clear();status->setProperty("jobStatus",QString());}}enable();
   }
+  void showDistributionSelection(){
+    const auto item=distribution->currentItem();const auto row=item?item->data(0,Qt::UserRole).toJsonObject():QJsonObject{};
+    distributionStatus->setCurrentIndex(qMax(0,distributionStatus->findData(row.value("status").toString())));distributionNote->setPlainText(row.value("note").toString());enable();
+  }
   void showEntry(){
-    const auto selected=releases->currentData().toString();current={};for(auto value:entries)if(value.toObject().value("id").toString()==selected)current=value.toObject();
+    const auto selected=releases->currentData().toString();const bool sameRelease=selected==releaseId();
+    const auto previousDistribution=distribution->currentItem()?distribution->currentItem()->data(0,Qt::UserRole).toJsonObject():QJsonObject{};
+    const auto chosenDistribution=sameRelease?previousDistribution.value("id").toString():QString();
+    const auto draftStatus=distributionStatus->currentData().toString(),draftNote=distributionNote->toPlainText();
+    const bool keepDraft=!chosenDistribution.isEmpty()&&(draftStatus!=previousDistribution.value("status").toString()||draftNote!=previousDistribution.value("note").toString());
+    const auto chosen=sameRelease?selectedCase():QString();current={};for(auto value:entries)if(value.toObject().value("id").toString()==selected)current=value.toObject();
     const auto id=current.value("identity").toObject(),checks=current.value("checks").toObject();
     auto releaseEngine=id.value("engineIdentity").toObject();if(!releaseEngine.contains("engineVersion"))releaseEngine["engineVersion"]=id.value("engineVersion");
     identity->setText(current.isEmpty()?tr("먼저 버전을 지정하여 내보낸 릴리스 폴더를 등록하세요."):tr("선택한 릴리스: %1 · %2 · %3\n콘텐츠 지문: %4\n이 릴리스의 엔진: %5").arg(current.value("name").toString(),known(id.value("version")),known(id.value("target")),known(id.value("contentFingerprint")),engineText(releaseEngine)));
     selectedDirectory->setText(current.value("directory").toString());selectedDirectory->setToolTip(selectedDirectory->text());
     scope->setText(tr("이 검사는 선택한 내보내기와 등록한 저장 예시에만 적용됩니다. 수동 배포 확인은 자동 검사와 별도로 기록합니다."));
-    const auto chosen=selectedCase();cases->clear();for(auto value:current.value("cases").toArray()){const auto c=value.toObject(),check=c.value("check").toObject();auto row=new QTreeWidgetItem(cases,{c.value("name").toString(),c.value("kind")=="migrated"?tr("이전한 저장"):tr("원본 저장"),stateLabel(check.value("status").toString()),check.value("message").toString()});row->setData(0,Qt::UserRole,c.value("id").toString());row->setToolTip(0,c.value("file").toString());if(c.value("id").toString()==chosen)cases->setCurrentItem(row);}
-    distribution->clear();for(auto value:current.value("distribution").toArray()){const auto c=value.toObject();auto row=new QTreeWidgetItem(distribution,{distributionLabel(c,id.value("target").toString()),c.value("status")=="passed"?tr("통과 · 제작자 확인"):stateLabel(c.value("status").toString()),c.value("note").toString()});row->setData(0,Qt::UserRole,c);}
+    cases->clear();for(auto value:current.value("cases").toArray()){const auto c=value.toObject(),check=c.value("check").toObject();auto row=new QTreeWidgetItem(cases,{c.value("name").toString(),c.value("kind")=="migrated"?tr("이전한 저장"):tr("원본 저장"),stateLabel(check.value("status").toString()),check.value("message").toString()});row->setData(0,Qt::UserRole,c.value("id").toString());row->setToolTip(0,c.value("file").toString());if(c.value("id").toString()==chosen)cases->setCurrentItem(row);}
+    // A completed background check can refresh this list while a manual attestation is still being typed.
+    {QSignalBlocker block(distribution);distribution->clear();for(auto value:current.value("distribution").toArray()){const auto c=value.toObject();auto row=new QTreeWidgetItem(distribution,{distributionLabel(c,id.value("target").toString()),c.value("status")=="passed"?tr("통과 · 제작자 확인"):stateLabel(c.value("status").toString()),c.value("note").toString()});row->setData(0,Qt::UserRole,c);if(c.value("id").toString()==chosenDistribution)distribution->setCurrentItem(row);}}
+    if(keepDraft&&distribution->currentItem())enable();else showDistributionSelection();
     const auto recovery=checks.value("recovery").toObject();recoveryStatus->setText(tr("릴리스 파일: %1\n백업·복원: %2%3").arg(stateLabel(checks.value("release").toObject().value("status").toString()),recovery.value("status")=="passed"?(recovery.value("restored").toBool()?tr("새 폴더 복원·검증 완료"):tr("백업 검증 완료 · 복원은 미실행")):stateLabel(recovery.value("status").toString()),recovery.value("directory").toString().isEmpty()?QString():"\n"+recovery.value("directory").toString()));
     details->setPlainText(QString::fromUtf8(QJsonDocument(current).toJson(QJsonDocument::Indented)));selectJob();
   }
@@ -124,9 +137,11 @@ public:
     connect(checkSelected,&QPushButton::clicked,this,[this]{start("save",{{"caseId",selectedCase()}});});connect(checkAll,&QPushButton::clicked,this,[this]{start("save");});connect(checkRelease,&QPushButton::clicked,this,[this]{start("release");});connect(verifyRecovery,&QPushButton::clicked,this,[this]{start("recovery");});
     connect(chooseDestination,&QPushButton::clicked,this,[this]{auto value=QFileDialog::getSaveFileName(this,tr("새 복원 폴더"),restoreDestination->text(),{},nullptr,QFileDialog::DontConfirmOverwrite);if(!value.isEmpty())restoreDestination->setText(value);});connect(restore,&QPushButton::clicked,this,[this]{if(restoreDestination->text().trimmed().isEmpty()){status->setText(tr("새 복원 폴더를 지정하세요."));return;}start("recovery",{{"destination",restoreDestination->text()}});});
     connect(migrate,&QPushButton::clicked,this,[this]{auto c=caseValue(),recovery=current.value("checks").toObject().value("recovery").toObject();showSaveMigration(engineRoot,recovery.value("directory").toString(),this,c.value("sourceProject").toString(),c.value("file").toString());});
-    connect(distribution,&QTreeWidget::currentItemChanged,this,[this]{auto item=distribution->currentItem();if(!item)return;auto c=item->data(0,Qt::UserRole).toJsonObject();distributionStatus->setCurrentIndex(qMax(0,distributionStatus->findData(c.value("status").toString())));distributionNote->setPlainText(c.value("note").toString());});connect(applyDistribution,&QPushButton::clicked,this,[this]{auto item=distribution->currentItem();if(!item){status->setText(tr("기록할 배포 확인 항목을 선택하세요."));return;}auto p=params();p["checkId"]=item->data(0,Qt::UserRole).toJsonObject().value("id");p["status"]=distributionStatus->currentData().toString();p["note"]=distributionNote->toPlainText();send("releaseWorkflowDistribution",p,[this](QJsonObject reply){updateEntry(reply.value("releaseEntry").toObject());status->setText(tr("제작자의 배포 확인 기록을 저장했습니다."));});});
+    connect(distribution,&QTreeWidget::currentItemChanged,this,[this]{showDistributionSelection();});connect(applyDistribution,&QPushButton::clicked,this,[this]{auto item=distribution->currentItem();if(!item){status->setText(tr("기록할 배포 확인 항목을 선택하세요."));return;}auto p=params();p["checkId"]=item->data(0,Qt::UserRole).toJsonObject().value("id");p["status"]=distributionStatus->currentData().toString();p["note"]=distributionNote->toPlainText();send("releaseWorkflowDistribution",p,[this](QJsonObject reply){updateEntry(reply.value("releaseEntry").toObject());status->setText(tr("제작자의 배포 확인 기록을 저장했습니다."));});});
     poll.setInterval(500);connect(&poll,&QTimer::timeout,this,[this]{if(polling||waiting||!running())return;polling=true;auto guard=QPointer<Center>(this);const auto polledRelease=releaseId(),polledJob=job.value("id").toString();rpc("releaseWorkflowStatus",{{"root",projectRoot},{"jobId",job.value("id")}},[guard,polledRelease,polledJob](QJsonObject reply){if(!guard)return;guard->polling=false;if(guard->releaseId()!=polledRelease||guard->job.value("id").toString()!=polledJob)return;if(!reply.value("error").toString().isEmpty()){guard->poll.stop();guard->status->setText(reply.value("error").toString());return;}guard->job=reply.value("releaseJob").toObject();guard->showJob();if(!guard->running()){guard->poll.stop();guard->reload();}});});
     connect(cancel,&QPushButton::clicked,this,[this]{send("releaseWorkflowCancel",{{"jobId",job.value("id")}},[this](QJsonObject reply){job=reply.value("releaseJob").toObject();showJob();if(!running()){poll.stop();reload();}});});
+    // This utility dialog has independent actions, so Return in an input must not invoke Refresh or publish a record.
+    for(auto button:findChildren<QPushButton*>()){button->setAutoDefault(false);button->setDefault(false);}
     enable();auto guard=QPointer<Center>(this);QTimer::singleShot(0,this,[this,guard]{rpc("editorIdentity",{},[guard](QJsonObject reply){if(!guard)return;guard->currentEngine->setText(tr("현재 에디터: %1").arg(engineText(reply.value("editorIdentity").toObject())));});reload();});
   }
   void offer(const QJsonObject& output){directory->setText(output.value("directory").toString());status->setText(tr("새 내보내기가 준비되었습니다. 버전·백업을 포함한 릴리스라면 이름을 붙여 등록하세요."));}

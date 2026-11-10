@@ -147,6 +147,7 @@ export function VisualPlayer({view,design,busy,plan,onPlan,onScheduleDraft,act,n
   context.portraitTransforms=portraitTransforms;
   context.speakerPortrait=node?.type==='dialogue'&&node.speakerId
     ?view.characters.find(character=>character.id===node.speakerId)?.portraits.face??null:null;
+  if(preview)context.saveStorage={location:'preview'};else if(view.saveStorage)context.saveStorage=view.saveStorage;
   if(view.saveSlots)context.saveSlots=view.saveSlots;if(slots)context.onSlotAction=slots;
   if(view.calendarProject)context.calendarProject=view.calendarProject;if(view.locale)context.locale=view.locale;
   if(view.time)context.calendarTime={year:view.time.year,month:view.time.month};

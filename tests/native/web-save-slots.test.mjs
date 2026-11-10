@@ -14,6 +14,28 @@ const source=await content(p=>{const project=doc(p,'project');project.visual=str
 const runtime=new WasmRuntime(await createModule());
 const setup=(store=new MemoryStore())=>{let file=null;const player=new WebPlayerController(source,runtime,{read:async()=>file,write:async text=>file=text},validateSave,null,store);const version=()=>player.session?{generation:player.generation,revision:player.session.state.stateRevision}:null;const slot=async action=>player.slots(action,version());return {player,store,version,slot,get file(){return file;},set file(value){file=value;}};};
 
+test('storage guidance distinguishes unknown, readable, failed-write, unavailable and portable-file hosts',async()=>{
+ const {player,store,version,slot}=setup();
+ assert.deepEqual((await player.view()).view.saveStorage,{location:'browser',writeFailed:false});
+ await player.newRun(null);await slot({type:'open',kind:'save'});
+ assert.deepEqual((await player.view()).view.saveStorage,{location:'browser',available:true,writeFailed:false});
+ const before=structuredClone(player.session),rows=structuredClone(store.rows);
+ store.fail=true;const failed=await slot({type:'save'});assert.match(failed.error,/Quota/);
+ assert.deepEqual(failed.view.saveStorage,{location:'browser',available:true,writeFailed:true});
+ assert.deepEqual(player.session,before);assert.deepEqual(store.rows,rows,'Failed writing never alters a stored record');
+ await slot({type:'close'});await slot({type:'open',kind:'save'});
+ assert.equal((await player.view()).view.saveStorage.writeFailed,true,'Successful reads do not erase an unsuccessful write');
+ store.fail=false;assert.equal((await slot({type:'save'})).error,null);
+ assert.equal((await player.view()).view.saveStorage.writeFailed,false,'Only a successful write clears the failure notice');
+ await slot({type:'close'});store.read=async()=>{throw new Error('Storage denied');};
+ const unavailable=await slot({type:'open',kind:'load'});assert.match(unavailable.error,/Storage denied/);assert.equal(unavailable.view.saveStorage.available,false);
+ const portable=structuredClone(source);delete portable.project.visual;
+ const files=new WebPlayerController(portable,runtime,{read:async()=>null,write:async()=>{}},validateSave);
+ assert.deepEqual((await files.view()).view.saveStorage,{location:'file'},'Legacy Web files are not described as browser record storage');
+ const disabled=new WebPlayerController(source,runtime,{read:async()=>null,write:async()=>{}},validateSave);
+ assert.equal((await disabled.slots({type:'open',kind:'load'},null)).view.saveStorage.available,false);
+});
+
 test('Web slots preserve exact replay saves, confirmations, changed records, manual isolation and file portability',async()=>{
  const x=setup(),{player,store,version,slot}=x;assert.equal((await player.newRun(null)).error,null);assert.equal((await player.checkpoint(version())).error,null);assert.equal(store.rows.length,1);
  assert.equal((await slot({type:'open',kind:'save'})).error,null);assert.equal((await slot({type:'save'})).error,null);const first=store.rows.find(r=>!r.automatic).text;assert.equal(validateSave(JSON.parse(first)),true,JSON.stringify(validateSave.errors));assert.equal(JSON.parse(first).playerPresentation.saveRecord.thumbnail,'');assert.match(JSON.parse(first).playerPresentation.saveRecord.date,/Phase 13/);assert.equal((await decodeSave(source,first)).ok,true);

@@ -388,7 +388,9 @@ void ScreenCanvas::setScreen(const QJsonObject &project,
     }
     if (e["kind"] == "text") {
       const auto binding = e["binding"].toString();
-      if (binding == "calendar")
+      if (binding == "save-storage-guidance")
+        e["text"] = tr("저장 위치와 백업 방법은 플레이어에 따라 달라집니다. 내보낸 게임에서 확인하세요.");
+      else if (binding == "calendar")
         e["text"] = StudioCalendar::label(project,0);
       else if (binding == "title")
         e["text"] = project["title"];

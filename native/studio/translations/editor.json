@@ -1,4 +1,6 @@
 [
+  ["저장 위치·백업 안내", "Save location and backup guidance", "保存先・バックアップ案内"],
+  ["저장 위치와 백업 방법은 플레이어에 따라 달라집니다. 내보낸 게임에서 확인하세요.", "Save location and backup options depend on the player. Check them in the exported game.", "保存先とバックアップ方法はプレイヤーによって異なります。書き出したゲームで確認してください。"],
 ["선택한 릴리스 폴더","Selected release folder","選択中のリリースフォルダー"],
 ["릴리스 폴더 열기","Open release folder","リリースフォルダーを開く"],
 ["이 릴리스는 화면 변경 뒤에도 이전 저장 지문을 유지합니다. 복원 원본의 지문이 달라 저장 이전 검토를 열 수 없습니다. 등록한 저장의 직접 호환성 검사는 가능합니다.","This release retains its earlier save fingerprint after visual changes. Its restored source has a different fingerprint, so migration review is unavailable here. Registered saves can still be checked directly against this release.","このリリースは画面変更後も以前のセーブ指紋を維持しています。復元原本の指紋が異なるため、ここでは移行の確認を開けません。登録したセーブをリリースと直接照合する検査は実行できます。"],

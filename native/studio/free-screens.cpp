@@ -56,7 +56,7 @@ void StudioWindow::editDataBinding() {
   const auto roster=project.value("roster").toObject();
   add(tr("현재 사건의 대상 인물"),{{"binding","narrative-actor"}});
   // Keep feedback discoverable from the same named-data workflow as stats and actors.
-  for(const auto& key:{"choice-result","reading-status","player-notice","activity-progress","schedule-summary","save-summary"}) {
+  for(const auto& key:{"choice-result","reading-status","player-notice","activity-progress","schedule-summary","save-summary","save-storage-guidance"}) {
     const auto index=bindingField->findData(key);
     if(index>=0)add(bindingField->itemText(index),{{"binding",key}});
   }

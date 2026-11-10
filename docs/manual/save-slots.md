@@ -80,6 +80,39 @@ Gameplay widgets inside a record modal, ordinary modals, scrolling, sorting, sel
 other advanced composition still require their separate runtime support.
 This feature is not in the previously published preview binary.
 
+### Storage and backup guidance without platform-specific screens
+
+Select a text element, then choose **Save location and backup guidance** in
+**Text binding** or **Find and bind display data…**. The serialized binding
+is `save-storage-guidance`. It can also live in a shared component, including
+nested components. **Batch text bindings** copies the
+connection to matching text IDs while retaining their placement and style.
+The connection replaces the displayed text; it does not rewrite the author's
+original text, change a save, or change storage settings.
+
+The player selects Korean, English or Japanese guidance using its current
+locale and its actual storage capabilities:
+
+- Web record slots explain browser-local storage and **Download backup**.
+  A storage-access failure or the last failed write produces recovery guidance;
+  being able to read records does not imply that a later write will succeed.
+- A Web game using the older file-only save flow describes downloaded save files.
+- Native desktop players describe device-local records and do not advertise
+  unavailable Files or download controls.
+- iOS players with an available Files-backup backend and a currently displayed,
+  enabled save/load widget describe **Export current progress**. Hidden widgets,
+  unused components and widgets omitted from the reading layout do not advertise
+  backup controls. The guidance does not claim automatic synchronization.
+- The editor canvas and authoring preview show a neutral reminder to check the
+  exported player's storage and backup options.
+
+This binding additionally requires `save-storage-guidance-v1`. Export rejects
+an older runtime that lacks it, even if that runtime supports ordinary save
+slots. Existing unbound text remains authored text; it is never searched for
+platform names or silently replaced. When adopting the binding, remove any
+separate obsolete platform-specific instructions through the editor and check
+the text's space in each supported locale and phone layout.
+
 Verification:
 
 ```powershell

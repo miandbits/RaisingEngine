@@ -115,6 +115,7 @@ export type Element = {
     | "schedule-summary"
     | "activity-progress"
     | "save-summary"
+    | "save-storage-guidance"
     | "player-notice"
     | "reading-status"
     | "choice-result";
@@ -5702,6 +5703,7 @@ export type ComponentChild = {
     | "schedule-summary"
     | "activity-progress"
     | "save-summary"
+    | "save-storage-guidance"
     | "player-notice"
     | "reading-status";
   imageSource?: "asset" | "background" | "portrait-left" | "portrait-center" | "portrait-right" | "speaker-portrait";

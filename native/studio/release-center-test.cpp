@@ -1,5 +1,6 @@
 #include "release-center.hpp"
 #include "editor-language.hpp"
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -82,6 +83,44 @@ private slots:
     };
     QPointer<QDialog> d=StudioReleaseCenter::create(&host,"/engine","/project",rpc,[]{});d->show();QTRY_COMPARE(find<QComboBox>(d,"releaseSelection")->count(),2);auto selection=find<QComboBox>(d,"releaseSelection");auto selectedPath=find<QLineEdit>(d,"releaseSelectedDirectory");QVERIFY(selectedPath->isReadOnly());QCOMPARE(selectedPath->text(),QString("/synthetic/release"));find<QLineEdit>(d,"releaseDirectory")->setText("/unregistered/other-export");QVERIFY(!find<QPushButton>(d,"releaseCancelJob")->isEnabled());selection->setCurrentIndex(1);QCOMPARE(selectedPath->text(),QString("/synthetic/second-release"));QVERIFY(find<QPushButton>(d,"releaseOpenFolder")->isEnabled());QVERIFY(find<QPushButton>(d,"releaseCancelJob")->isEnabled());QVERIFY(selection->isEnabled());selection->setCurrentIndex(0);QCOMPARE(selectedPath->text(),QString("/synthetic/release"));QVERIFY(!find<QPushButton>(d,"releaseCancelJob")->isEnabled());selection->setCurrentIndex(1);find<QPushButton>(d,"releaseCancelJob")->click();QCOMPARE(cancelled,QString("job-second"));QVERIFY(!find<QPushButton>(d,"releaseCancelJob")->isEnabled());
     selection->setCurrentIndex(0);find<QPushButton>(d,"releaseCheckIntegrity")->click();QVERIFY(find<QPushButton>(d,"releaseCancelJob")->isEnabled());selection->setCurrentIndex(1);QVERIFY(!find<QPushButton>(d,"releaseCancelJob")->isEnabled());QVERIFY(find<QLabel>(d,"releaseWorkflowStatus")->property("jobStatus").toString().isEmpty());selection->setCurrentIndex(0);QVERIFY(find<QPushButton>(d,"releaseCancelJob")->isEnabled());QCOMPARE(find<QLabel>(d,"releaseWorkflowStatus")->property("jobStatus").toString(),QString("running"));find<QPushButton>(d,"releaseCancelJob")->click();QCOMPARE(cancelled,QString("new-job"));d->close();
+  }
+  void distributionKeyboardSelectionDoesNotInvokeAnotherAction(){
+    QWidget host;auto e=entry();int lists=0;QJsonObject recorded;
+    auto rpc=[&](QString method,QJsonObject p,StudioReleaseCenter::Done done){
+      if(method=="editorIdentity")done({{"editorIdentity",identity()}});
+      else if(method=="releaseWorkflowList"){++lists;done({{"releaseWorkflow",QJsonObject{{"releases",QJsonArray{e}},{"jobs",QJsonArray{}}}}});}
+      else if(method=="releaseWorkflowDistribution"){recorded=p;auto rows=e["distribution"].toArray();auto row=rows[0].toObject();row["status"]=p["status"];row["note"]=p["note"];rows[0]=row;e["distribution"]=rows;done({{"releaseEntry",e}});}
+      else QFAIL(qPrintable(method));
+    };
+    QPointer<QDialog> d=StudioReleaseCenter::create(&host,"/engine","/project",rpc,[]{});d->show();
+    auto tree=find<QTreeWidget>(d,"releaseDistributionChecks");QTRY_COMPARE(tree->topLevelItemCount(),1);find<QTabWidget>(d,"releaseTabs")->setCurrentIndex(2);
+    QTest::mouseClick(tree->viewport(),Qt::LeftButton,Qt::NoModifier,tree->visualItemRect(tree->topLevelItem(0)).center());QVERIFY(tree->currentItem());
+    auto combo=find<QComboBox>(d,"releaseDistributionStatus");combo->setFocus();QTest::mouseClick(combo,Qt::LeftButton);QTRY_VERIFY(combo->view()->isVisible());
+    QTest::keyClick(combo->view(),Qt::Key_Down);QTest::keyClick(combo->view(),Qt::Key_Return);QTRY_VERIFY(!combo->view()->isVisible());QCOMPARE(combo->currentData().toString(),QString("passed"));
+    // Return can also reach the focused combo after its popup closes; it must not refresh or publish.
+    QTest::keyClick(combo,Qt::Key_Return);QCOMPARE(lists,1);QVERIFY(tree->currentItem());QCOMPARE(tree->currentItem()->data(0,Qt::UserRole).toJsonObject()["id"].toString(),QString("device"));QVERIFY(recorded.isEmpty());
+    auto note=find<QPlainTextEdit>(d,"releaseDistributionNote");note->setFocus();QTest::keyClicks(note,"Actual report A");QTest::keyClick(note,Qt::Key_Return);QTest::keyClicks(note,"Pending physical acceptance");QCOMPARE(note->toPlainText(),QString("Actual report A\nPending physical acceptance"));QCOMPARE(lists,1);QVERIFY(recorded.isEmpty());
+    QTest::mouseClick(find<QPushButton>(d,"releaseRecordDistribution"),Qt::LeftButton);QCOMPARE(recorded["checkId"].toString(),QString("device"));QCOMPARE(recorded["status"].toString(),QString("passed"));QCOMPARE(recorded["note"].toString(),note->toPlainText());d->close();
+  }
+  void sameReleaseRefreshAndJobCompletionPreserveDistributionDraft(){
+    QWidget host;auto e=entry(),other=entry();other["id"]="release-2";other["name"]="Other release";QJsonObject recorded,job;int lists=0;
+    auto rpc=[&](QString method,QJsonObject p,StudioReleaseCenter::Done done){
+      if(method=="editorIdentity")done({{"editorIdentity",identity()}});
+      else if(method=="releaseWorkflowList"){++lists;QTimer::singleShot(20,&host,[&,done]{done({{"releaseWorkflow",QJsonObject{{"releases",QJsonArray{e,other}},{"jobs",QJsonArray{}}}}});});}
+      else if(method=="releaseWorkflowStart"){job={{"id","integrity-job"},{"releaseId","release-1"},{"status","running"}};done({{"releaseJob",job}});}
+      else if(method=="releaseWorkflowStatus"){job["status"]="completed";e["entryRevision"]=3;done({{"releaseJob",job}});}
+      else if(method=="releaseWorkflowDistribution"){recorded=p;auto rows=e["distribution"].toArray();auto row=rows[0].toObject();row["status"]=p["status"];row["note"]=p["note"];rows[0]=row;e["distribution"]=rows;e["entryRevision"]=4;done({{"releaseEntry",e}});}
+      else QFAIL(qPrintable(method));
+    };
+    QPointer<QDialog> d=StudioReleaseCenter::create(&host,"/engine","/project",rpc,[]{});d->show();auto tree=find<QTreeWidget>(d,"releaseDistributionChecks");QTRY_COMPARE(tree->topLevelItemCount(),1);find<QTabWidget>(d,"releaseTabs")->setCurrentIndex(2);tree->setCurrentItem(tree->topLevelItem(0));
+    auto combo=find<QComboBox>(d,"releaseDistributionStatus");auto note=find<QPlainTextEdit>(d,"releaseDistributionNote");combo->setCurrentIndex(combo->findData("passed"));note->setPlainText("Reviewed report");e["entryRevision"]=2;
+    find<QPushButton>(d,"releaseRefresh")->click();note->setPlainText("Reviewed report with in-flight typing");auto cursor=note->textCursor();cursor.setPosition(8);note->setTextCursor(cursor);QTRY_VERIFY(find<QPushButton>(d,"releaseRefresh")->isEnabled());QCOMPARE(lists,2);QVERIFY(tree->currentItem());QCOMPARE(combo->currentData().toString(),QString("passed"));QCOMPARE(note->toPlainText(),QString("Reviewed report with in-flight typing"));QCOMPARE(note->textCursor().position(),8);QVERIFY(recorded.isEmpty());
+    find<QPushButton>(d,"releaseCheckIntegrity")->click();QTRY_COMPARE_WITH_TIMEOUT(find<QLabel>(d,"releaseWorkflowStatus")->property("jobStatus").toString(),QString("completed"),3000);QTRY_VERIFY(find<QPushButton>(d,"releaseRefresh")->isEnabled());QVERIFY(tree->currentItem());QCOMPARE(combo->currentData().toString(),QString("passed"));QCOMPARE(note->toPlainText(),QString("Reviewed report with in-flight typing"));QVERIFY(recorded.isEmpty());
+    find<QPushButton>(d,"releaseRecordDistribution")->click();QCOMPARE(recorded["entryRevision"].toInt(),3);QCOMPARE(recorded["checkId"].toString(),QString("device"));QCOMPARE(recorded["status"].toString(),QString("passed"));QCOMPARE(recorded["note"].toString(),QString("Reviewed report with in-flight typing"));QVERIFY(tree->currentItem());
+    // With no local edits, refreshed evidence replaces the saved values instead of looking frozen.
+    auto rows=e["distribution"].toArray();auto row=rows[0].toObject();row["status"]="failed";row["note"]="External review found a problem";rows[0]=row;e["distribution"]=rows;find<QPushButton>(d,"releaseRefresh")->click();QTRY_VERIFY(find<QPushButton>(d,"releaseRefresh")->isEnabled());QCOMPARE(combo->currentData().toString(),QString("failed"));QCOMPARE(note->toPlainText(),QString("External review found a problem"));
+    // A matching checklist id in another release must never inherit this release's unsaved claim.
+    combo->setCurrentIndex(combo->findData("passed"));note->setPlainText("Unsaved first-release claim");find<QComboBox>(d,"releaseSelection")->setCurrentIndex(1);QVERIFY(!tree->currentItem());QVERIFY(!find<QPushButton>(d,"releaseRecordDistribution")->isEnabled());QCOMPARE(combo->currentData().toString(),QString("pending"));QVERIFY(note->toPlainText().isEmpty());tree->setCurrentItem(tree->topLevelItem(0));QCOMPARE(combo->currentData().toString(),QString("pending"));QVERIFY(note->toPlainText().isEmpty());d->close();
   }
 };
 QTEST_MAIN(ReleaseCenterTests)

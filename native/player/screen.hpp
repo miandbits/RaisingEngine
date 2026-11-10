@@ -151,7 +151,7 @@ public:
   bool history_enabled() const {return !replay_controls&&!game.gallery.active&&display_content.at("project").at("visual").contains("readingHistory");}
   std::string history_text(const std::string& text) const {return history_enabled()?"<span class=\"reading-receipt-text\" style=\"margin:0;\">"+escape(text)+"</span>":escape(text);}
   std::string history_label() const {return settings_words("최근 읽은 내용","Recent reading","最近読んだ内容");}
-  bool portable_available=false;
+  bool portable_available=false,save_storage_preview=false;
   std::string portable_status="idle",portable_notice,portable_filename;
   Json portable_incoming=Json::object(),portable_current=Json::object();
   bool portable_open() const {return portable_status!="idle";}
@@ -399,7 +399,24 @@ public:
     catch(...) { return false; }
   }
 #include "data-binding.inc"
+#include "save-storage-guidance.inc"
+  bool save_backup_controls_visible() const {
+    if(!slot_confirmation.empty())return false;
+    for(const auto& e:render_elements) {
+      const auto kind=e.value("kind","");
+      if((kind!="saveSlots"&&kind!="loadSlots")||!visible(e)||e.value("opacity",1.0)<=0||!e.value("_boundEnabled",true)||(e.contains("enabledCondition")&&!visual_condition(e.at("enabledCondition"))))continue;
+      if(ui_modal.empty()?e.value("_authoredModal",false):!e.value("_authoredModal",false))continue;
+      if(!readable_active)return true;
+      // Reading layouts may intentionally omit a widget that exists on canvas.
+      for(const auto& screen:display_content.at("project").at("visual").at("screens"))if(screen.at("id")==readable_screen_id) {
+        const auto prefix=screen.value("modal",false)?readable_screen_id+"__":"";
+        for(const auto& item:screen.value("readableLayout",Json::object()).value("items",Json::array()))if(prefix+item.value("elementId","")==e.value("id",""))return true;
+      }
+    }
+    return false;
+  }
   std::string bind(const std::string& name,const Json& element=Json::object()) const {
+    if(name=="save-storage-guidance")return save_storage_guidance(save_backup_controls_visible());
     if(name=="player-notice")return game.message;
     if(name=="choice-result") {
       if(game.choice_feedback.is_null()||phase()!="dialogue")return "";

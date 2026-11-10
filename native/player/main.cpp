@@ -372,6 +372,7 @@ public:
     const std::string previous_focus=context&&context->GetFocusElement()?context->GetFocusElement()->GetId():"";
     ExtensionElement::host=recalling()?&recollection->extensions:&extensions;
     this->markup.portable_available=portable_files&&portable_files->available()&&!preview()&&!editor_live&&!recalling()&&!this->game.gallery.active;
+    markup.save_storage_preview=preview()||editor_live||recalling()||this->game.gallery.active;
     remember_reading_position();
     touch_scroll=nullptr;
     ++document_generation;

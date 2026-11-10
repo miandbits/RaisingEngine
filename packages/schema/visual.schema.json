@@ -1070,6 +1070,7 @@
             "schedule-summary",
             "activity-progress",
             "save-summary",
+            "save-storage-guidance",
             "player-notice",
             "reading-status",
             "choice-result"
@@ -3251,6 +3252,7 @@
             "schedule-summary",
             "activity-progress",
             "save-summary",
+            "save-storage-guidance",
             "player-notice",
             "reading-status"
           ]

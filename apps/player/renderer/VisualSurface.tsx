@@ -1,3 +1,4 @@
+import {saveStorageGuidanceText,type SaveStorageGuidance} from '../../../packages/player-service/save-storage-guidance.js';
 import {GrowthResult} from "./GrowthResult.js";
 import {SurfacePaint,hasSurface} from './SurfacePaint.js';
 import {resolveControlStyle} from '../../../packages/visual/control-styles.js';
@@ -34,6 +35,7 @@ import {ExtensionView} from './ExtensionElement.js';
 import type {ExtensionElement as ExtensionSpec} from '../../../packages/web-player/extensions.js';
 
 export interface VisualContext {
+  saveStorage?:SaveStorageGuidance;
   onPlannerEntryConsumed?:(serial:number)=>void;
   plannerEntry?:import('./ScheduleWidget.js').ScheduleContext['plannerEntry'];
   scheduleDraft?:import('./ScheduleWidget.js').ScheduleContext['scheduleDraft'];
@@ -195,7 +197,7 @@ export function VisualSurface({design,screenId,context,assetUrl,busy=false,editi
       }
       const source=imageFor(element,context);
       const contextText=element.binding==='narrative-actor'?(context.characters?.find(c=>c.id===context.dataState?.activeNarrative?.actorId)?.name??''):element.binding==='context-name'?(context.dataUi?.contextNames?.[`${element.contextField}:${element.uiContext?.[element.contextField??'actorId']}`]??'—'):null;
-      const text=contextText??userFieldBinding(element,context.userValues)??dataBindingText(element,context)??numericBinding(element,context)??calendarBinding(element.binding)??(element.binding==='schedule-prompt'?schedulePrompt:null)??(element.binding&&element.binding!=='none'&&element.binding in context?String(context[element.binding as keyof VisualContext]??''):element.text??'텍스트');
+      const text=(element.binding==='save-storage-guidance'?saveStorageGuidanceText(editing?{location:'preview'}:context.saveStorage,context.locale):null)??contextText??userFieldBinding(element,context.userValues)??dataBindingText(element,context)??numericBinding(element,context)??calendarBinding(element.binding)??(element.binding==='schedule-prompt'?schedulePrompt:null)??(element.binding&&element.binding!=='none'&&element.binding in context?String(context[element.binding as keyof VisualContext]??''):element.text??'텍스트');
       if(readingItem){
         if((['text','button'].includes(element.kind)&&!text.trim())||(element.kind==='dialogue'&&!context.story.trim())||(element.kind==='result'&&!context.result.trim()&&!context.actorResults?.length)||(element.kind==='choices'&&!context.choices.length)||(element.kind==='image'&&!source))return null;
         Object.assign(style,{position:'relative',left:undefined,top:undefined,width:undefined,height:element.kind==='image'?readingItem.imageHeight:undefined,minWidth:0,lineHeight:1.5,overflow:element.kind==='image'?'hidden':'visible'});

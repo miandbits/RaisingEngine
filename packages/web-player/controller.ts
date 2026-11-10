@@ -89,6 +89,8 @@ export class WebPlayerController implements PlayerBridge {
   }
 
   private slotView:SaveSlotsView={rows:[],screenId:null,automatic:false,selected:0,page:0,confirmation:null,available:false};
+  private slotStorageAvailable:boolean|undefined;
+  private slotWriteFailed=false;
   private slotExpected:string|null=null;
   private slotBusy=false;
   private slotAutoGeneration=-1;
@@ -120,6 +122,7 @@ export class WebPlayerController implements PlayerBridge {
       battleSelection:this.presentation.selectedBattle(c,state),
       dataUi: projectDataUi(c,state,projection.gameplay,input=>this.runtime.request(input), {systems:projection.systems,battleSelection:this.presentation.selectedBattle(c,state)}),
       gameplayDefinition: c.project.gameplay ?? null, runtimeBackend: 'wasm',
+      saveStorage:{location:this.hasSlots?'browser':'file',...(this.hasSlots?{writeFailed:this.slotWriteFailed}:{}),...(this.slotStorageAvailable!==undefined?{available:this.slotStorageAvailable}:{})},
       time: projection.time, narrative: projection.narrative, gameplay: projection.gameplay, systems: projection.systems ?? null,
       storyLabel: cursor ? (cursor.kind === 'event' ? c.events : c.endings).find(x => x.id === cursor.id)?.label ?? null : null,
       endingLabel: state?.endingId ? c.endings.find(x => x.id === state.endingId)?.label ?? null : null };
@@ -308,13 +311,13 @@ export class WebPlayerController implements PlayerBridge {
     }catch{return {...key,status:'invalid'};}
   }
   private async refreshSlots(){
-    if(!this.slotStorage)throw new Error('Browser save storage is unavailable. Export a backup file to keep your progress.');
+    if(!this.slotStorage){this.slotStorageAvailable=false;throw new Error('Browser save storage is unavailable. Export a backup file to keep your progress.');}
     try{const stored=await this.slotStorage.read(),rows:SlotRow[]=[];
       for(const automatic of [false,true])for(let index=0;index<slotCount(this.content.project.visual!,automatic);index++){
         const row=stored.find(r=>r.automatic===automatic&&r.index===index);rows.push(row?this.preview(row):{automatic,index,status:'empty'});
       }
-      this.slotView.rows=rows;this.slotView.available=true;
-    }catch(error){this.slotView.available=false;throw error;}
+      this.slotView.rows=rows;this.slotView.available=true;this.slotStorageAvailable=true;
+    }catch(error){this.slotView.available=false;this.slotStorageAvailable=false;throw error;}
   }
   private async writeSlot(automatic:boolean,index:number,expected:string|null){
     if(!this.slotStorage)throw new Error('Browser save storage is unavailable.');
@@ -333,7 +336,7 @@ export class WebPlayerController implements PlayerBridge {
       if(new TextEncoder().encode(text).length>MAX_BYTES)throw new Error('Save exceeds 16 MiB.');
       return {automatic,index,text};
     });
-    await this.refreshSlots();
+    await this.refreshSlots();this.slotWriteFailed=false;
   }
   async checkpoint(version:Version):Promise<PlayerReply>{
     if(!this.hasSlots||!this.session||!this.current(version)||this.slotBusy||this.slotView.screenId||this.extensions?.presentationPending||this.extensions?.restorationPending)return this.reply();
@@ -344,13 +347,14 @@ export class WebPlayerController implements PlayerBridge {
     if(!slotCount(this.content.project.visual!,true)||previous>=0&&(command==='navigate'||command==='visit'||command==='advanceNarrative'&&previousPhase===state.phase))return this.reply();
     this.slotBusy=true;
     try{await this.writeSlot(true,0,null);return this.reply();}
-    catch(error){return this.reply(this.words('자동 저장 실패: ','Automatic save failed: ','自動保存に失敗: ')+String(error));}
+    catch(error){this.slotWriteFailed=true;return this.reply(this.words('자동 저장 실패: ','Automatic save failed: ','自動保存に失敗: ')+String(error));}
     finally{this.slotBusy=false;}
   }
   async slots(action:SaveSlotAction,version:Version|null):Promise<PlayerReply>{
     if(!this.hasSlots||!this.current(version))return this.reply('Game changed. Select again.');
     if(this.slotBusy)return this.reply();
     const design=this.content.project.visual!;
+    const requestedSave=action.type==='save'||action.type==='confirm'&&this.slotView.confirmation==='save';
     if(action.type==='close'||action.type==='cancel'){this.slotView.confirmation=null;if(action.type==='close')this.slotView.screenId=null;return this.reply();}
     this.slotBusy=true;
     try{
@@ -379,7 +383,7 @@ export class WebPlayerController implements PlayerBridge {
       this.slotView.confirmation=null;
       if(saving){await this.writeSlot(false,this.slotView.selected,action.type==='confirm'?this.slotExpected:null);return this.reply(null,this.words('이야기를 기록했습니다.','Record saved.','物語を保存しました。'));}
       return this.restore(text!);
-    }catch(error){this.slotView.confirmation=null;return this.reply(error instanceof Error?error.message:String(error));}
+    }catch(error){if(requestedSave)this.slotWriteFailed=true;this.slotView.confirmation=null;return this.reply(error instanceof Error?error.message:String(error));}
     finally{this.slotBusy=false;}
   }
 

@@ -19,6 +19,7 @@ await run('phase-forecast-core',['--test','tests/native/phase-forecast.test.mjs'
 await run('ui-surfaces-core',['--test','--test-concurrency=1','tests/validation/ui-surfaces.test.mjs','tests/validation/ui-control-colors.test.mjs']);
 await run('raising-flow-contract',['--test','--test-concurrency=1','tests/visual/planner-entry.test.mjs','tests/visual/growth-summary.test.mjs','tests/visual/activity-card-summary.test.mjs','tests/validation/growth-authoring.test.mjs']);
 await run('activity-board-contract',['--test','tests/validation/activity-board.test.mjs']);
+await run('save-storage-guidance-contract',['--test','tests/visual/save-storage-guidance.test.mjs']);
 await run('shared-widget-contract',['--test','tests/validation/shared-widgets.test.mjs']);
 await run('response-wait',['--test','tests/native/response-wait.test.mjs']);
 await run('balance-priorities',['--test','--test-concurrency=1','tests/analysis/priorities.test.mjs']);
@@ -65,6 +66,8 @@ if(args.includes('--desktop')){
   await run('native-portable-input',['--test','tests/native-player/portable-save-input.test.mjs','tests/native-player/portable-save-files.test.mjs']);
   if(process.platform==='darwin')await run('ios-keyboard-patch',['--test','tests/mobile/ios-keyboard-patch.test.mjs']);
   await run('native-portable-host',['--test','tests/native-player/portable-save-host.test.mjs']);
+  await run('native-save-storage-guidance',['--test','tests/native-player/save-storage-guidance.test.mjs']);
+  await run('save-guidance-authoring',['scripts/test-qt-studio.mjs','saveSlotsAuthoring','textBindingBatchRoundtrip','textBindingBatchKindsAndGuards'],{QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_ENGINE_ROOT:path.resolve('.'),RAISING_NODE:process.execPath,RAISING_PROJECT_HISTORY:path.join(out,'save-guidance-history.ini'),QT_UI_TEST_LOG:path.join(out,'save-guidance-authoring.qt.txt')});
   await run('native-autosaves',['--test','--test-concurrency=1','tests/native-player/choice-autosave.test.mjs','tests/native-player/load-records-button.test.mjs','tests/native-player/restore-transaction.test.mjs','tests/native-player/save-slots-layout.test.mjs']);
   const executable=name=>path.resolve(process.env.QT_STUDIO_OUT??'dist/qt-studio',name+(process.platform==='win32'?'.exe':''));
   const runQt=(name,env,command)=>{const log=path.join(out,name+'.qt.txt');return run(name,['-o',log+',txt'],env,command,log);};

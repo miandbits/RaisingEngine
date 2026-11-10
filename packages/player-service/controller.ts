@@ -19,6 +19,7 @@ import {projectDataUi,type DataUiProjection} from '../visual/data-ui-projection.
 import {PlayerPresentation,type TimelineView,type TimelineAction} from './presentation.js';
 
 export interface PlayerView {
+  saveStorage?:import('./save-storage-guidance.js').SaveStorageGuidance;
   scheduleDraft?:import('./save-metadata.js').ScheduleDraft;
   lastCommittedPlan?:LastCommittedPlan;
   /** Stable identity for game-local presentation preferences; omitted in detached previews. */
@@ -115,7 +116,7 @@ export class PlayerController {
       dataUi: projectDataUi(c,state,projection.gameplay,nativeRequest, {systems:projection.systems,battleSelection:this.presentation.selectedBattle(c,state)}),
       gameplayDefinition: c.project.gameplay ?? null, gameplay: projection.gameplay,
       systems: projection.systems,
-      runtimeBackend: runtimeBackend(),
+      runtimeBackend: runtimeBackend(), saveStorage:{location:'device',portableBackup:false},
       time: projection.time,
       narrative: projection.narrative,
       storyLabel: cursor ? (cursor.kind === 'event' ? c.events : c.endings).find(x => x.id === cursor.id)?.label ?? null : null,

@@ -25,6 +25,7 @@ export function requiredPlayerFeatures(content: ContentSnapshot, extensionFeatur
   const plannerAction=(value:unknown):boolean=>!!value&&typeof value==='object'&&(value as Record<string,unknown>).action==='openPlanner';
   // Only declared element/action fields count; plugin props are opaque documents.
   if(scheduleElements.some(e=>plannerAction(e)||[...((e as {variants?:readonly {values:unknown}[]}).variants??[]),...((e as {overrides?:readonly {values:unknown}[]}).overrides??[])].some(v=>plannerAction(v.values))))requiredFeatures.push('contextual-planner-v1');
+  if(scheduleElements.some(e=>e.binding==='save-storage-guidance'))requiredFeatures.push('save-storage-guidance-v1');
   if(surfaceReferences(visual).length)requiredFeatures.push('ui-surfaces-v1');
   if(controlStyleReferences(visual).length)requiredFeatures.push('ui-control-colors-v1');
   if(visual?.screens.some(screen=>screen.readableLayout?.activation!==undefined))requiredFeatures.push('readable-screen-activation-v1');
