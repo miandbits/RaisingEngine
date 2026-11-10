@@ -10,8 +10,23 @@ import {prepareRelease} from '../../dist/packages/export-service/release-metadat
 const MAX_FILE=256*1024*1024,MAX_TOTAL=1024*1024*1024,MAX_FILES=50000;
 const table=Array.from({length:256},(_,v)=>{for(let i=0;i<8;i++)v=(v>>>1)^((v&1)?0xedb88320:0);return v>>>0;});
 function crc(bytes){let c=0xffffffff;for(const b of bytes)c=(c>>>8)^table[(c^b)&255];return (c^0xffffffff)>>>0;}
+function bindRelease(backup,expected){
+ if(!expected)return;
+ const fail=field=>{throw Error('RELEASE_BACKUP_BINDING: Project backup does not belong to the selected release: '+field);},inner=backup.manifest;
+ for(const field of ['version','target','contentFingerprint'])if(inner[field]!==expected[field])fail(field);
+ if((inner.sourceContentFingerprint??inner.contentFingerprint)!==(expected.sourceContentFingerprint??expected.contentFingerprint))fail('sourceContentFingerprint');
+ if(inner.gameId!==undefined&&expected.gameId!==undefined&&inner.gameId!==expected.gameId)fail('gameId');
+ // Source includes authoring evidence and plugin dependencies, not only runtime
+ // content. A gameplay fingerprint alone cannot bind those restored files.
+ const rows=manifest=>{if(!Array.isArray(manifest.sourceFiles)||manifest.sourceFiles.length>MAX_FILES)fail('sourceFiles');const map=new Map();for(const row of manifest.sourceFiles){const file=relativeFile(row.file);if(map.has(file)||!/^[0-9a-f]{64}$/.test(row.sha256))fail('sourceFiles');map.set(file,row.sha256);}return map;};
+ const actual=rows(inner),wanted=rows(expected);if(actual.size!==wanted.size||[...wanted].some(([file,sha256])=>actual.get(file)!==sha256))fail('sourceFiles');
+ // Legacy receipts may omit gameId. Read the already hash-checked document to
+ // bind any available identity without loading or executing backup plugins.
+ const project=JSON.parse(backup.files.get('project.json')??'null');
+ for(const gameId of [expected.gameId,inner.gameId])if(gameId!==undefined&&project?.gameId!==gameId)fail('project.gameId');
+}
 /** Untrusted ZIP names and bytes never become filesystem paths until every entry is checked. */
-export async function readProjectBackup(file,{expectedSha256}={}){
+export async function readProjectBackup(file,{expectedSha256,expectedRelease}={}){
  const st=await lstat(file);if(!st.isFile()||st.size>MAX_TOTAL)throw Error('Choose a regular project ZIP of at most 1 GiB.');
  const bytes=await readFile(file);if(bytes.length>MAX_TOTAL)throw Error('Project backup exceeds 1 GiB.');const sha256=digest(bytes);if(expectedSha256&&sha256!==expectedSha256)throw Error('Backup changed since verification. Select and verify it again.');
  const files=await new Promise((resolve,reject)=>yauzl.fromBuffer(bytes,{lazyEntries:true,strictFileNames:true,validateEntrySizes:true},(error,zip)=>{
@@ -27,7 +42,7 @@ export async function readProjectBackup(file,{expectedSha256}={}){
  const manifest=JSON.parse(raw);if(manifest.formatVersion!==1||!Array.isArray(manifest.sourceFiles)||manifest.sourceFiles.length>MAX_FILES)throw Error('Invalid project backup receipt.');
  const expected=new Set(['RELEASE.json']);for(const entry of manifest.sourceFiles){const name=relativeFile(entry.file);if(expected.has(name)||!/^[0-9a-f]{64}$/.test(entry.sha256)||!files.has(name)||digest(files.get(name))!==entry.sha256)throw Error('Backup source checksum mismatch: '+name);expected.add(name);}
  if(expected.size!==files.size||[...files.keys()].some(name=>!expected.has(name)))throw Error('Backup contains undeclared files.');
- return {files,manifest,sha256};
+ const backup={files,manifest,sha256};bindRelease(backup,expectedRelease);return backup;
 }
 export async function verifyRestoredProject(directory,backup){
  for(const [file,bytes] of backup.files){const actual=await readFile(path.join(directory,file));if(!actual.equals(bytes))throw Error('Restored bytes differ: '+file);}
@@ -43,11 +58,11 @@ export async function verifyProjectBackup(file,options={}){
  const backup=await readProjectBackup(file,options),temporary=await mkdtemp(path.join(os.tmpdir(),'raising-backup-verify-'));
  try {const directory=await materializeProject(backup.files,path.join(temporary,'project'));return {...await verifyRestoredProject(directory,backup),version:backup.manifest.version};}finally{await rm(temporary,{recursive:true,force:true});}
 }
-export async function restoreProjectBackup(file,{destination,expectedSha256,originalRoot}={}){
+export async function restoreProjectBackup(file,{destination,expectedSha256,expectedRelease,originalRoot}={}){
  if(!expectedSha256)throw Error('Verify this backup before restoring it.');
  if(typeof destination!=='string'||!path.isAbsolute(destination))throw Error('Choose a new absolute project folder.');
+ const backup=await readProjectBackup(file,{expectedSha256,expectedRelease});
  await mkdir(path.dirname(destination),{recursive:true});const target=path.join(await realpath(path.dirname(destination)),path.basename(destination));if(originalRoot){const base=await realpath(originalRoot),relative=path.relative(base,target);if(!relative||!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative))throw Error('Restore outside the open project into a new folder.');}
- const backup=await readProjectBackup(file,{expectedSha256});
  // Validate in owned temporary storage before publishing any user destination.
  const temporary=await mkdtemp(path.join(os.tmpdir(),'raising-backup-restore-'));try{const draft=await materializeProject(backup.files,path.join(temporary,'project'));await verifyRestoredProject(draft,backup);const directory=await materializeProject(backup.files,target);return {directory,verification:await verifyRestoredProject(directory,backup)};}finally{await rm(temporary,{recursive:true,force:true});}
 }

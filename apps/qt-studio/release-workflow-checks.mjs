@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import yauzl from 'yauzl';
 import {digest,regularFile,relativeFile} from './project-files.mjs';
 import {readSampleSaveBytes} from './update-compatibility.mjs';
-import {verifyProjectBackup,restoreProjectBackup} from './backup-restore.mjs';
+import {readProjectBackup,verifyProjectBackup,restoreProjectBackup} from './backup-restore.mjs';
 import {loadProject,buildSnapshot} from '../../dist/packages/project-service/index.js';
 import {decodeSave} from '../../dist/packages/runtime-service/save.js';
 
@@ -37,6 +37,7 @@ export async function verifyRelease(entry,progress=()=>{}){
  const selected=await releaseManifest(entry.directory);if(selected.sha256!==entry.id)throw Error('RELEASE_STALE: RELEASE.json changed. Register the new export separately.');
  const m=selected.manifest;let n=0;for(const f of m.files){if(await fileHash(await regularFile(selected.directory,f.file))!==f.sha256)throw Error('RELEASE_STALE: Exported file changed: '+f.file);progress({message:'Checking exported files',done:++n,total:m.files.length});}
  for(const f of Object.values(m.archives))if(await fileHash(await regularFile(selected.directory,f.file))!==f.sha256)throw Error('RELEASE_STALE: Archive changed: '+f.file);
+ await readProjectBackup(await regularFile(selected.directory,m.archives.project.file),{expectedSha256:m.archives.project.sha256,expectedRelease:{...m,gameId:entry.gameId}});
  const members=await verifyGameZip(await regularFile(selected.directory,m.archives.game.file),m.files),file=bundleFile(m.target),declared=m.files.find(f=>f.file===file);if(!declared)throw Error('RELEASE_BUNDLE: The manifest does not declare its game bundle.');
  const bytes=await boundedBytes(await regularFile(selected.directory,file),64*1024*1024);if(digest(bytes)!==declared.sha256)throw Error('RELEASE_STALE: Game bundle changed during verification.');const bundle=JSON.parse(bytes.toString('utf8'));
  if(bundle.content?.contentFingerprint!==m.contentFingerprint||bundle.content?.project?.gameId!==entry.gameId)throw Error('RELEASE_GAME: Exported content does not match this project and receipt.');
@@ -65,12 +66,12 @@ export async function runReleaseWorkflowJob({entry,kind,caseId,destination,proje
   }
  }else if(kind==='recovery'){
   const archive=await regularFile(entry.directory,before.manifest.archives.project.file),sha=before.manifest.archives.project.sha256;
-  const verification=await verifyProjectBackup(archive,{expectedSha256:sha});let restored;
+  const expectedRelease={...before.manifest,gameId:entry.gameId},verification=await verifyProjectBackup(archive,{expectedSha256:sha,expectedRelease});let restored;
   if(destination){
    // Never publish recovery inside the selected immutable release or a previous
    // project used by a save case, even when it differs from the open project.
    const resolved=await resolvedLocation(destination);for(const base of [entry.directory,...entry.cases.map(c=>c.sourceProject).filter(Boolean)]){const canonical=await realpath(base).catch(error=>{if(error.code==='ENOENT')return resolvedLocation(base);throw error;}),relative=path.relative(canonical,resolved);if(!relative||!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative))throw Error('RELEASE_RECOVERY_LOCATION: Restore outside the release and previous source folders.');}
-   restored=await restoreProjectBackup(archive,{destination,expectedSha256:sha,originalRoot:projectRoot});
+   restored=await restoreProjectBackup(archive,{destination,expectedSha256:sha,expectedRelease,originalRoot:projectRoot});
   }
   result.recovery={status:'passed',checkedAt:new Date().toISOString(),verification,sourceContentFingerprint:verification.contentFingerprint,runtimeContentFingerprint:entry.identity.contentFingerprint,sourceMatchesRuntime:verification.contentFingerprint===entry.identity.contentFingerprint,...(restored?{directory:restored.directory,restored:true,restoredVerification:restored.verification}:{restored:false}),message:restored?'Backup restored to a new folder and reopened with verified source identity. Check sourceMatchesRuntime before using it as a save-migration target.':'Backup bytes and reopen validation passed; a named restoration destination has not been recorded.'};
  }else if(kind!=='release')throw Error('RELEASE_JOB_KIND: Choose a supported check.');

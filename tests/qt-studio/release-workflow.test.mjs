@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdir,mkdtemp,readFile,writeFile,access,readdir,chmod,rename} from 'node:fs/promises';
+import {mkdir,mkdtemp,readFile,writeFile,access,readdir,chmod,rename,cp} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {verifyRelease} from '../../apps/qt-studio/release-workflow-checks.mjs';
@@ -13,6 +13,8 @@ import {createSession} from '../../dist/packages/runtime-service/session.js';
 import {encodeSave} from '../../dist/packages/runtime-service/save.js';
 import {digest} from '../../apps/qt-studio/project-files.mjs';
 import {loadProject,buildSnapshot} from '../../dist/packages/project-service/index.js';
+import {readProjectBackup,verifyProjectBackup,restoreProjectBackup} from '../../apps/qt-studio/backup-restore.mjs';
+import {treeFiles,writeZip} from '../../apps/qt-studio/release-zip.mjs';
 const call=(s,method,params={})=>s.handle({method,params:{revision:s.editor.revision,...params}});
 async function fixture(t){
  await mkdir('.cache/release-workflow',{recursive:true});const root=await mkdtemp(path.resolve('.cache/release-workflow/test-')),paths=await updateFixture(root),runtime=path.join(root,'runtime');await mkdir(runtime);await writeFile(path.join(runtime,'index.html'),'test player');
@@ -67,6 +69,38 @@ test('verified presentation releases check old saves against exported baseline a
  const recovery=await run(selected,'recovery',{destination:path.join(f.root,'restored-presentation-source')});assert.equal(recovery.status,'completed',recovery.message);assert.equal(recovery.result.recovery.restored,true);assert.equal(recovery.result.recovery.sourceMatchesRuntime,false);assert.equal(recovery.result.recovery.sourceContentFingerprint,entry.identity.sourceContentFingerprint);assert.equal(recovery.result.recovery.runtimeContentFingerprint,entry.identity.contentFingerprint);
 });
 
+test('selected release rejects another valid backup including same-gameplay changes to authoring source before restoration',async t=>{
+ const f=await fixture(t),{service:s,workflow:w}=f,outer=JSON.parse(await readFile(path.join(f.release,'RELEASE.json'),'utf8'));
+ const profiles=(await call(s,'analysisPriorityProfiles')).analysis.priorityProfiles;
+ await call(s,'analysisPriorityProfileSave',{profilesRevision:profiles.revision,name:'Source-only priorities',profile:{formatVersion:1,priorities:[{attributeId:f.content.attributes[0].id,direction:'increase',weight:1}],bands:[]}});
+ const metadata=(await call(s,'export',{target:'web',releaseVersion:'1.0.0',destination:path.join(f.root,'metadata-release')})).exported;
+ const metadataReceipt=JSON.parse(await readFile(path.join(metadata.directory,'RELEASE.json'),'utf8'));assert.equal(metadataReceipt.contentFingerprint,outer.contentFingerprint);assert.notDeepEqual(metadataReceipt.sourceFiles,outer.sourceFiles);
+ await call(s,'open',{root:f.other});const different=(await call(s,'export',{target:'web',releaseVersion:'1.0.0',destination:path.join(f.root,'different-game-release')})).exported;await call(s,'open',{root:f.to});
+ for(const [name,other]of [['same-gameplay',metadata],['different-game',different]]){
+  const directory=path.join(f.root,'crosswired-'+name),destination=path.join(f.root,'uncreated-'+name,'restored');await cp(f.release,directory,{recursive:true});const archive=path.join(directory,outer.archives.project.file),bytes=await readFile(path.join(other.directory,'Project-backup.zip'));
+  const changed=structuredClone(outer);changed.archives.project.sha256=digest(bytes);await writeFile(archive,bytes);await writeFile(path.join(directory,'RELEASE.json'),JSON.stringify(changed));
+  assert.equal((await verifyProjectBackup(archive)).ok,true,'The swapped archive is independently valid');
+  await assert.rejects(verifyProjectBackup(archive,{expectedSha256:changed.archives.project.sha256,expectedRelease:changed}),/RELEASE_BACKUP_BINDING/);
+  await assert.rejects(restoreProjectBackup(archive,{destination,expectedSha256:changed.archives.project.sha256,expectedRelease:changed,originalRoot:f.to}),/RELEASE_BACKUP_BINDING/);
+  await assert.rejects(access(path.dirname(destination)),{code:'ENOENT'},'Mismatch rejected before creating destination parents');
+  const entry=await w.register(s.editor,{directory}),selected={...f,entry},job=await run(selected,'recovery',{destination});assert.equal(job.status,'failed');assert.match(job.message,/RELEASE_INTEGRITY: RELEASE_BACKUP_BINDING/);
+  const recorded=await latest(selected);assert.equal(recorded.checks.release.status,'failed');assert.equal(recorded.integrityKnownStale,true);assert.notEqual(recorded.checks.recovery.status,'passed');await assert.rejects(access(destination),{code:'ENOENT'});
+ }
+});
+
+test('bound backup acceptance ignores source row order and supports historical receipts without gameId',async t=>{
+ const f=await fixture(t),{workflow:w,service:s}=f,directory=path.join(f.root,'historical-release');await cp(f.release,directory,{recursive:true});
+ const manifestFile=path.join(directory,'RELEASE.json'),outer=JSON.parse(await readFile(manifestFile,'utf8')),archive=path.join(directory,outer.archives.project.file),backup=await readProjectBackup(archive),source=path.join(f.root,'historical-source');await mkdir(source);
+ delete backup.manifest.gameId;backup.files.set('RELEASE.json',Buffer.from(JSON.stringify(backup.manifest)));
+ for(const [file,bytes]of backup.files){await mkdir(path.dirname(path.join(source,file)),{recursive:true});await writeFile(path.join(source,file),bytes);}const historicalZip=path.join(f.root,'historical-project.zip');await writeZip(source,await treeFiles(source),historicalZip);await cp(historicalZip,archive);
+ outer.archives.project.sha256=digest(await readFile(archive));outer.sourceFiles.reverse();await writeFile(manifestFile,JSON.stringify(outer));
+ let entry=await w.register(s.editor,{directory}),selected={...f,entry};let job=await run(selected,'recovery',{destination:path.join(f.root,'legacy-inner-restored')});assert.equal(job.status,'completed',job.message);assert.equal(job.result.recovery.sourceMatchesRuntime,true);
+ delete outer.gameId;await writeFile(manifestFile,JSON.stringify(outer));entry=await w.register(s.editor,{directory});selected={...f,entry};job=await run(selected,'recovery',{destination:path.join(f.root,'legacy-both-restored')});assert.equal(job.status,'completed',job.message);assert.equal(job.result.recovery.sourceMatchesRuntime,true);
+ await assert.rejects(verifyRelease({...entry,gameId:'another-game'}),/RELEASE_BACKUP_BINDING/,'The registered game identity also binds legacy project bytes');
+ const verified=await verifyProjectBackup(archive,{expectedSha256:outer.archives.project.sha256,expectedRelease:outer});assert.equal(verified.contentFingerprintVerified,true);assert.equal(verified.contentFingerprint,f.content.contentFingerprint);
+ for(const field of ['version','target','contentFingerprint','sourceContentFingerprint','gameId']){const expected={...outer,[field]:field==='sourceContentFingerprint'?`sha256:${'f'.repeat(64)}`:'different'};await assert.rejects(readProjectBackup(archive,{expectedRelease:expected}),/RELEASE_BACKUP_BINDING/,field);}
+});
+
 test('changed original saves, source projects and exported files revoke checked results instead of retaining a successful badge',async t=>{
  const f=await fixture(t),{workflow:w,service:s}=f;let e=await w.addCase(s.editor,{...params(await latest(f)),name:'Original',file:f.save,sourceProject:f.from});assert.equal((await run(f,'save')).status,'completed');
  const sourceFile=path.join(f.from,'project.json'),oldSource=await readFile(sourceFile);await writeFile(sourceFile,Buffer.concat([oldSource,Buffer.from('\n')]));let result=await run(f,'save');assert.equal(result.status,'completed',result.message);assert.equal((await latest(f)).cases[0].check.status,'stale');await writeFile(sourceFile,oldSource);
@@ -86,7 +120,7 @@ test('previous asset bytes participate in save-source staleness even when docume
 });
 
 test('archive hashes alone never accept a symlink payload and legacy receipts still bind the actual game identity',async t=>{
- const f=await fixture(t);await assert.rejects(verifyRelease({...f.entry,gameId:'another-game'}),/RELEASE_GAME/);
+ const f=await fixture(t);await assert.rejects(verifyRelease({...f.entry,gameId:'another-game'}),/RELEASE_GAME|RELEASE_BACKUP_BINDING/);
  const archive=path.join(f.release,'Game.zip'),bytes=await readFile(archive),central=bytes.indexOf(Buffer.from([0x50,0x4b,0x01,0x02]));assert.ok(central>=0);bytes.writeUInt32LE(((0xa000|0o777)<<16)>>>0,central+38);await writeFile(archive,bytes);
  const file=path.join(f.release,'RELEASE.json'),manifest=JSON.parse(await readFile(file,'utf8'));manifest.archives.game.sha256=digest(bytes);await writeFile(file,JSON.stringify(manifest));
  const entry=await f.workflow.register(f.service.editor,{directory:f.release,name:'Unsafe archive probe'}),job=await done(f,await f.workflow.start(f.service.editor,{...params(entry),kind:'release'}));assert.equal(job.status,'failed');assert.match(job.message,/RELEASE_ARCHIVE/);
