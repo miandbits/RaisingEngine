@@ -7,12 +7,23 @@ permissions:
   contents: read
 jobs:
   readiness:
-    runs-on: xcode-27
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: xcode-27
+            developer: /Applications/Xcode_27.2.app/Contents/Developer
+            runtime: com.apple.CoreSimulator.SimRuntime.iOS-27-2
+          - runner: macos-26
+            developer: /Applications/Xcode_26.6.app/Contents/Developer
+            runtime: com.apple.CoreSimulator.SimRuntime.iOS-26-5
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 16
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+      DEVELOPER_DIR: ${{ matrix.developer }}
+      PROBE_RUNTIME: ${{ matrix.runtime }}
     steps:
-      - name: Boot iOS 27.2 and check app services
+      - name: Check first launch and preseeded Simulator app services
         shell: bash
         run: |
           python3 - <<'PY'
@@ -21,7 +32,11 @@ jobs:
           out = pathlib.Path(os.environ["RUNNER_TEMP"]) / "ios-host-readiness"
           out.mkdir()
           sim = ["/usr/bin/xcrun", "simctl"]
-          results = {"source": os.environ["GITHUB_SHA"], "primaryError": None, "cleanupErrors": {}}
+          runtime = os.environ["PROBE_RUNTIME"]
+          device_type = "com.apple.CoreSimulator.SimDeviceType.iPhone-17e"
+          bundle_id = "org.raisingengine.hostreadiness"
+          results = {"source": os.environ["GITHUB_SHA"], "runtime": runtime, "type": device_type,
+                     "primaryError": None, "cleanupErrors": {}}
 
           def step(name, argv, seconds):
               started = time.monotonic()
@@ -40,6 +55,9 @@ jobs:
                   "host": ["/bin/bash", "-c",
                            'printf "ImageOS=%s\\nImageVersion=%s\\n" "$ImageOS" "$ImageVersion"; '
                            'sw_vers; uname -m; sysctl hw.ncpu hw.memsize; uptime; vm_stat; df -h .'],
+                  "pressure": ["/usr/bin/memory_pressure", "-Q"],
+                  "processes": ["/bin/bash", "-c",
+                                'ps -axo pid,ppid,%cpu,rss,comm | sort -nrk3 | head -40'],
                   "devices": [*sim, "list", "devices", "available"],
               }.items():
                   try:
@@ -48,17 +66,35 @@ jobs:
                       print(f"{prefix}-{name}: {error}", flush=True)
 
           device = None
+          started_here = False
+          installed = False
           resources("before")
           try:
               step("xcode", ["/usr/bin/xcodebuild", "-version"], 20)
+              try:
+                  step("first-launch-status", ["/usr/bin/xcodebuild", "-checkFirstLaunchStatus"], 30)
+                  results["initialFirstLaunchStatus"] = 0
+              except subprocess.CalledProcessError as error:
+                  results["initialFirstLaunchStatus"] = error.returncode
+                  if error.returncode != 1:
+                      raise
+                  step("first-launch-setup", ["/usr/bin/sudo", "-n", "/usr/bin/env",
+                       "DEVELOPER_DIR=" + os.environ["DEVELOPER_DIR"],
+                       "/usr/bin/xcodebuild", "-runFirstLaunch"], 180)
+                  step("first-launch-recheck", ["/usr/bin/xcodebuild", "-checkFirstLaunchStatus"], 30)
               step("runtimes", [*sim, "list", "runtimes", "available"], 20)
-              device = step("create", [*sim, "create", "RaisingEngine readiness probe",
-                                       "com.apple.CoreSimulator.SimDeviceType.iPhone-17e",
-                                       "com.apple.CoreSimulator.SimRuntime.iOS-27-2"], 40).strip()
+              inventory = json.loads(step("preseeded-inventory",
+                                          [*sim, "list", "devices", "available", "--json"], 30))
+              candidates = [entry for entry in inventory["devices"].get(runtime, [])
+                            if entry.get("deviceTypeIdentifier") == device_type
+                            and entry.get("state") == "Shutdown"]
+              if not candidates:
+                  raise ValueError("No matching, shut-down preseeded iPhone 17e")
+              device = sorted(candidates, key=lambda entry: entry["udid"])[0]["udid"]
               results["device"] = device
-              step("boot", [*sim, "boot", device], 60)
+              started_here = True
               step("bootstatus", [*sim, "bootstatus", device, "-b"], 180)
-              step("listapps", [*sim, "listapps", device], 45)
+              step("listapps", [*sim, "listapps", device], 60)
               step("settings", [*sim, "launch", device, "com.apple.Preferences"], 45)
               app = out / "Probe.app"
               app.mkdir()
@@ -88,29 +124,34 @@ jobs:
           }
           """)
               sdk = step("sdk", ["/usr/bin/xcrun", "--sdk", "iphonesimulator", "--show-sdk-path"], 20).strip()
-              step("compile", ["/usr/bin/xcrun", "clang", "-target", "arm64-apple-ios27.0-simulator",
+              step("compile", ["/usr/bin/xcrun", "clang", "-target", "arm64-apple-ios16.0-simulator",
                                "-isysroot", sdk, "-fobjc-arc", "-framework", "UIKit",
                                str(source), "-o", str(app / "Probe")], 30)
               (app / "Info.plist").write_bytes(plistlib.dumps({
-                  "CFBundleExecutable": "Probe", "CFBundleIdentifier": "org.raisingengine.hostreadiness",
+                  "CFBundleExecutable": "Probe", "CFBundleIdentifier": bundle_id,
                   "CFBundleName": "Probe", "CFBundlePackageType": "APPL",
                   "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0",
-                  "CFBundleSupportedPlatforms": ["iPhoneSimulator"], "MinimumOSVersion": "27.0",
+                  "CFBundleSupportedPlatforms": ["iPhoneSimulator"], "MinimumOSVersion": "16.0",
                   "UIDeviceFamily": [1],
               }))
               step("install", [*sim, "install", device, str(app)], 120)
-              step("installed-path", [*sim, "get_app_container", device,
-                                      "org.raisingengine.hostreadiness", "app"], 30)
-              step("launch-probe", [*sim, "launch", device, "org.raisingengine.hostreadiness"], 45)
-          except (subprocess.SubprocessError, OSError) as error:
+              installed = True
+              step("installed-path", [*sim, "get_app_container", device, bundle_id, "app"], 30)
+              step("launch-probe", [*sim, "launch", device, bundle_id], 45)
+          except (subprocess.SubprocessError, OSError, ValueError) as error:
               results["primaryError"] = str(error)
           finally:
-              if device:
-                  for action in ["shutdown", "delete"]:
-                      try:
-                          step(action, [*sim, action, device], 45)
-                      except (subprocess.SubprocessError, OSError) as error:
-                          results["cleanupErrors"][action] = str(error)
+              resources("before-teardown")
+              cleanup = []
+              if installed:
+                  cleanup.append(["uninstall", device, bundle_id])
+              if started_here:
+                  cleanup.append(["shutdown", device])
+              for argv in cleanup:
+                  try:
+                      step(argv[0], [*sim, *argv], 45)
+                  except (subprocess.SubprocessError, OSError) as error:
+                      results["cleanupErrors"][argv[0]] = str(error)
               resources("after")
               (out / "result.json").write_text(json.dumps(results, indent=2) + "\\n")
               print(json.dumps(results), flush=True)
@@ -119,7 +160,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ios-host-readiness
+          name: ios-host-readiness-${{ matrix.runner }}
           path: |
             ${{ runner.temp }}/ios-host-readiness/*.log
             ${{ runner.temp }}/ios-host-readiness/result.json
