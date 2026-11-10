@@ -3,6 +3,7 @@
 #include <QDialog>
 #include <QHeaderView>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QStatusBar>
 #include <QTableWidget>
 #include <QTimer>
@@ -146,6 +147,11 @@ void StudioWindow::goalSaveChecksDialog() {
   auto retryHelp=new QLabel(tr("저장된 프로젝트의 경로 재생과 기준 비교를 함께 다시 실행합니다. 편집 내용은 자동 저장하지 않으며 이전 보고서는 보존합니다. 경로당 제한은 각 재생과 각 기준 비교에 적용되고, 전체 제한은 두 단계를 합친 시간입니다."));retryHelp->setWordWrap(true);layout->addWidget(retryHelp);
   auto limits=new QHBoxLayout;layout->addLayout(limits);auto routeLabel=new QLabel(tr("경로당 제한 (초)"));auto routeSeconds=new QSpinBox;routeSeconds->setObjectName("goalSaveCheckRouteSeconds");routeSeconds->setRange(1,300);routeSeconds->setValue(300);routeSeconds->setAccessibleName(routeLabel->text());routeLabel->setBuddy(routeSeconds);limits->addWidget(routeLabel);limits->addWidget(routeSeconds);
   auto batchLabel=new QLabel(tr("전체 제한 (초)"));auto batchSeconds=new QSpinBox;batchSeconds->setObjectName("goalSaveCheckBatchSeconds");batchSeconds->setRange(1,3600);batchSeconds->setValue(3600);batchSeconds->setAccessibleName(batchLabel->text());batchLabel->setBuddy(batchSeconds);limits->addWidget(batchLabel);limits->addWidget(batchSeconds);auto retry=new QPushButton(tr("저장된 사본 다시 검사"));retry->setObjectName("goalSaveCheckRetry");limits->addWidget(retry);limits->addStretch();
+  auto showLimits=[=](QJsonObject check){
+    const auto used=check.value("limits").toObject();const int routeMs=used.value("routeTimeoutMs").toInt(-1),batchMs=used.value("batchTimeoutMs").toInt(-1);
+    if(routeMs>=1000&&routeMs<=300000&&batchMs>=routeMs&&batchMs<=3600000&&routeMs%1000==0&&batchMs%1000==0){const QSignalBlocker routeBlocked(routeSeconds),batchBlocked(batchSeconds);routeSeconds->setValue(routeMs/1000);batchSeconds->setValue(batchMs/1000);}
+  };
+  showLimits(lastGoalSaveCheck);
   auto retryStatus=new QLabel;retryStatus->setObjectName("goalSaveCheckRetryStatus");retryStatus->setWordWrap(true);retryStatus->setTextInteractionFlags(Qt::TextSelectableByMouse);layout->addWidget(retryStatus);
   auto summary=new QLabel;summary->setObjectName("goalSaveCheckSummary");summary->setWordWrap(true);layout->addWidget(summary);
   auto table=new QTableWidget(0,4);table->setObjectName("goalSaveCheckRoutes");table->setHorizontalHeaderLabels({tr("등록 경로"),tr("검사 결과"),tr("명령 수"),tr("실패 위치 · 원인")});table->setEditTriggers(QAbstractItemView::NoEditTriggers);table->setSelectionBehavior(QAbstractItemView::SelectRows);table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);table->horizontalHeader()->setSectionResizeMode(3,QHeaderView::Stretch);layout->addWidget(table,1);
@@ -160,6 +166,9 @@ void StudioWindow::goalSaveChecksDialog() {
   });
   auto render=[=,this](QJsonObject check){
     const bool retrying=!goalSaveCheckRetryParams.isEmpty()||goalSaveCheckRetryInFlight;
+    // An accepted job can arrive after this window was reopened during prepare.
+    // Only its disabled controls follow progress; editable next-run input stays.
+    if(activeCheck(check)&&!retrying)showLimits(check);
     const bool running=retrying||activeCheck(check),dirty=view.value("dirty").toBool(),validLimits=routeSeconds->value()<=batchSeconds->value();
     routeSeconds->setEnabled(!running);batchSeconds->setEnabled(!running);retry->setEnabled(!view.value("root").toString().isEmpty()&&!running&&!dirty&&validLimits);retry->setText(check.isEmpty()?tr("저장된 사본 검사"):tr("저장된 사본 다시 검사"));
     retryStatus->setText(retrying?(goalSaveCheckRetryCancel?tr("취소 중…"):tr("저장된 사본의 검사를 준비하는 중…")):dirty?tr("먼저 프로젝트를 저장하세요. 이 검사는 미저장 편집 내용을 포함하지 않습니다."):!validLimits?tr("전체 제한은 경로당 제한 이상이어야 합니다."):goalSaveCheckRetryError);
