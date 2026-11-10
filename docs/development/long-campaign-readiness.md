@@ -1,5 +1,7 @@
 # Long campaign readiness
 
+> **Historical roadmap and implementation record — October 2026.** The remaining-work table below describes that review, not today's backlog. Later work includes [phase forecasts](../manual/phase-forecasts.md), [shared game-state widgets](../manual/shared-screen-sections.md) and release comparison workflows. Use the [current platform support guide](platform-support.md) for present target scope and dated verification; this page does not certify a current binary or game.
+
 The October 2026 campaign work adds reusable engine capabilities. A complete automated playthrough establishes technical completion, not commercial quality or enjoyment. Keep creative projects and their media outside public engine commits.
 
 ## Implemented contracts

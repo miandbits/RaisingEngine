@@ -7,9 +7,11 @@ import {fileURLToPath} from 'node:url';
 import {studioTemplates} from '../dist/packages/studio-service/templates.js';
 import {replaceReleaseMedia,auditReleaseMedia} from './release-sample-media.mjs';
 import {prepareCocoaRepair,deployedCocoaRepair,sha256} from './lib/qt-cocoa-repair.mjs';
+import {createPackagedEditorIdentity} from '../apps/qt-studio/editor-identity.mjs';
 
 if(process.platform!=='darwin')throw Error('Build the macOS editor package on a Mac.');
 const root=fileURLToPath(new URL('..',import.meta.url));
+const editorIdentity=await createPackagedEditorIdentity(root,{platform:'darwin',arch:process.arch});
 const out=path.resolve(process.env.MACOS_STUDIO_OUT??'dist/macos/RaisingStudio.app');
 if(existsSync(out))throw Error('Choose a new MACOS_STUDIO_OUT; existing apps are never overwritten.');
 const nodeRoot=path.resolve(process.env.MACOS_NODE_ROOT??`.cache/macos-node/node-v22.14.0-darwin-${process.arch}`);
@@ -56,7 +58,8 @@ await copy('packages/schema','engine/packages/schema');
 await copy('packages/plugin-host','engine/packages/plugin-host');
 await copy(node,'engine/node');
 await copy(path.join(nodeRoot,'LICENSE'),'licenses/node-LICENSE.txt');
-await writeFile(path.join(resources,'engine/package.json'),JSON.stringify({name:'raising-studio-services',version:'0.1.0',type:'module',private:true}));
+await writeFile(path.join(resources,'engine/package.json'),JSON.stringify({name:'raising-studio-services',version:editorIdentity.engineVersion,type:'module',private:true}));
+await writeFile(path.join(resources,'engine/editor-identity.json'),JSON.stringify(editorIdentity,null,2)+'\n');
 const runtime=JSON.parse(await readFile(path.join(root,'dist/native/runtime.json'),'utf8'));
 await copy('dist/native/runtime.json','engine/dist/native/runtime.json');
 await copy('dist/native/'+runtime.executable,'engine/dist/native/'+runtime.executable);
@@ -84,7 +87,7 @@ async function dependency(name,from=path.join(root,'package.json')) {
   for(const child of Object.keys(p.dependencies??{}))await dependency(child,manifest);
 }
 for(const name of ['ajv','jsonc-parser','yauzl','resedit'])await dependency(name);
-const packageManifest={version:1,platform:'darwin',arch:process.arch,node:nodeInfo.version,templates:studioTemplates,dependencies:Object.fromEntries(dependencies),...(cocoaPackage?{qtCocoaRepair:cocoaPackage}:{}),publicReleaseReady:false,notes:'Local development bundle. Distribution still requires Qt corresponding-source/license review, Developer ID signing, notarization and a clean-machine test.'};
+const packageManifest={version:1,platform:'darwin',arch:process.arch,engineVersion:editorIdentity.engineVersion,editorIdentity,sourceCommit:editorIdentity.source.commit,sourceTreeDirty:editorIdentity.source.dirty,node:nodeInfo.version,templates:studioTemplates,dependencies:Object.fromEntries(dependencies),...(cocoaPackage?{qtCocoaRepair:cocoaPackage}:{}),publicReleaseReady:false,notes:'Local development bundle. Distribution still requires Qt corresponding-source/license review, Developer ID signing, notarization and a clean-machine test.'};
 await writeFile(path.join(resources,'package-manifest.json'),JSON.stringify(packageManifest,null,2));
 execFileSync('/usr/bin/codesign',['--force','--deep','--sign','-',out],{stdio:'inherit'});
 if(cocoaPackage) {

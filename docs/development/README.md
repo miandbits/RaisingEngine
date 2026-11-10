@@ -2,6 +2,8 @@
 
 The [root README](../../README.md) is the supported build sequence. Run commands at the repository root. Qt, CLI and MCP share Node/C++ services; the archived Electron editor is not required.
 
+Launch the build with `npm run studio`, retaining the same `QT_STUDIO_OUT` used for building. This starts the Qt executable and passes the source engine root and Node path; it does not compile stale binaries. `node scripts/editor-identity.mjs` prints the current services' version/source metadata. New packages include `engine/editor-identity.json` so relocating an installed app does not replace its recorded source with a nearby checkout's Git revision. See [identity fields and limitations](../manual/editor-identity.md).
+
 ## Requirements and outputs
 
 - Node 22.14.0 and npm; install with `npm ci`.
@@ -17,7 +19,7 @@ The [root README](../../README.md) is the supported build sequence. Run commands
 
 Run `check:repository` and `check:public-content` before committing structural changes. Linux headless CI does not imply Qt/Windows/browser verification.
 
-## Standalone preview
+## Windows standalone preview
 
 After building the core, Qt editor, Windows player and Web player:
 

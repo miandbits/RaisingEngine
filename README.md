@@ -4,6 +4,8 @@ A 2D raising-simulation engine with a **Qt editor**, a deterministic **C++ runti
 
 **Authoring alpha.** Original code is MIT licensed. See the [support matrix](docs/development/platform-support.md) for verified features and platform limitations.
 
+The published Windows preview and the current source checkout are separate versions of the editor. New source features do not update an already downloaded installer. See [which editor is running and how to launch it](docs/manual/editor-identity.md) before comparing support or release evidence.
+
 The first-game workflow now includes automatic draft recovery, ending explanations, early target checks, versioned game/project ZIPs, and a one-click local Web preview. Contributors can run `npm run test:creator-smoke` and `npm run benchmark:creator`; see [the contributor guide](CONTRIBUTING.md#creator-smoke-test-p1) and [the designer walkthrough](docs/getting-started/first-game.md).
 
 ## Install on Windows
@@ -21,7 +23,7 @@ This preview is **unsigned**: Windows may display an unknown-publisher warning o
 
 Installation, first-game and export guides: **[한국어](docs/getting-started/preview/ko.md)** · **[English](docs/getting-started/preview/en.md)** · **[日本語](docs/getting-started/preview/ja.md)**.
 
-**WinGet:** package `miandbits.RaisingEngine.Preview` has been [submitted for registration (#456322)](https://github.com/microsoft/winget-pkgs/pull/456322). Approval and source indexing are pending; use the direct downloads above meanwhile. See [package status and install commands](packaging/winget/README.md).
+**WinGet:** registration and installation are tracked separately in the [package guide](packaging/winget/README.md) and [submission #456322](https://github.com/microsoft/winget-pkgs/pull/456322). The direct downloads above identify the specific published preview.
 
 ## Make a game
 
@@ -62,6 +64,8 @@ npm run build:web
 ```
 
 `npm ci` reconstructs identical test media from a checked-in source/hash manifest. The player builder obtains dependencies at exact commits from `config/native-dependencies.json`, rejecting modified or mismatched existing checkouts. Read [development setup](docs/development/README.md) for isolated outputs, tests and packaging.
+
+`npm run studio` starts the current Qt editor from `dist/qt-studio`; it does not build it first. If you used `QT_STUDIO_OUT`, keep the same value when launching. `node scripts/editor-identity.mjs` reports the services' package version, Git revision and dirty state separately from the published preview policy. Those source details alone do not verify that an older editor or player binary has been rebuilt.
 
 ## macOS and iOS from source
 

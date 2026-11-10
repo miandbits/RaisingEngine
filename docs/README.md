@@ -5,6 +5,7 @@ Historical experiment reports are not the current support contract.
 | Task | Start here |
 |---|---|
 | First game | [Getting started](getting-started/first-game.md) |
+| Identify and launch the current editor | [Editor identity and launch](manual/editor-identity.md) |
 | Characters, schedules, stories and screens | [Authoring manual](manual/README.md) |
 | Integrate rules, tools or plugins | [Architecture](reference/architecture.md), [data contract](reference/data-format/contract.md), [MCP](reference/mcp.md) |
 | Build, test or contribute | [Development](development/README.md), [contribution guide](../CONTRIBUTING.md) |

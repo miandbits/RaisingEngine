@@ -14,7 +14,7 @@ The editor's canvas shows a representative arrangement. Use Play and **Layout di
 
 Widget settings scroll independently of their fixed OK/Cancel footer. Cancel discards the whole settings draft. Apply, undo/redo, save and reopen preserve group images, activity icons, frame, control colors and forecast choices together.
 
-The layout supports a single-character schedule with 1–12 periods. Roster projects must choose another layout. Schedule widgets are currently authored directly on screens; putting this board inside a reusable component is not supported. Reuse its shared image assets and styles in other screen widgets or other projects instead. No specific game's data or artwork is required.
+The layout supports a single-character schedule with 1–12 periods. Roster projects must choose another layout. Schedule widgets can be authored directly on screens or inside [shared screen sections](manual/shared-screen-sections.md), including nested components. Shared boards require `component-widgets-v1`; nested instances additionally require `nested-components-v1`. They all edit the same game-wide plan and cannot be repeated inside data-list rows. Applied partial drafts survive portable save/load in current native and Web players; inspecting or canceling an activity does not apply it. No specific game's data or artwork is required.
 
 Exports require the independent `activity-board-v1` runtime capability. The older `board` layout keeps its existing compatibility requirements. Adding or changing the activity board, groups or activity connections is a normal game update; it is not classified as a paint-only update compatible with an old gameplay snapshot.
 

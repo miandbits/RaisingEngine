@@ -1,4 +1,5 @@
 import {verifyProjectBackup} from './backup-restore.mjs';
+import {readEditorIdentity} from './editor-identity.mjs';
 import {readFile,writeFile,lstat,mkdir,rm,realpath} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
 import {createServer} from 'node:http';
@@ -92,7 +93,8 @@ export class GameReleases {
     const dependencyFile=path.join(engineRoot,'config/native-dependencies.json');
     const dependencies=JSON.parse(await readFile(dependencyFile,'utf8').catch(e=>{if(e.code==='ENOENT')return '{}';throw e;}));
     const hashes=[];for(const file of files)hashes.push({file,sha256:digest(await readFile(path.join(directory,file)))});
-    const manifest={formatVersion:1,version,target,contentFingerprint,...(contentFingerprint!==content.contentFingerprint?{sourceContentFingerprint:content.contentFingerprint,presentationPolicy:'paint-layout-v1'}:{}),createdAt:new Date().toISOString(),engineVersion:'0.1.0',node:process.version,host:process.platform,architecture:process.arch,dependencies,pluginDependencies,files:hashes,
+    const engineIdentity=await readEditorIdentity(engineRoot);
+    const manifest={formatVersion:1,version,target,gameId:content.project.gameId,title:content.project.title,contentFingerprint,...(contentFingerprint!==content.contentFingerprint?{sourceContentFingerprint:content.contentFingerprint,presentationPolicy:'paint-layout-v1'}:{}),createdAt:new Date().toISOString(),engineVersion:engineIdentity.engineVersion,engineIdentity,node:process.version,host:process.platform,architecture:process.arch,dependencies,pluginDependencies,files:hashes,
       sourceFiles:[...sourceFiles].map(([file,bytes])=>({file,sha256:digest(bytes)})),
       saveCompatibility:'Keep this exact release and project backup. Changed game rules/content can invalidate player saves; use explicit save migration and replay verification before promising compatibility.',
       reproduction:'The game ZIP preserves the exact exported player and content bytes. The project ZIP preserves editable draft documents, referenced assets, named test routes and saved player-priority profiles. Rebuilding engine binaries requires the matching toolchain; byte-identical recompilation is not claimed.'};

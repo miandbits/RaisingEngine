@@ -8,6 +8,8 @@ import {listPriorityProfiles,savePriorityProfile,deletePriorityProfile,resolvePr
 import {packagedStudioPluginStore} from './storage-paths.mjs';
 import { DraftRecovery } from './recovery.mjs';
 import { GameReleases } from './releases.mjs';
+import { ReleaseWorkflow } from './release-workflow.mjs';
+import { readEditorIdentity } from './editor-identity.mjs';
 import { randomUUID } from 'node:crypto';
 import { prepareIOSProject, configureIOSProject, runAppleTool, validateIOSVersions } from '../../scripts/lib/ios-project.mjs';
 import { FirstGameProgress } from './first-game.mjs';
@@ -56,6 +58,7 @@ import { authoringPreview } from './authoring-preview.mjs';
 const engineRoot = fileURLToPath(new URL('../..', import.meta.url));
 const LOCK_FILE = 'plugins/lock.json';
 export class QtStudioService {
+  releaseWorkflow = new ReleaseWorkflow();
   updateCompatibility = new UpdateCompatibility();
   presentationUpdates = new PresentationUpdates();
   recovery = new DraftRecovery();
@@ -112,6 +115,16 @@ export class QtStudioService {
   }
   async dispatch(request) {
     const { method, params = {} } = request;
+    if (method === 'editorIdentity') return {error:null,editorIdentity:await readEditorIdentity(engineRoot)};
+    if (typeof method === 'string' && method.startsWith('releaseWorkflow') && (!this.editor.root || params.root !== this.editor.root))
+      throw Error('RELEASE_PROJECT_CHANGED: Reopen Release center for the current project.');
+    if (method === 'releaseWorkflowList') return {error:null,releaseWorkflow:await this.releaseWorkflow.list(this.editor)};
+    if (method === 'releaseWorkflowRegister') return {error:null,releaseEntry:await this.releaseWorkflow.register(this.editor,params)};
+    if (method === 'releaseWorkflowAddCase') return {error:null,releaseEntry:await this.releaseWorkflow.addCase(this.editor,params)};
+    if (method === 'releaseWorkflowStart') return {error:null,releaseJob:await this.releaseWorkflow.start(this.editor,params)};
+    if (method === 'releaseWorkflowStatus') return {error:null,releaseJob:await this.releaseWorkflow.status(this.editor,params)};
+    if (method === 'releaseWorkflowCancel') return {error:null,releaseJob:await this.releaseWorkflow.cancel(this.editor,params)};
+    if (method === 'releaseWorkflowDistribution') return {error:null,releaseEntry:await this.releaseWorkflow.distribution(this.editor,params)};
     if (method === 'saveMigrationPreview' || method === 'saveMigrationPublish') return saveMigration(method, params);
     if (method === 'updateCompatibility') return {error:null,updateCompatibility:await this.updateCompatibility.check(this.editor,params)};
     if (method === 'presentationUpdateCheck') return {error:null,presentationUpdate:await this.presentationUpdates.check(this,params)};
@@ -646,6 +659,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   }
   // The editor closed its end (quit, also after 「저장 안 함」): files imported for the unsaved draft go.
   await service.goalRouteBatches.close();
+  await service.releaseWorkflow.close();
   await service.releases.close();
   await service.editor.close();
 }

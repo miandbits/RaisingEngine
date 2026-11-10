@@ -154,6 +154,9 @@ StudioWindow::StudioWindow(QString root, QWidget *parent)
   saveAction->setObjectName("saveProject");
   file->addAction(tr("종료"),this,&QWidget::close,QKeySequence::Quit)->setObjectName("exitEditor");
   file->addAction(tr("게임 내보내기…"), this, &StudioWindow::exportGameDialog)->setObjectName("exportGame");
+  file->addAction(tr("릴리스 센터…"),this,&StudioWindow::showReleaseCenter)->setObjectName("showReleaseCenter");
+  auto helpMenu=menuBar()->addMenu(tr("도움말"));
+  helpMenu->addAction(tr("Raising Studio 정보…"),this,&StudioWindow::showEditorIdentity)->setObjectName("showEditorIdentity");
   file->addAction(tr("콘텐츠 업데이트 · 저장 이전 / 복구…"),this,[this]{showSaveMigration(engineRoot,view.value("root").toString(),this);})->setObjectName("saveMigration");
   auto edit = menuBar()->addMenu(tr("편집"));
   undoAction = edit->addAction(

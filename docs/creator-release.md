@@ -1,5 +1,7 @@
 # Package and restore a release
 
+Use **File → Release center…** to associate an exact exported version with named save examples, background archive checks, a verified restoration and manual distribution evidence. See [Release center](manual/release-center.md) for the complete update and recovery workflow. The settings below configure the files and branding included in each export.
+
 Open **File → Project Settings → Release**. These settings belong to the asset manifest's separate `release` object. They do not add gameplay assets or change the gameplay fingerprint used by saves. Applying project and release settings is one undoable edit; Save persists it.
 
 ## Declare notices

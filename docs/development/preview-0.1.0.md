@@ -1,5 +1,7 @@
 # 0.1.0-preview.3 preparation
 
+**Historical preparation notes — 2026-10-19.** Publication subsequently completed for the specific unsigned Windows preview recorded in [the final review](preview-final-review.md). The remaining-check language and example output paths below describe preparation at that time. Rebuilding current source does not reproduce that publication approval; use [current development instructions](README.md) and [editor identity](../manual/editor-identity.md) for today's checkout.
+
 Prepared from the public `miandbits/RaisingEngine` history, without the private repository's binaries, projects or animation worktree. The installed editor is `RaisingStudioQt.exe`.
 
 ## Included

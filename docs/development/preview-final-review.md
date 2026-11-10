@@ -1,5 +1,7 @@
 # Preview publication review
 
+**Historical publication record — 2026-10-19.** This review applies to the immutable Windows x64 `0.1.0-preview.3` artifacts and source hashes below. It is not a release approval for current source, a rebuilt installer, macOS, iOS, or another creator's game. Current launch and support information is in [editor identity](../manual/editor-identity.md) and [platform support](platform-support.md).
+
 Release candidate: `0.1.0-preview.3`. Earlier preview packages remain local/review artifacts and are not the publication candidate.
 
 **Published 2026-10-19:** [v0.1.0-preview.3 unsigned prerelease](https://github.com/miandbits/RaisingEngine/releases/tag/v0.1.0-preview.3), explicitly authorized by the owner. The installer (106,644,136 bytes) and portable ZIP (127,278,198 bytes) were downloaded in full from the public URLs without authentication; both returned HTTP 200 and matched the hashes below and the public checksum file. The anonymous release API confirms `draft: false`, `prerelease: true`, five assets and no validation kit. The release tag points to the verified build source `f34070de17cd8bb1859b57518da9b19e5c71896b`. README links go directly to the installer, portable ZIP and installation guides.

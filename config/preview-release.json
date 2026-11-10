@@ -1,6 +1,8 @@
 {
   "version": "0.1.0-preview.3",
   "channel": "unsigned-preview",
+  "platform": "windows",
+  "architecture": "x64",
   "editorLanguages": ["ko", "en", "ja"],
   "editorTranslationStatus": "all Korean tr() editor messages and catalogued service diagnostics translated; user content and unknown external errors preserved",
   "sourceRepository": "https://github.com/miandbits/RaisingEngine",

@@ -98,7 +98,7 @@ void StudioWindow::exportGameDialog() {
     if(target->currentData()=="ios"){params["iosVersion"]=version->text();params["iosBuildNumber"]=iosBuildNumber->text();}
     if(!presentationSelection->isEmpty())params["presentationCheck"]=presentationSelection->value("checkId");
     else if(!updateCheck->isEmpty())params["updateCheck"]=*updateCheck;
-    request("export", params, [guard, startGuard, closeGuard, openGuard, launchGuard, statusGuard, updateCheck, updateSummary, migrateUpdate, clearPresentation](QJsonObject reply) {
+    request("export", params, [this, guard, startGuard, closeGuard, openGuard, launchGuard, statusGuard, updateCheck, updateSummary, migrateUpdate, clearPresentation](QJsonObject reply) {
       if (!guard || !startGuard || !closeGuard || !openGuard || !launchGuard || !statusGuard) return;
       startGuard->setEnabled(true); closeGuard->setEnabled(true);
       if (!reply.value("error").toString().isEmpty() || !reply.contains("exported")) {
@@ -106,7 +106,7 @@ void StudioWindow::exportGameDialog() {
         statusGuard->setText(reply.value("error").toString(QObject::tr("내보내기 결과를 받지 못했습니다.")) + "\n" + QObject::tr("문제를 해결한 뒤 다시 내보내세요. 실패한 작업의 임시 파일은 정리되며, 기존 출력 폴더는 보존합니다. 프로젝트를 변경했다면 이 창을 다시 열어 주세요."));
         return;
       }
-      const auto exported = reply.value("exported").toObject(); const auto directory = exported.value("directory").toString(); openGuard->setProperty("directory", directory); openGuard->setEnabled(true);
+      const auto exported = reply.value("exported").toObject(); emit releaseExported(exported); const auto directory = exported.value("directory").toString(); openGuard->setProperty("directory", directory); openGuard->setEnabled(true);
       launchGuard->setProperty("token",exported["launchToken"].toString());launchGuard->setEnabled(!exported["launchToken"].toString().isEmpty());launchGuard->setText(exported["target"]=="ios"?QObject::tr("Open iOS project"):QObject::tr("Play exported game"));
       statusGuard->setText(QObject::tr("내보내기 완료 · %1\n%2\n콘텐츠 지문: %3").arg(exported.value("target").toString(), directory, exported.value("contentFingerprint").toString()) + (exported.contains("gameArchive")?"\n"+QObject::tr("Share Game.zip. Keep Project-backup.zip and RELEASE.json for future edits and save-compatibility checks."):QString()) + (exported.value("warning").toString().isEmpty() ? QString() : "\n" + exported.value("warning").toString()));
     });

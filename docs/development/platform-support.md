@@ -1,4 +1,26 @@
-# Windows · Web 기능 지원표
+# Current source support and dated verification records
+
+## Current scope — 2026-11-10
+
+This section describes the source workflow. It does not upgrade the published **Windows x64 0.1.0-preview.3 unsigned preview** or approve a new binary for publication. Check [editor identity and launch instructions](../manual/editor-identity.md) to distinguish a source checkout, an installed development package and the published preview. Package/core versions, source commits and native core input digests are different identifiers.
+
+| Target | Current workflow | Acceptance still separate |
+|---|---|---|
+| Windows x64 | Qt editor, native player and Web export; hosted Windows CI exercises actual packages, installation, exports, save/load and uninstall preservation | Consumer Windows policies, manual designer acceptance and any future signing decision. The existing unsigned-preview decision remains scoped to its reviewed Windows release |
+| macOS | Qt editor, standalone development app, native player and Web export; Apple Silicon and macOS hosted CI have package/service checks | Intel execution, Developer ID signing, notarization, corresponding-source review for the actual Qt build and clean-machine distribution acceptance |
+| Web | Exported C++ Wasm player; Chromium desktop and phone/touch emulation tests | Safari/Firefox, physical-device browser behavior and assistive-technology acceptance. Serve exports over HTTP; `file://` is not the supported Web launch flow |
+| iOS | Source/Xcode export, version/build metadata, simulator workflow and device-build preparation | Physical iPhone/iPad acceptance, provisioning/signing, VoiceOver, App Store review and distribution. Simulator success is not any of these approvals |
+| Linux | Headless services and regression CI | A supported standalone Qt editor/player distribution |
+| Android | Source/package preparation tests | An accepted APK or physical-device release |
+| Consoles | No supported distribution workflow | Approved SDK access, development hardware and platform certification |
+
+Schedule, stats and growth widgets may be shared in component definitions. Current native and Web players support nested instances and portable partial schedule drafts; see [shared screen sections](../manual/shared-screen-sections.md). Specialized Web limitations below remain feature-specific. A capability declaration controls whether export is allowed; it is not proof that every authored combination has been tested.
+
+For a local capability inventory, run `npm run report:platforms`. The output records the selected runtime manifest hashes and current editor identity; it does not execute platform acceptance tests. Use the current creator CI and your own exported-game checks for fresh evidence. Public CI contains public/synthetic fixtures, not every private game. As a dated reference, [creator CI 42771846833](https://github.com/miandbits/RaisingEngine/actions/runs/42771846833) and [route regression 42771846916](https://github.com/miandbits/RaisingEngine/actions/runs/42771846916) passed for source `abc2f694`; later changes need their own validation.
+
+## Historical verification records
+
+The sections below retain their original dates, feature counts, limits and proof scope. They describe those revisions, not an automatically updated certification of the current editor.
 
 2026-10-29 P2 소스 추가 기능:
 

@@ -61,6 +61,7 @@ public:
 signals:
   void updated();
   void playerFinished(int code);
+  void releaseExported(QJsonObject exported);
   void goalReportReady(QJsonObject report);
   void goalImpactReady(QJsonObject report);
   void goalSaveCheckReady(QJsonObject check);
@@ -251,6 +252,8 @@ private:
   void updateScreenActions();
   void save();
   void exportGameDialog();
+  void showReleaseCenter();
+  void showEditorIdentity();
   void play();
   void chooseProject(bool create);
   void newProjectWizard();
