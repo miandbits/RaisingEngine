@@ -15,7 +15,7 @@ const launch=platform=>platform==='darwin'?{kind:'application',entryPoint:'Conte
 
 /** The launcher and support information use the same current Qt entry point. */
 export function sourceEditorLaunch(engineRoot,{platform=process.platform,output='dist/qt-studio',args=[]}={}){
-  const paths=platform==='win32'?path.win32:path,root=paths.resolve(engineRoot),directory=paths.resolve(root,output);
+  const paths=platform==='win32'?path.win32:path.posix,root=paths.resolve(engineRoot),directory=paths.resolve(root,output);
   return {executable:paths.join(directory,platform==='darwin'?'RaisingStudioQt.app/Contents/MacOS/RaisingStudioQt':platform==='win32'?'RaisingStudioQt.exe':'RaisingStudioQt'),args:['--engine-root',root,...args],cwd:root};
 }
 
