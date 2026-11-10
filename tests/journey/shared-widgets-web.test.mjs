@@ -64,6 +64,21 @@ test('exported shared widgets retain contextual planning, forecast, growth and p
       const plan=['study','rest','study','rest'];
       for(const [slot,activity] of plan.entries()) {
         await control('slot-'+slot).click();await control('activity-'+activity).click();await control('apply').click();
+        if(slot===1) {
+          // Unfinished edits belong to the portable save even when their board
+          // lives inside two shared components. No core plan is confirmed yet.
+          assert.deepEqual(await snapshot(),entered);
+          const download=page.waitForEvent('download');await action('save').click();
+          const save=join(out,name+'-partial-save.json');await(await download).saveAs(save);
+          const partial=JSON.parse(await readFile(save,'utf8'));
+          assert.equal(partial.state.schedule,null);assert.deepEqual(partial.commands,entered.commands);
+          assert.deepEqual(partial.playerPresentation.scheduleDraft.activities,['study','rest','','']);assert.equal(partial.playerPresentation.scheduleDraft.selected,3);
+          await page.reload();await action('restore').waitFor();await idle();
+          const choose=page.waitForEvent('filechooser');await action('restore').click();await(await choose).setFiles(save);
+          await control('slot-0').waitFor();await idle();assert.deepEqual(await snapshot(),entered);
+          const restored=(await page.evaluate(async()=>window.player.view())).view.scheduleDraft;
+          assert.deepEqual(restored,partial.playerPresentation.scheduleDraft,'Fresh page must preserve the shared board partial draft');
+        }
       }
       assert.deepEqual(await snapshot(),entered,'All four shared-widget Apply actions edit only the draft');
       await page.locator(`[data-reading-id="phase-forecast-${ids.schedule}"]`).click();
@@ -108,7 +123,7 @@ test('exported shared widgets retain contextual planning, forecast, growth and p
       await action('advance').click();await idle();
       assert.equal((await snapshot()).commands.filter(c=>c.type==='acknowledgeResult').length,1);
       assert.deepEqual(errors,[]);
-      cases.push({phone,plan,canonicalDraftOnly:true,forecastReadOnly:true,growthSkill:10,portableRestore:true});
+      cases.push({phone,plan,canonicalDraftOnly:true,partialDraftPortableRestore:true,forecastReadOnly:true,growthSkill:10,portableRestore:true});
     } finally {
       await page.screenshot({path:join(out,name+'-last.png')}).catch(()=>{});
       await writeFile(join(out,name+'-last.txt'),await page.locator('body').innerText().catch(()=>''));

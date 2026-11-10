@@ -19,6 +19,10 @@
   void restore_plan(const Json& draft) {
     plan.clear();plan_month=-1;plan_selected=0;plan_group.clear();plan_slot=0;
     if(!draft.is_null()){plan=draft.at("activities").get<std::vector<std::string>>();plan_month=draft.at("month");plan_slot=draft.at("slot");plan_selected=draft.at("selected");}
+    // Legacy saves and reviewed presentation resets retain the confirmed core
+    // schedule. Restore it even when loading a home/result screen with no planner.
+    // An explicit (possibly partial) draft wins; an unplanned game stays unplanned.
+    else if(!game.state.is_null()&&!game.state.at("schedule").is_null())ensure_plan();
   }
   Json plan_forecast() const {
     Json out={{"ok",false},{"complete",plan_selected==((1<<game.periods())-1)},{"rows",Json::array()}};

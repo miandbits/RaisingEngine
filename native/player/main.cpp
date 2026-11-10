@@ -272,6 +272,9 @@ public:
     }
   }
   void ProcessEvent(Rml::Event& event) override {
+    // Scrolling changes geometry without a rebuild, including smooth scrolling
+    // after the original input. Report the settled layout from the frame loop.
+    if(event.GetType()=="scroll"){editor_input_dirty=true;return;}
     if(preview()||editor_paused)return;
     auto& markup=active_markup();
     const auto eventType=event.GetType();
@@ -404,6 +407,7 @@ public:
     if(!replacement)throw std::runtime_error("화면 문서를 만들지 못했습니다.");
     if(document)document->Close();
     document=replacement;
+    document->AddEventListener("scroll",this,true);
     document->AddEventListener("mouseover",this);document->AddEventListener("mouseout",this);document->AddEventListener("focus",this,true);document->AddEventListener("blur",this,true);document->AddEventListener("keydown",this);document->AddEventListener("click",this);document->AddEventListener("change",this);document->AddEventListener("input",this);document->Show();
     for(const auto& owner:markup.render_elements)if(owner.value("kind","")=="schedule")for(int i=0;i<game.periods();i++)if(auto* select=document->GetElementById(widget_control_id(owner.value("id",""),"plan-"+std::to_string(i)))) {
       if(auto* box=select->QuerySelector("selectbox"))box->SetProperty("width",number(std::max(60.f,select->GetProperty<float>("width")))+"px");

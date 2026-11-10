@@ -12,6 +12,52 @@ function setup(c=source,request=runtime){let file;const player=new WebPlayerCont
 const owner={screenId:'schedule',elementId:'plan'};
 const draft=async player=>(await player.view()).view.scheduleDraft;
 
+const sharedSource=await content(p=>{
+ const project=doc(p,'project');project.periodsPerMonth=4;replaceEvents(p,[]);
+ project.visual={width:1280,height:720,routing:{defaultScreenId:'schedule',phases:[{phase:'title',screenId:'title'}]},
+  components:[
+   {id:'widgets',label:'Shared widgets',width:1000,height:600,elements:[{id:'plan',kind:'schedule',scheduleLayout:'activity-board',x:0,y:0,width:1000,height:600}]},
+   {id:'section',label:'Nested section',width:1000,height:600,elements:[{id:'content',kind:'component',componentId:'widgets',x:0,y:0,width:1000,height:600}]}
+  ],
+  screens:[{id:'title',label:'Title',elements:[]},{id:'schedule',label:'Plan',elements:[{id:'panel',kind:'component',componentId:'section',x:0,y:0,width:1000,height:600}]}]};
+});
+
+test('nested shared activity boards preserve partial drafts across portable save, load and a fresh player without changing the confirmed plan',async()=>{
+ const x=setup(sharedSource),p=x.player,sharedOwner={screenId:'schedule',elementId:'panel__content__plan'};
+ assert.equal((await p.newRun(null)).error,null);
+ const empty=await draft(p);assert.ok(empty,'a rendered nested activity board must own a portable draft');
+ assert.equal(p.session.state.schedule,null);assert.deepEqual(p.session.commands,[]);assert.deepEqual(empty,{month:0,slot:0,selected:0,activities:['','','','']});
+ const partial={...empty,slot:2,selected:4,activities:['','','rest','']},unplanned=structuredClone(p.session);
+ assert.equal((await p.setScheduleDraft(partial,sharedOwner,x.version(),empty)).error,null);assert.deepEqual(p.session,unplanned);
+ assert.equal((await p.save(x.version())).error,null);const partialSave=x.file;
+ assert.deepEqual(JSON.parse(partialSave).playerPresentation.scheduleDraft,partial);
+ const fresh=setup(sharedSource);fresh.file=partialSave;assert.equal((await fresh.player.load(null)).error,null);
+ assert.deepEqual(await draft(fresh.player),partial);assert.deepEqual(fresh.player.session.state,unplanned.state);assert.deepEqual(fresh.player.session.commands,[]);
+
+ const plan=Array(4).fill('rest');assert.equal((await p.act({type:'schedule',activityIds:plan},x.version())).error,null);
+ assert.equal((await p.act({type:'execute'},x.version())).error,null);assert.equal((await p.act({type:'continue'},x.version())).error,null);
+ assert.equal(p.session.state.periodIndex,1);const confirmed=structuredClone(p.session),current=await draft(p);
+ const changed={...current,slot:1,selected:3,activities:['rest','study','','']};
+ assert.equal((await p.setScheduleDraft(changed,sharedOwner,x.version(),current)).error,null);assert.deepEqual(p.session,confirmed);
+ assert.equal((await p.save(x.version())).error,null);const saved=x.file;assert.ok((await decodeSave(sharedSource,saved)).ok);
+ const restarted=setup(sharedSource);restarted.file=saved;assert.equal((await restarted.player.load(null)).error,null);
+ assert.deepEqual(await draft(restarted.player),changed);assert.deepEqual(restarted.player.session.state,confirmed.state);assert.deepEqual(restarted.player.session.commands,confirmed.commands);
+ assert.equal((await restarted.player.save(restarted.version())).error,null);assert.deepEqual(JSON.parse(restarted.file).playerPresentation.scheduleDraft,changed);
+
+ const legacy=JSON.parse(saved);delete legacy.playerPresentation;restarted.file=JSON.stringify(legacy);
+ assert.equal((await restarted.player.load(restarted.version())).error,null);assert.deepEqual((await draft(restarted.player)).activities,plan);assert.equal((await draft(restarted.player)).selected,15);assert.deepEqual(restarted.player.session.state,confirmed.state);assert.deepEqual(restarted.player.session.commands,confirmed.commands);
+ assert.equal((await restarted.player.newRun(restarted.version())).error,null);assert.equal(restarted.player.session.state.schedule,null);assert.deepEqual(restarted.player.session.commands,[]);assert.deepEqual(await draft(restarted.player),empty);
+});
+
+test('nested columns schedules and unused activity-board declarations do not acquire activity-board drafts',async()=>{
+ const columns=structuredClone(sharedSource);
+ columns.project.visual.components[0].elements[0].scheduleLayout='columns';
+ columns.project.visual.components.push({id:'unused-board',label:'Unused',width:1000,height:600,elements:[{id:'unused-plan',kind:'schedule',scheduleLayout:'activity-board',x:0,y:0,width:1000,height:600}]});
+ const x=setup(columns);assert.equal((await x.player.newRun(null)).error,null);assert.equal(await draft(x.player),undefined);assert.equal(x.player.session.state.schedule,null);
+ assert.equal((await x.player.save(x.version())).error,null);assert.equal(JSON.parse(x.file).playerPresentation?.scheduleDraft,undefined);
+ assert.equal((await x.player.act({type:'schedule',activityIds:Array(4).fill('rest')},x.version())).error,null);assert.equal(await draft(x.player),undefined);
+});
+
 test('activity board applied drafts survive portable restore and fresh player; old saves load and legacy behavior stays unchanged',async()=>{
  const x=setup(),p=x.player;assert.equal((await p.newRun(null)).error,null);const before=structuredClone(p.session),initial=await draft(p);assert.deepEqual(initial.activities,['','','','']);
  const next={...initial,slot:2,selected:4,activities:['','','rest','']};assert.equal((await p.setScheduleDraft(next,owner,x.version(),initial)).error,null);assert.deepEqual(p.session,before);
