@@ -12,6 +12,7 @@ on:
       - 'packages/**'
       - 'scripts/**'
       - 'tests/ios-system-ui/**'
+      - 'tests/mobile/ios-simulator-test.test.mjs'
   pull_request:
     paths: *ios-paths
   workflow_dispatch:
@@ -29,7 +30,10 @@ jobs:
     timeout-minutes: 50
     env:
       BUILD_JOBS: '3'
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      RAISING_IOS_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17e
+      RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-0
       RAISING_NATIVE_TRANSPORT: process
     steps:
       - uses: actions/checkout@v4
@@ -40,13 +44,18 @@ jobs:
           node-version: '22.14.0'
           cache: npm
       - name: Record source and Simulator toolchain
+        shell: bash
         run: |
+          test -x "$DEVELOPER_DIR/usr/bin/xcodebuild"
           mkdir -p .cache/ios-simulator-ci
           {
             echo "source=$(git rev-parse HEAD)"
+            echo "testRuntime=$RAISING_IOS_SIMULATOR_RUNTIME"
+            echo "testDeviceType=$RAISING_IOS_SIMULATOR_DEVICE_TYPE"
             xcodebuild -version
             xcrun simctl list runtimes available
           } | tee .cache/ios-simulator-ci/environment.txt
+      - run: node --test tests/mobile/ios-simulator-test.test.mjs
       - run: npm ci
       - run: npm run build:headless
       - run: npm run build:player
@@ -75,11 +84,20 @@ jobs:
         id: build_ios
         run: npm run build:ios -- --project .cache/ios-simulator-ci/export
       - name: Test the actual Files picker on iPhone Simulator
+        id: files_picker
         run: |
+          result=0
           node scripts/test-ios-system-ui.mjs .cache/ios-simulator-ci/export \
-            --project .cache/ios-simulator-ci/starter --family iphone --test files-roundtrip --text-scale 2
+            --project .cache/ios-simulator-ci/starter --family iphone --test files-roundtrip --text-scale 2 || result=$?
+          if [ -f .cache/ios-system-ui/latest.json ]; then
+            evidence=$(jq -r .out .cache/ios-system-ui/latest.json)
+            if jq -e '.deletedDevice == true' "$evidence/result.json" >/dev/null; then
+              echo "simulator_clean=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+          exit "$result"
       - name: Test VoiceOver navigation and speech on iPhone Simulator
-        if: ${{ !cancelled() && steps.build_ios.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.build_ios.outcome == 'success' && steps.files_picker.outputs.simulator_clean == 'true' }}
         run: |
           node scripts/test-ios-voiceover.mjs \
             .cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator/RaisingPlayer.app

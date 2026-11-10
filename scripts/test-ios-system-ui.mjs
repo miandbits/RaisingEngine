@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
-import {spawn, execFileSync} from 'node:child_process';
+import {execFileSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
-import {cp, mkdir, mkdtemp, open, readFile, readdir, writeFile} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, readFile, readdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
 import {analyzeInputIdleMemory} from './lib/ios-input-memory.mjs';
+import {cleanUpIOSSimulator,runBoundedAppleTool,selectIOSSimulator} from './lib/ios-simulator-test.mjs';
 
 const args=process.argv.slice(2), root=process.cwd();
 const option=name=>{const i=args.indexOf(name);return i<0?undefined:args[i+1];};
@@ -90,23 +91,17 @@ const server=createServer(async(req,res)=>{
   } catch(error) {res.statusCode=503;res.end(JSON.stringify({error:String(error)}));}
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-async function tool(command,values,logName,timeout=600000) {
-  const logfile=path.join(out,logName),fd=await open(logfile,'w');let timer,forceTimer;
-  try {
-    const child=spawn(command,values,{cwd:root,stdio:['ignore',fd.fd,fd.fd]});
-    let expired=false;timer=setTimeout(()=>{expired=true;child.kill('SIGTERM');forceTimer=setTimeout(()=>child.kill('SIGKILL'),10000);},timeout);
-    const result=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',(status,signal)=>resolve({status,signal}));});
-    if(result.status!==0||expired)throw Error(`${logName}: ${expired?'tool timeout':`exit ${result.status}, signal ${result.signal??'none'}`}; inspect ${logfile}`);
-  } finally {clearTimeout(timer);clearTimeout(forceTimer);await fd.close();}
-}
+const tool=(command,values,logName,timeout)=>runBoundedAppleTool(command,values,
+  {cwd:root,logFile:path.join(out,logName),timeout});
 try {
-  const available=JSON.parse(sim('list','devices','available','--json')).devices;
-  const candidates=Object.entries(available).filter(([runtime])=>runtime.includes('.iOS-')).flatMap(([runtime,devices])=>devices.filter(d=>d.name.toLowerCase().includes(family)).map(d=>({runtime,type:d.deviceTypeIdentifier})));
-  assert.ok(candidates.length,'Install a matching iOS simulator runtime in Xcode first');
-  const selected=candidates.at(-1);device=sim('create','RaisingEngine system UI '+path.basename(out),selected.type,selected.runtime);
+  const {runtimes}=JSON.parse(sim('list','runtimes','--json'));
+  const selected=selectIOSSimulator(runtimes,{family,runtimeId:process.env.RAISING_IOS_SIMULATOR_RUNTIME,
+    deviceType:process.env.RAISING_IOS_SIMULATOR_DEVICE_TYPE});
+  receipt.device=selected;await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
+  device=sim('create','RaisingEngine system UI '+path.basename(out),selected.type,selected.runtime);
   receipt.device={id:device,...selected};await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
-  sim('boot',device);
-  await tool('/usr/bin/xcrun',['simctl','bootstatus',device,'-b'],'boot.log');
+  await tool('/usr/bin/xcrun',['simctl','boot',device],'boot-start.log',60000);
+  await tool('/usr/bin/xcrun',['simctl','bootstatus',device,'-b'],'boot.log',180000);
   await tool('/usr/bin/xcrun',['simctl','install',device,app],'install.log',120000);
   let filesSaveDirectory;
   if(selection==='files-roundtrip') {
@@ -181,10 +176,17 @@ try {
   passed=true;receipt.ok=true;
 } catch(error) {receipt.error=String(error);throw error;}
 finally {
-  receipt.finishedAt=new Date().toISOString();receipt.keptDevice=!!device&&!passed&&keepFailed;
+  receipt.keptDevice=!!device&&!passed&&keepFailed;
+  server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
+  if(device&&!receipt.keptDevice) {
+    receipt.cleanupErrors=await cleanUpIOSSimulator(device,(action,id)=>
+      tool('/usr/bin/xcrun',['simctl',action,id],action+'.log',60000));
+    receipt.deletedDevice=!receipt.cleanupErrors.delete;
+    if(!receipt.deletedDevice){passed=false;receipt.ok=false;}
+  }
+  receipt.finishedAt=new Date().toISOString();
   await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
   await writeFile(path.join(root,'.cache/ios-system-ui/latest.json'),JSON.stringify({ok:passed,out},null,2));
-  server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
-  if(device&&!receipt.keptDevice) {try{sim('shutdown',device);}finally{sim('delete',device);}}
   console.log(`iOS system UI evidence: ${out}`);
+  if(!receipt.error&&!passed)throw Error(`Simulator cleanup failed; inspect ${out}`);
 }
