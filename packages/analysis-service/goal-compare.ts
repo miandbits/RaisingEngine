@@ -29,7 +29,7 @@ async function replay(content:ContentSnapshot,input:unknown,limit:{bytes:number;
   for(const [index,command] of route.commands.entries()){
     if(index%16===0)await new Promise<void>(r=>setImmediate(r));
     if(limit.cancelled?.())throw Object.assign(Error('비교 재생을 취소했습니다.'),{code:'CANCELLED'});
-    if(Date.now()-limit.started>(limit.timeoutMs??60000))throw Object.assign(Error('비교 재생 시간 제한을 넘었습니다. 더 짧은 경로로 나누어 비교하세요.'),{code:'TIMEOUT'});
+    if(Date.now()-limit.started>(limit.timeoutMs??60000))throw Object.assign(Error(`비교 재생 시간 제한(${limit.timeoutMs??60000}ms)을 넘었습니다. 저장 검사에서 제한을 늘려 다시 검사하세요.`),{code:'TIMEOUT',timeoutMs:limit.timeoutMs??60000});
     if(index%16===0)limit.progress?.({executed:index,commands:route.commands.length});
     const result=dispatchSession(content,session,command,session.state.stateRevision);
     if(result.ok){session=result.session;executed++;reached ||= targetReached(session.state,target);}

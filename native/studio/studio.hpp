@@ -229,6 +229,10 @@ private:
   QPushButton *goalSaveCheckButton=nullptr;
   QString goalSaveCheckRoot, goalSaveCheckReportedId;
   QString goalSaveCheckCancelId;
+  int goalSaveCheckGeneration=0;
+  QJsonObject goalSaveCheckRetryParams;
+  QString goalSaveCheckRetryError;
+  bool goalSaveCheckRetryInFlight=false, goalSaveCheckRetryCancel=false;
   void goalSearchDialog(QJsonObject source = {});
   void goalCompareDialog(QString jobId = {}, QJsonObject impactLink = {});
   void goalImpactDialog(QJsonObject report = {});

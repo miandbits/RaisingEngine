@@ -109,8 +109,14 @@ export class GoalRouteBatches {
           })().finally(()=>{job.publication=null;});
           return;
         }
-if(message.fatal){job.error=message.fatal;void finish(job.stopReason??'failed');return;}if(message.active!==undefined){job.activeIndex=message.active;job.reports[message.active].status='running';clearTimeout(job.routeTimer);job.routeTimer=setTimeout(()=>{job.error='A route exceeded its deadline without yielding. Remaining routes were not run.';void finish('timed-out');},limits.routeTimeoutMs+2000);job.routeTimer.unref();}
+if(message.fatal){job.error=message.fatal;void finish(job.stopReason??'failed');return;}if(message.active!==undefined){job.activeIndex=message.active;job.reports[message.active].status='running';clearTimeout(job.routeTimer);job.routeTimer=setTimeout(()=>{job.error=`A route exceeded its deadline (${limits.routeTimeoutMs}ms) without yielding. Remaining routes were not run.`;void finish('timed-out');},limits.routeTimeoutMs+2000);job.routeTimer.unref();}
         if(message.stage)job.stage=message.stage;
+        if(message.comparisonIndex!==undefined){
+          const index=message.comparisonIndex;
+          if(index!==null&&(!Number.isInteger(index)||index<0||index>=entries.length)){job.error='Invalid comparison route index.';void finish('failed');return;}
+          clearTimeout(job.routeTimer);job.comparisonIndex=index;
+          if(index!==null){job.routeTimer=setTimeout(()=>{job.error=`A baseline comparison exceeded its per-route deadline (${limits.routeTimeoutMs}ms) without yielding. Remaining comparisons were not run.`;void finish('timed-out');},limits.routeTimeoutMs+2000);job.routeTimer.unref();}
+        }
         if(message.goalImpact)job.goalImpact=message.goalImpact;
         if(message.progress)Object.assign(job.reports[message.index],message.progress);
         if(message.report){clearTimeout(job.routeTimer);if(job.stopReason==='timed-out'&&message.report.failure?.code==='CANCELLED')message.report={...message.report,status:'timed-out',failure:{...message.report.failure,code:'TIMEOUT',message:'The whole batch deadline was reached.'}};const old=job.reports[message.index];job.reports[message.index]={...old,...message.report};job.completed=job.reports.filter(r=>!['not-run','running'].includes(r.status)).length;job.activeIndex=null;}

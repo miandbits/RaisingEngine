@@ -35,6 +35,43 @@ await service.goalRouteBatches.close();await service.releaseWorkflow.close();awa
 )JS").arg(jsonString(QUrl::fromLocalFile(engine+"/apps/qt-studio/service.mjs").toString(QUrl::FullyEncoded)),jsonString(gate));
  return script.write(source.toUtf8())==source.toUtf8().size();
 }
+bool savedCheckRetryService(QString engine,QString fixture,QString control){
+ if(!QDir().mkpath(fixture+"/apps/qt-studio"))return false;QFile script(fixture+"/apps/qt-studio/service.mjs");if(!script.open(QIODevice::WriteOnly))return false;
+ // Keep real capture/replay/comparison and persistence. Gate retry admission
+ // only, and optionally delay its reply to reproduce same-root reopen races.
+ const auto source=QString::fromUtf8(R"JS(process.chdir(%3);
+const {QtStudioService}=await import(%1);
+import {createInterface} from 'node:readline';
+import {setTimeout as delay} from 'node:timers/promises';
+import {writeFile} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
+const control=%2,service=new QtStudioService({shareViews:true});
+const start=service.goalRouteBatches.start.bind(service.goalRouteBatches);
+service.goalRouteBatches.start=async(...args)=>{
+ const record=service.savedGoalChecks.latest;
+ if(record?.origin==='retry'&&args[6]?.impact){
+  while(record===service.savedGoalChecks.latest&&record.status==='queued'&&!existsSync(control+'.release'))await delay(10);
+  if(record!==service.savedGoalChecks.latest||record.status!=='queued')throw Error('Controlled retry was cancelled or superseded.');
+ }
+ return start(...args);
+};
+const delayed=[];
+for await(const line of createInterface({input:process.stdin,crlfDelay:Infinity})){
+ let request;
+ try{
+  request=JSON.parse(line);
+  if(request.method==='goalSaveCheckRetry')await writeFile(control+'.request',JSON.stringify(request.params));
+  const reply=await service.handle(request),send=()=>process.stdout.write(JSON.stringify({id:request.id,...reply})+'\n');
+  if(request.method==='goalSaveCheckRetry'&&existsSync(control+'.hold-reply')){
+   await writeFile(control+'.reply-ready',JSON.stringify(reply));
+   delayed.push((async()=>{while(existsSync(control+'.hold-reply'))await delay(10);send();})());
+  }else send();
+ }catch(error){process.stdout.write(JSON.stringify({id:request?.id??null,...service.editor.reply(error.message)})+'\n');}
+}
+await service.goalRouteBatches.close();await service.releaseWorkflow.close();await service.releases.close();await service.editor.close();
+)JS").arg(jsonString(QUrl::fromLocalFile(engine+"/apps/qt-studio/service.mjs").toString(QUrl::FullyEncoded)),jsonString(control),jsonString(engine));
+ return script.write(source.toUtf8())==source.toUtf8().size();
+}
 }
 class RouteBatchTests:public QObject {
  Q_OBJECT
@@ -105,6 +142,29 @@ private slots:
   // Backend comparison errors have no count table; they must never render as
   // an all-zero successful comparison merely because replay passed.
   auto failed=w.lastGoalSaveCheck;failed["stage"]="comparison";failed["goalImpact"]=QJsonObject{{"complete",false},{"stale",true},{"error","Baseline input changed"}};emit w.goalSaveCheckReady(failed);QVERIFY(comparison->text().contains("Baseline input changed"));QVERIFY(comparison->text().contains(tr("기준 비교 미완료 · 호환성 통과가 아닙니다.")));QVERIFY(!summary->text().contains(tr("경로 검사가 끝나 기준 기록과 비교하는 중입니다.")));dialog->close();
+ }
+
+ void savedCheckRetryUsesExplicitLimitsAndPreservesEarlierReports(){
+  const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());QTemporaryDir tmp(engine+"/.cache/qt-saved-retry-XXXXXX"),service(engine+"/.cache/qt-saved-retry-service-XXXXXX");QVERIFY(tmp.isValid()&&service.isValid());QVERIFY(copyRoutesFixture(engine+"/examples/starlight-three-months",tmp.path()));const auto control=service.path()+"/retry";QVERIFY(savedCheckRetryService(engine,service.path(),control));
+  StudioWindow w(service.path());w.show();w.openProject(tmp.path());QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);auto save=w.findChild<QAction*>("saveProject");auto terminal=[&]{return QStringList{"completed","failed","timed-out","cancelled"}.contains(w.lastGoalSaveCheck.value("status").toString());};auto evidence=[&]{return QString::fromUtf8(QJsonDocument(w.lastGoalSaveCheck).toJson(QJsonDocument::Compact)).left(8192);};save->trigger();QTRY_VERIFY2_WITH_TIMEOUT(!w.busy()&&terminal(),qPrintable(evidence()),120000);QVERIFY2(w.lastGoalSaveCheck.value("status")=="completed",qPrintable(evidence()));
+  const auto previous=w.lastGoalSaveCheck;const auto revision=w.currentView().value("revision"),version=w.currentView().value("draftVersion");QFile oldReport(previous.value("file").toString());QVERIFY(oldReport.open(QIODevice::ReadOnly));const auto originalBytes=oldReport.readAll();oldReport.close();QVERIFY(!originalBytes.isEmpty());
+  w.findChild<QAction*>("goalSaveChecks")->trigger();auto dialog=w.findChild<QDialog*>("goalSaveChecksDialog");QVERIFY(dialog&&!dialog->isModal());auto route=dialog->findChild<QSpinBox*>("goalSaveCheckRouteSeconds"),total=dialog->findChild<QSpinBox*>("goalSaveCheckBatchSeconds");auto retry=dialog->findChild<QPushButton*>("goalSaveCheckRetry");auto note=dialog->findChild<QLabel*>("goalSaveCheckRetryStatus");QVERIFY(route&&total&&retry&&note);QCOMPARE(route->value(),300);QCOMPARE(total->value(),3600);QCOMPARE(route->minimum(),1);QCOMPARE(route->maximum(),300);QCOMPARE(total->maximum(),3600);QVERIFY(!route->accessibleName().isEmpty()&&!total->accessibleName().isEmpty());
+  total->setValue(100);QVERIFY(!retry->isEnabled());QVERIFY(note->text().contains(tr("전체 제한은 경로당 제한 이상이어야 합니다.")));route->setValue(245);total->setValue(1800);QVERIFY(retry->isEnabled());QSignalSpy updates(&w,&StudioWindow::updated);retry->click();QVERIFY(!w.busy());QVERIFY(save->isEnabled());
+  QTRY_VERIFY_WITH_TIMEOUT(w.lastGoalSaveCheck.value("id")!=previous.value("id")&&w.lastGoalSaveCheck.value("status")=="queued",10000);const auto retryId=w.lastGoalSaveCheck.value("id");QVERIFY(!retry->isEnabled()&&!route->isEnabled());QFile request(control+".request");QVERIFY(request.open(QIODevice::ReadOnly));const auto params=QJsonDocument::fromJson(request.readAll()).object();QCOMPARE(params.value("revision"),revision);QCOMPARE(params.value("checkId"),previous.value("id"));QCOMPARE(params.value("limits").toObject(),(QJsonObject{{"routeTimeoutMs",245000},{"batchTimeoutMs",1800000}}));QCOMPARE(w.currentView().value("draftVersion"),version);QVERIFY(!w.currentView().value("dirty").toBool());QCOMPARE(updates.count(),0);
+  // Closing this results tool leaves the explicitly requested check running.
+  dialog->close();QTRY_VERIFY(!w.findChild<QDialog*>("goalSaveChecksDialog"));auto polling=w.findChild<QTimer*>("goalSaveCheckPolling");QVERIFY(polling->isActive());w.findChild<QAction*>("goalSaveChecks")->trigger();dialog=w.findChild<QDialog*>("goalSaveChecksDialog");auto cancel=dialog->findChild<QPushButton*>("goalSaveCheckCancel");QVERIFY(cancel->isEnabled());cancel->click();QTRY_VERIFY_WITH_TIMEOUT(w.lastGoalSaveCheck.value("status")=="cancelled"&&!polling->isActive(),10000);QCOMPARE(w.lastGoalSaveCheck.value("id"),retryId);
+  // A second explicit run uses a new identity and real baseline comparison.
+  QFile release(control+".release");QVERIFY(release.open(QIODevice::WriteOnly));release.close();retry=dialog->findChild<QPushButton*>("goalSaveCheckRetry");QVERIFY(retry->isEnabled());retry->click();QTRY_VERIFY2_WITH_TIMEOUT(w.lastGoalSaveCheck.value("id")!=retryId&&terminal(),qPrintable(evidence()),120000);QVERIFY2(w.lastGoalSaveCheck.value("status")=="completed",qPrintable(evidence()));QVERIFY(!w.lastGoalSaveCheck.value("goalImpact").toObject().value("rows").toArray().isEmpty());QCOMPARE(w.lastGoalSaveCheck.value("limits").toObject(),(QJsonObject{{"routeTimeoutMs",300000},{"batchTimeoutMs",3600000}}));QCOMPARE(w.currentView().value("draftVersion"),version);QCOMPARE(updates.count(),0);QVERIFY(oldReport.open(QIODevice::ReadOnly));QCOMPARE(oldReport.readAll(),originalBytes);
+  auto progress=w.lastGoalSaveCheck;progress["status"]="running";progress["stage"]="comparison";progress["comparisonIndex"]=1;emit w.goalSaveCheckReady(progress);auto summary=dialog->findChild<QLabel*>("goalSaveCheckSummary");const auto name=progress.value("reports").toArray()[1].toObject().value("name").toString();QVERIFY(summary->text().contains(tr("기준 비교 중 · %1 (%2/%3)").arg(name).arg(2).arg(progress.value("reports").toArray().size())));emit w.goalSaveCheckReady(w.lastGoalSaveCheck);
+  // A real unsaved inspector edit disables retry; no hidden save occurs.
+  auto projects=w.findChild<QListWidget*>("projectList");QListWidgetItem *home=nullptr;for(int n=0;n<projects->count();++n)if(projects->item(n)->data(Qt::UserRole)=="home")home=projects->item(n);QVERIFY(home);QVERIFY(QMetaObject::invokeMethod(projects,"itemActivated",Q_ARG(QListWidgetItem*,home)));auto hierarchy=w.findChild<QTreeWidget*>("hierarchy");QTreeWidgetItem *target=nullptr;QTRY_VERIFY_WITH_TIMEOUT(([&]{for(QTreeWidgetItemIterator it(hierarchy);*it;++it)if((*it)->data(0,Qt::UserRole)=="screen-title"&&(*it)->data(0,Qt::UserRole+1)=="home"){target=*it;return true;}return false;})(),10000);hierarchy->setCurrentItem(target);target->setSelected(true);auto text=w.findChild<QLineEdit*>("buttonText");QVERIFY(text&&text->isEnabled());text->setText("Unsaved retry guard witness");QMetaObject::invokeMethod(text,"editingFinished");QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&w.currentView().value("dirty").toBool(),10000);QVERIFY(!retry->isEnabled());QVERIFY(dialog->findChild<QLabel*>("goalSaveCheckRetryStatus")->text().contains(tr("먼저 프로젝트를 저장하세요. 이 검사는 미저장 편집 내용을 포함하지 않습니다.")));dialog->close();
+ }
+
+ void lateSavedCheckRetryCannotResurrectAfterSameProjectReopen(){
+  const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());QTemporaryDir tmp(engine+"/.cache/qt-saved-reopen-XXXXXX"),service(engine+"/.cache/qt-saved-reopen-service-XXXXXX");QVERIFY(tmp.isValid()&&service.isValid());QVERIFY(copyRoutesFixture(engine+"/examples/starlight-three-months",tmp.path()));const auto control=service.path()+"/retry";QVERIFY(savedCheckRetryService(engine,service.path(),control));QFile hold(control+".hold-reply");QVERIFY(hold.open(QIODevice::WriteOnly));hold.close();
+  StudioWindow w(service.path());w.show();w.openProject(tmp.path());QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);w.findChild<QAction*>("goalSaveChecks")->trigger();auto dialog=w.findChild<QDialog*>("goalSaveChecksDialog");auto retry=dialog->findChild<QPushButton*>("goalSaveCheckRetry");QVERIFY(retry->isEnabled());retry->click();auto transport=w.findChild<StudioBridge*>();QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(control+".reply-ready")&&transport->backgroundBusy(),10000);QVERIFY(!w.busy());
+  w.openProject(tmp.path());QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.findChild<QDialog*>("goalSaveChecksDialog"),15000);QVERIFY(w.lastGoalSaveCheck.isEmpty());QVERIFY(QFile::remove(control+".hold-reply"));QTRY_VERIFY_WITH_TIMEOUT(!transport->backgroundBusy(),10000);QVERIFY(w.lastGoalSaveCheck.isEmpty());QVERIFY(!w.findChild<QTimer*>("goalSaveCheckPolling")->isActive());
+  w.findChild<QAction*>("goalSaveChecks")->trigger();dialog=w.findChild<QDialog*>("goalSaveChecksDialog");QVERIFY(dialog->findChild<QPushButton*>("goalSaveCheckRetry")->isEnabled());QVERIFY(dialog->findChild<QLabel*>("goalSaveCheckRetryStatus")->text().isEmpty());QVERIFY(!dialog->findChild<QPushButton*>("goalSaveCheckCancel")->isEnabled());dialog->close();
  }
 
  void baselineRegistrationReviewsNamesAndPreservesExistingRecords(){

@@ -1255,6 +1255,7 @@ void StudioWindow::request(QString method, QJsonObject params,
     const bool pluginReply = reply.value("plugins").isObject() || (!reply.contains("plugins") && reply.contains("view"));
     if (pluginReply) plugins->setState(reply.value("plugins").toObject());
     if ((method == "open" || method == "create") && lastError.isEmpty()) {
+      ++goalSaveCheckGeneration;goalSaveCheckRetryParams={};goalSaveCheckRetryError.clear();goalSaveCheckRetryInFlight=false;goalSaveCheckRetryCancel=false;
       goalSaveCheckRoot=view.value("root").toString();lastGoalSaveCheck={};goalSaveCheckReportedId.clear();goalSaveCheckCancelId.clear();goalSaveCheckPolling->stop();lastGoalBaselineBatch={};
       if(auto dialog=findChild<QDialog*>("goalSaveChecksDialog"))dialog->close();
       firstGameObserved.clear();

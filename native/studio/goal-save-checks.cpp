@@ -35,7 +35,7 @@ void StudioWindow::setupGoalSaveChecks() {
   connect(goalSaveCheckPolling,&QTimer::timeout,this,&StudioWindow::pollGoalSaveCheck);
   connect(this,&StudioWindow::updated,this,[this]{
     if(goalSaveCheckRoot!=view.value("root").toString()){
-      goalSaveCheckRoot=view.value("root").toString();lastGoalSaveCheck={};goalSaveCheckReportedId.clear();goalSaveCheckCancelId.clear();goalSaveCheckPolling->stop();
+      ++goalSaveCheckGeneration;goalSaveCheckRoot=view.value("root").toString();lastGoalSaveCheck={};goalSaveCheckReportedId.clear();goalSaveCheckCancelId.clear();goalSaveCheckRetryParams={};goalSaveCheckRetryError.clear();goalSaveCheckRetryInFlight=false;goalSaveCheckRetryCancel=false;goalSaveCheckPolling->stop();
       if(auto dialog=findChild<QDialog*>("goalSaveChecksDialog"))dialog->close();
     }
     refreshGoalSaveCheck();
@@ -43,7 +43,7 @@ void StudioWindow::setupGoalSaveChecks() {
 }
 
 void StudioWindow::acceptGoalSaveCheck(QJsonObject check) {
-  if(check.isEmpty()) {lastGoalSaveCheck={};goalSaveCheckPolling->stop();refreshGoalSaveCheck();return;}
+  if(check.isEmpty()) {lastGoalSaveCheck={};if(goalSaveCheckRetryParams.isEmpty()&&!goalSaveCheckRetryInFlight)goalSaveCheckPolling->stop();refreshGoalSaveCheck();return;}
   if(check.value("root")!=view.value("root"))return;
   // A passive status reply may arrive after a newer save reply. Never replace
   // that newer saved snapshot with the result of an earlier request.
@@ -53,7 +53,7 @@ void StudioWindow::acceptGoalSaveCheck(QJsonObject check) {
   if(!goalSaveCheckCancelId.isEmpty()&&goalSaveCheckCancelId!=check.value("id").toString())goalSaveCheckCancelId.clear();
   goalSaveCheckRoot=check.value("root").toString();lastGoalSaveCheck=check;
   if(activeCheck(check))goalSaveCheckPolling->start();else{
-    goalSaveCheckPolling->stop();goalSaveCheckCancelId.clear();
+    if(goalSaveCheckRetryParams.isEmpty()&&!goalSaveCheckRetryInFlight)goalSaveCheckPolling->stop();goalSaveCheckCancelId.clear();
     const auto id=check.value("id").toString();
     const bool firstResult=!id.isEmpty()&&goalSaveCheckReportedId!=id;
     if(firstResult){goalSaveCheckReportedId=id;if(!check.value("reports").toArray().isEmpty())acceptGoalReport(check);}
@@ -73,7 +73,9 @@ void StudioWindow::acceptGoalSaveCheck(QJsonObject check) {
 
 void StudioWindow::refreshGoalSaveCheck() {
   if(!goalSaveCheckButton)return;
-  goalSaveCheckButton->setVisible(!lastGoalSaveCheck.isEmpty());
+  const bool retrying=!goalSaveCheckRetryParams.isEmpty()||goalSaveCheckRetryInFlight;
+  goalSaveCheckButton->setVisible(!lastGoalSaveCheck.isEmpty()||retrying);
+  if(lastGoalSaveCheck.isEmpty()&&retrying){goalSaveCheckButton->setText(tr("저장된 사본의 검사를 준비하는 중…"));goalSaveCheckButton->setAccessibleName(goalSaveCheckButton->text());}
   auto check=lastGoalSaveCheck;
   if(!check.isEmpty()){
     const bool stale=check.value("stale").toBool()||check.value("sourceVersion")!=view.value("draftVersion");check["stale"]=stale;
@@ -89,10 +91,30 @@ void StudioWindow::refreshGoalSaveCheck() {
 void StudioWindow::pollGoalSaveCheck() {
   if(goalSaveCheckRoot.isEmpty()||goalSaveCheckRoot!=view.value("root").toString()){goalSaveCheckPolling->stop();return;}
   if(bridge.busy()||bridge.backgroundBusy())return;
-  const auto root=goalSaveCheckRoot,cancelId=goalSaveCheckCancelId,requestedId=lastGoalSaveCheck.value("id").toString();const bool cancelling=!cancelId.isEmpty();
+  if(!goalSaveCheckRetryParams.isEmpty()){
+    // Capture the click's project/revision/check identity. Authoring stays live;
+    // the service rejects an intervening edit/save rather than saving it here.
+    const auto params=goalSaveCheckRetryParams;const auto root=goalSaveCheckRoot;const auto generation=goalSaveCheckGeneration;
+    const auto requestedId=params.value("checkId").toString();goalSaveCheckRetryParams={};goalSaveCheckRetryInFlight=true;refreshGoalSaveCheck();
+    bridge.requestBackground("goalSaveCheckRetry",params,[this,root,requestedId,generation](QJsonObject reply){
+      if(root!=view.value("root").toString()||generation!=goalSaveCheckGeneration)return;
+      goalSaveCheckRetryInFlight=false;const bool cancel=goalSaveCheckRetryCancel;goalSaveCheckRetryCancel=false;
+      const auto result=reply.value("goalSaveCheck").toObject();
+      auto error=reply.value("error").toString();if(error.isEmpty()&&result.isEmpty())error=tr("저장 검사 결과를 받지 못했습니다. 다시 확인하세요.");
+      if(!error.isEmpty()){
+        // Keep the preceding report intact, including a newer save's result.
+        if(requestedId==lastGoalSaveCheck.value("id").toString())goalSaveCheckRetryError=error;
+        if(!activeCheck(lastGoalSaveCheck))goalSaveCheckPolling->stop();refreshGoalSaveCheck();return;
+      }
+      goalSaveCheckRetryError.clear();acceptGoalSaveCheck(result);
+      if(cancel&&lastGoalSaveCheck.value("id")==result.value("id"))stopGoalSaveCheck();
+    });
+    return;
+  }
+  const auto root=goalSaveCheckRoot,cancelId=goalSaveCheckCancelId,requestedId=lastGoalSaveCheck.value("id").toString();const bool cancelling=!cancelId.isEmpty();const auto generation=goalSaveCheckGeneration;
   QJsonObject params{{"root",root}};if(cancelling)params["checkId"]=cancelId;
-  bridge.requestBackground(cancelling?"goalSaveCheckStop":"goalSaveCheckStatus",params,[this,root,cancelId,requestedId](QJsonObject reply){
-    if(root!=view.value("root").toString())return;
+  bridge.requestBackground(cancelling?"goalSaveCheckStop":"goalSaveCheckStatus",params,[this,root,cancelId,requestedId,generation](QJsonObject reply){
+    if(root!=view.value("root").toString()||generation!=goalSaveCheckGeneration)return;
     // A save/reopen can replace the job while this passive request is in flight.
     // Its error, null result or old result must not overwrite the replacement.
     const auto currentId=lastGoalSaveCheck.value("id").toString();
@@ -108,26 +130,50 @@ void StudioWindow::pollGoalSaveCheck() {
 }
 
 void StudioWindow::stopGoalSaveCheck() {
+  if(!goalSaveCheckRetryParams.isEmpty()){
+    goalSaveCheckRetryParams={};goalSaveCheckRetryError=tr("취소됨");goalSaveCheckRetryCancel=false;
+    if(!activeCheck(lastGoalSaveCheck))goalSaveCheckPolling->stop();refreshGoalSaveCheck();return;
+  }
+  if(goalSaveCheckRetryInFlight){goalSaveCheckRetryCancel=true;refreshGoalSaveCheck();return;}
   if(lastGoalSaveCheck.isEmpty()||!activeCheck(lastGoalSaveCheck))return;
   goalSaveCheckCancelId=lastGoalSaveCheck.value("id").toString();goalSaveCheckPolling->start();refreshGoalSaveCheck();pollGoalSaveCheck();
 }
 
 void StudioWindow::goalSaveChecksDialog() {
   if(auto previous=findChild<QDialog*>("goalSaveChecksDialog")){previous->show();previous->raise();return;}
-  auto dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setObjectName("goalSaveChecksDialog");dialog->setWindowTitle(tr("저장 검사 진행 · 결과"));dialog->resize(1000,620);
-  auto layout=new QVBoxLayout(dialog);auto help=new QLabel(tr("저장은 이미 완료되었습니다. 검사는 저장 당시의 고정 사본을 사용하며 이 창을 닫아도 계속됩니다. 다시 저장하면 최신 사본으로 교체합니다. 프로젝트를 바꾸거나 에디터를 종료하면 진행 중인 검사를 취소합니다."));help->setWordWrap(true);layout->addWidget(help);
+  auto dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setObjectName("goalSaveChecksDialog");dialog->setWindowTitle(tr("저장 검사 진행 · 결과"));dialog->resize(1000,720);
+  auto layout=new QVBoxLayout(dialog);auto help=new QLabel(tr("검사는 저장된 고정 사본을 사용하며 이 창을 닫아도 계속됩니다. 다시 저장하면 최신 사본으로 교체합니다. 프로젝트를 다시 열거나 바꾸거나 에디터를 종료하면 진행 중인 검사를 취소합니다."));help->setWordWrap(true);layout->addWidget(help);
+  auto retryHelp=new QLabel(tr("저장된 프로젝트의 경로 재생과 기준 비교를 함께 다시 실행합니다. 편집 내용은 자동 저장하지 않으며 이전 보고서는 보존합니다. 경로당 제한은 각 재생과 각 기준 비교에 적용되고, 전체 제한은 두 단계를 합친 시간입니다."));retryHelp->setWordWrap(true);layout->addWidget(retryHelp);
+  auto limits=new QHBoxLayout;layout->addLayout(limits);auto routeLabel=new QLabel(tr("경로당 제한 (초)"));auto routeSeconds=new QSpinBox;routeSeconds->setObjectName("goalSaveCheckRouteSeconds");routeSeconds->setRange(1,300);routeSeconds->setValue(300);routeSeconds->setAccessibleName(routeLabel->text());routeLabel->setBuddy(routeSeconds);limits->addWidget(routeLabel);limits->addWidget(routeSeconds);
+  auto batchLabel=new QLabel(tr("전체 제한 (초)"));auto batchSeconds=new QSpinBox;batchSeconds->setObjectName("goalSaveCheckBatchSeconds");batchSeconds->setRange(1,3600);batchSeconds->setValue(3600);batchSeconds->setAccessibleName(batchLabel->text());batchLabel->setBuddy(batchSeconds);limits->addWidget(batchLabel);limits->addWidget(batchSeconds);auto retry=new QPushButton(tr("저장된 사본 다시 검사"));retry->setObjectName("goalSaveCheckRetry");limits->addWidget(retry);limits->addStretch();
+  auto retryStatus=new QLabel;retryStatus->setObjectName("goalSaveCheckRetryStatus");retryStatus->setWordWrap(true);retryStatus->setTextInteractionFlags(Qt::TextSelectableByMouse);layout->addWidget(retryStatus);
   auto summary=new QLabel;summary->setObjectName("goalSaveCheckSummary");summary->setWordWrap(true);layout->addWidget(summary);
   auto table=new QTableWidget(0,4);table->setObjectName("goalSaveCheckRoutes");table->setHorizontalHeaderLabels({tr("등록 경로"),tr("검사 결과"),tr("명령 수"),tr("실패 위치 · 원인")});table->setEditTriggers(QAbstractItemView::NoEditTriggers);table->setSelectionBehavior(QAbstractItemView::SelectRows);table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);table->horizontalHeader()->setSectionResizeMode(3,QHeaderView::Stretch);layout->addWidget(table,1);
   auto comparison=new QLabel;comparison->setObjectName("goalSaveCheckComparison");comparison->setWordWrap(true);layout->addWidget(comparison);
   auto bar=new QHBoxLayout;layout->addLayout(bar);auto cancel=new QPushButton(tr("검사 취소"));cancel->setObjectName("goalSaveCheckCancel");bar->addWidget(cancel);auto routes=new QPushButton(tr("목표 경로 기록 · 회귀 검사…"));routes->setObjectName("goalSaveCheckManual");bar->addWidget(routes);auto impact=new QPushButton(tr("저장 기준 비교 결과…"));impact->setObjectName("goalSaveCheckImpact");bar->addWidget(impact);bar->addStretch();auto close=new QPushButton(tr("닫기"));bar->addWidget(close);
   connect(cancel,&QPushButton::clicked,this,&StudioWindow::stopGoalSaveCheck);connect(routes,&QPushButton::clicked,this,&StudioWindow::goalRoutesDialog);connect(impact,&QPushButton::clicked,this,[this]{if(lastGoalSaveCheck.value("goalImpact").isObject())goalImpactDialog(lastGoalImpact);});connect(close,&QPushButton::clicked,dialog,&QDialog::close);
+  connect(retry,&QPushButton::clicked,this,[=,this]{
+    if(view.value("root").toString().isEmpty()||view.value("dirty").toBool()||activeCheck(lastGoalSaveCheck)||!goalSaveCheckRetryParams.isEmpty()||goalSaveCheckRetryInFlight||routeSeconds->value()>batchSeconds->value())return;
+    goalSaveCheckRetryError.clear();goalSaveCheckRetryCancel=false;goalSaveCheckRetryParams={{"root",view.value("root")},{"revision",view.value("revision")},{"limits",QJsonObject{{"routeTimeoutMs",routeSeconds->value()*1000},{"batchTimeoutMs",batchSeconds->value()*1000}}}};
+    const auto id=lastGoalSaveCheck.value("id").toString();if(!id.isEmpty())goalSaveCheckRetryParams["checkId"]=id;
+    goalSaveCheckRoot=view.value("root").toString();goalSaveCheckPolling->start();refreshGoalSaveCheck();pollGoalSaveCheck();
+  });
   auto render=[=,this](QJsonObject check){
-    cancel->setEnabled(activeCheck(check)&&check.value("status")!="cancelling"&&goalSaveCheckCancelId.isEmpty());impact->setEnabled(check.value("goalImpact").isObject()&&!activeCheck(check));
+    const bool retrying=!goalSaveCheckRetryParams.isEmpty()||goalSaveCheckRetryInFlight;
+    const bool running=retrying||activeCheck(check),dirty=view.value("dirty").toBool(),validLimits=routeSeconds->value()<=batchSeconds->value();
+    routeSeconds->setEnabled(!running);batchSeconds->setEnabled(!running);retry->setEnabled(!view.value("root").toString().isEmpty()&&!running&&!dirty&&validLimits);retry->setText(check.isEmpty()?tr("저장된 사본 검사"):tr("저장된 사본 다시 검사"));
+    retryStatus->setText(retrying?(goalSaveCheckRetryCancel?tr("취소 중…"):tr("저장된 사본의 검사를 준비하는 중…")):dirty?tr("먼저 프로젝트를 저장하세요. 이 검사는 미저장 편집 내용을 포함하지 않습니다."):!validLimits?tr("전체 제한은 경로당 제한 이상이어야 합니다."):goalSaveCheckRetryError);
+    cancel->setEnabled(running&&check.value("status")!="cancelling"&&goalSaveCheckCancelId.isEmpty()&&!goalSaveCheckRetryCancel);impact->setEnabled(check.value("goalImpact").isObject()&&!running);
     if(check.isEmpty()){summary->setText(tr("아직 저장 검사가 없습니다. 경로가 등록된 프로젝트를 저장하면 검사가 시작됩니다."));table->setRowCount(0);comparison->clear();return;}
     const auto reports=check.value("reports").toArray();int passed=0;
     for(auto value:reports)if(value.toObject().value("ok").toBool())++passed;
     auto text=tr("%1 · 처리 %2/%3 · 통과 %4 · 저장한 사본 r%5").arg(!goalSaveCheckCancelId.isEmpty()?tr("취소 중…"):checkStatus(check.value("status").toString())).arg(check.value("completed").toInt()).arg(reports.size()).arg(passed).arg(check.value("testedRevision").toInt());
-    if(activeCheck(check)&&check.value("stage")=="comparison")text+="\n"+tr("경로 검사가 끝나 기준 기록과 비교하는 중입니다.");
+    const auto usedLimits=check.value("limits").toObject();if(!usedLimits.isEmpty())text+="\n"+tr("이 검사에 적용된 제한 · 경로당 %1초 · 전체 %2초").arg(usedLimits.value("routeTimeoutMs").toInt()/1000).arg(usedLimits.value("batchTimeoutMs").toInt()/1000);
+    if(activeCheck(check)&&check.value("stage")=="comparison"){
+      const int index=check.value("comparisonIndex").toInt(-1);
+      if(index>=0&&index<reports.size()){const auto report=reports[index].toObject();text+="\n"+tr("기준 비교 중 · %1 (%2/%3)").arg(report.value("name").toString(report.value("id").toString())).arg(index+1).arg(reports.size());}
+      else text+="\n"+tr("경로 검사가 끝나 기준 기록과 비교하는 중입니다.");
+    }
     const bool inputsChanged=check.value("sourceVersion")!=view.value("draftVersion")||check.value("routesChanged").toBool()||check.value("baselinesChanged").toBool();
     if(inputsChanged||(check.value("stale").toBool()&&!goalImpactFatal(check.value("goalImpact").toObject())))text+="\n"+tr("검사 후 초안 또는 경로가 변경되었습니다. 이 결과는 이전 사본의 결과입니다.");
     if(!check.value("error").toString().isEmpty())text+="\n"+check.value("error").toString();
@@ -144,5 +190,6 @@ void StudioWindow::goalSaveChecksDialog() {
       comparison->setText(lines.join("\n"));
     }
   };
+  connect(routeSeconds,qOverload<int>(&QSpinBox::valueChanged),dialog,[=,this](int){render(lastGoalSaveCheck);});connect(batchSeconds,qOverload<int>(&QSpinBox::valueChanged),dialog,[=,this](int){render(lastGoalSaveCheck);});
   connect(this,&StudioWindow::goalSaveCheckReady,dialog,render);refreshGoalSaveCheck();dialog->show();
 }

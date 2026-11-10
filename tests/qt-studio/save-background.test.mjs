@@ -173,3 +173,68 @@ test('archive failure remains visible after completion and identical save retrie
   const latest=(await call('goalImpactLatest')).goalImpact;assert.equal(latest.id,failed.goalImpact.id,'An older successful disk report must not hide the latest archive failure.');assert.equal(latest.ok,false);assert.ok(latest.archiveError);
   const retry=(await saveAndWait(service)).goalSaveCheck;assert.notEqual(retry.id,failed.id);assert.equal(retry.goalImpact.archived,true);assert.equal(retry.goalImpact.ok,true);
 });
+
+test('explicit bounded retry preserves the timed-out report and binds fresh saved routes and baselines',{timeout:60000},async t=>{
+  const {service,root,call,ordinary,long}=await fixture(t);
+  const baselines=[];for(const entry of (await call('goalRoutesList')).goalRoutes)baselines.push((await call('goalBaselineSave',{routeId:entry.route.id,name:'Original baseline · '+entry.route.name})).goalBaseline);
+  await call('goalRouteSave',{route:long,expectedRevision:null});
+  const started=(await call('goalSaveCheckRetry',{limits:{routeTimeoutMs:1000,batchTimeoutMs:30000}})).goalSaveCheck;
+  assert.equal(started.origin,'retry');assert.deepEqual(started.limits,{routeTimeoutMs:1000,batchTimeoutMs:30000});
+  const old=await wait(call,j=>!['queued','running','cancelling'].includes(j.status));assert.equal(old.status,'timed-out');
+  const oldBytes=await readFile(old.file),oldInput=await readFile(old.file.replace(/\.json$/,'.inputs.json')),baselineBytes=await Promise.all(baselines.map(b=>readFile(b.file)));
+  const entry=(await call('goalRoutesList')).goalRoutes.find(e=>e.route.id==='a-long');
+  await call('goalRouteSave',{route:{...ordinary.route,id:'a-long',name:'Repaired short route'},expectedRevision:entry.revision});
+  await call('goalBaselineSave',{routeId:'a-long',name:'New explicit fixture baseline'});
+  const next=(await call('goalSaveCheckRetry',{checkId:old.id,limits:{routeTimeoutMs:10000,batchTimeoutMs:30000}})).goalSaveCheck;
+  assert.notEqual(next.id,old.id);assert.equal(next.retryOf,old.id);assert.equal(next.origin,'retry');assert.equal(next.testedRevision,service.editor.revision);
+  const final=await wait(call,j=>!['queued','running','cancelling'].includes(j.status));await assertCompleted(final,'Explicit retry after timed-out source');assert.equal(final.stale,false);assert.equal(final.goalImpact.complete,true);assert.equal(final.goalImpact.ok,true);assert.equal(final.goalImpact.archived,true);assert.equal(final.goalImpact.limits.routeTimeoutMs,10000);
+  const captured=JSON.parse(await readFile(final.file.replace(/\.json$/,'.inputs.json'),'utf8'));assert.equal(captured.content.contentFingerprint,final.contentFingerprint);assert.equal(captured.entries.find(e=>e.route.id==='a-long').route.name,'Repaired short route');assert.notEqual(captured.impact.baselineStamp,JSON.parse(oldInput).impact.baselineStamp);
+  assert.deepEqual(await readFile(old.file),oldBytes);assert.deepEqual(await readFile(old.file.replace(/\.json$/,'.inputs.json')),oldInput);for(let i=0;i<baselines.length;i++)assert.deepEqual(await readFile(baselines[i].file),baselineBytes[i]);
+});
+
+test('retry refuses dirty drafts, stale caller identity, bad limits and never silently saves',{timeout:30000},async t=>{
+  const {service,root,call}=await fixture(t),doc=service.editor.documents.find(d=>d.kind==='project'),original=await readFile(path.join(root,doc.file));
+  for(const limits of [{routeTimeoutMs:0},{routeTimeoutMs:300001},{batchTimeoutMs:3600001},{routeTimeoutMs:1001,batchTimeoutMs:1000},{routeTimeoutMs:1.5},{unknown:1}])await assert.rejects(call('goalSaveCheckRetry',{limits}));
+  await assert.rejects(call('goalSaveCheckRetry',{checkId:'old-check'}),/older check/);
+  await assert.rejects(call('goalSaveCheckRetry',{root:path.dirname(root)}),/current project/);
+  await assert.rejects(call('goalSaveCheckRetry',{revision:service.editor.revision+1}));
+  await call('edit',{edit:{type:'replace',file:doc.file,data:{...doc.data,description:'Not saved'}}});
+  await assert.rejects(call('goalSaveCheckRetry'),/does not save automatically/);assert.equal(service.editor.view().dirty,true);assert.deepEqual(await readFile(path.join(root,doc.file)),original);assert.equal(service.goalRouteBatches.jobs.size,0);assert.equal(service.savedGoalChecks.latest,null);
+});
+
+test('retry works after a fresh editor process and observed cancellation retires its worker',{timeout:30000},async t=>{
+  const {service,root,call,long}=await fixture(t);await call('goalRouteSave',{route:long,expectedRevision:null});
+  await service.goalRouteBatches.close();await service.editor.close();
+  const reopened=new QtStudioService();t.after(async()=>{await reopened.goalRouteBatches.close();await reopened.editor.close();});await reopened.handle({method:'open',params:{root}});
+  const invoke=(method,params={})=>reopened.handle({method,params:{root,revision:reopened.editor.revision,...params}});
+  assert.equal((await invoke('goalSaveCheckStatus')).goalSaveCheck,null);
+  const retry=(await invoke('goalSaveCheckRetry',{limits:{routeTimeoutMs:10000,batchTimeoutMs:30000}})).goalSaveCheck;
+  const running=await wait(invoke,j=>j.status==='running');assert.equal(running.id,retry.id);await assert.rejects(invoke('goalSaveCheckRetry'),/still running/);
+  await invoke('goalSaveCheckStop',{checkId:retry.id});const final=await wait(invoke,j=>!['queued','running','cancelling'].includes(j.status));assert.equal(final.status,'cancelled');assert.equal(final.origin,'retry');assert.equal(final.ok,false);assert.equal(reopened.goalRouteBatches.get(root,final.batchId).worker,null);
+});
+
+test('two simultaneous retry admissions cannot replace each other after asynchronous guards',{timeout:30000},async t=>{
+  const {service,root}=await fixture(t),content=await service.debugSnapshot(service.editor.revision);
+  let entered=0,announce,release;const both=new Promise(r=>announce=r),gate=new Promise(r=>release=r),guard=async()=>{if(++entered===2)announce();await gate;};
+  const retry=()=>service.savedGoalChecks.retry(root,content,service.editor.draftVersion(),service.editor.revision,{limits:{routeTimeoutMs:10000,batchTimeoutMs:30000}},guard);
+  const a=retry(),b=retry();await both;release();const results=await Promise.allSettled([a,b]);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);const rejected=results.find(r=>r.status==='rejected');assert.match(rejected.reason.message,/changed while preparing/);const accepted=results.find(r=>r.status==='fulfilled').value;assert.equal(service.savedGoalChecks.latest.id,accepted.id);await service.savedGoalChecks.draining;assert.equal(service.goalRouteBatches.jobs.size,1);
+});
+
+test('queued explicit retry keeps exact inputs and rejects changed baseline selection as stale',{timeout:30000},async t=>{
+  const {service,root,call,ordinary,long}=await fixture(t);await call('goalRouteSave',{route:long,expectedRevision:null});
+  const manual=(await call('goalRouteBatchStart',{ids:['a-long'],limits:{routeTimeoutMs:10000,batchTimeoutMs:15000}})).goalRouteBatch;
+  const entry=(await call('goalRoutesList')).goalRoutes.find(e=>e.route.id==='a-long');await call('goalRouteSave',{route:{...ordinary.route,id:'a-long'},expectedRevision:entry.revision});
+  const retry=(await call('goalSaveCheckRetry',{limits:{routeTimeoutMs:10000,batchTimeoutMs:30000}})).goalSaveCheck;assert.equal(retry.status,'queued');
+  await mkdir(path.join(root,'playtests/baselines'),{recursive:true});await writeFile(path.join(root,'playtests/baselines/.approvals'),JSON.stringify({version:1,active:{},history:[]}));
+  const doc=service.editor.documents.find(d=>d.kind==='project');await call('edit',{edit:{type:'replace',file:doc.file,data:{...doc.data,description:'Newer unsaved draft'}}});
+  await call('goalRouteBatchStop',{jobId:manual.id});const final=await wait(call,j=>!['queued','running','cancelling'].includes(j.status));assert.equal(final.id,retry.id);assert.equal(final.stale,true);assert.equal(final.goalImpact.complete,false);assert.match(final.goalImpact.error,/Baseline records changed/);assert.notEqual(final.sourceVersion,service.editor.draftVersion());
+  const captured=JSON.parse(await readFile(final.file.replace(/\.json$/,'.inputs.json'),'utf8'));assert.equal(captured.content.project.description,doc.data.description);assert.equal(service.editor.view().dirty,true);
+});
+
+test('project close during retry admission rejects the old epoch before any worker starts',{timeout:30000},async t=>{
+  const {service,root}=await fixture(t),content=await service.debugSnapshot(service.editor.revision);
+  let announce,release;const entered=new Promise(r=>announce=r),gate=new Promise(r=>release=r);
+  const retry=service.savedGoalChecks.retry(root,content,service.editor.draftVersion(),service.editor.revision,{},async()=>{announce();await gate;});
+  await entered;await service.goalRouteBatches.close();release();
+  await assert.rejects(retry,/project changed while preparing/);assert.equal(service.savedGoalChecks.latest,null);assert.equal(service.savedGoalChecks.pending,null);assert.equal(service.goalRouteBatches.jobs.size,0);
+});

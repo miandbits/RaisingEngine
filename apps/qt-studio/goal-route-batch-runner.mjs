@@ -35,7 +35,7 @@ if(impact&&!Atomics.load(cancel,0)&&Date.now()-started<limits.batchTimeoutMs){
   let goalImpact;
   try{
     if(await goalBaselineInputStamp(impact.root)!==impact.baselineStamp)throw Error('Baseline records changed after save. Save again to compare the new selection.');
-    goalImpact=await checkGoalImpacts(impact.root,content,impact.revision,{capturedRoutes:entries,timeoutMs:Math.max(1,limits.batchTimeoutMs-(Date.now()-started))});
+    goalImpact=await checkGoalImpacts(impact.root,content,impact.revision,{capturedRoutes:entries,timeoutMs:Math.max(1,limits.batchTimeoutMs-(Date.now()-started)),routeTimeoutMs:limits.routeTimeoutMs,onRoute:index=>parentPort.postMessage({comparisonIndex:index})});
     if(await goalBaselineInputStamp(impact.root)!==impact.baselineStamp)Object.assign(goalImpact,{stale:true,complete:false,ok:false,error:'Baseline records changed during comparison. Save again to recheck.'});
   }catch(error){goalImpact={rows:[],complete:false,ok:false,stale:true,error:String(error.message).slice(0,4096)};}
   parentPort.postMessage({goalImpact});

@@ -75,7 +75,7 @@ export async function compareGoalBaseline(content:ContentSnapshot,input:unknown,
   let firstCheckDifference:number|null=null;const changedSteps:number[]=[];const records:Row[]=[];let recordBytes=0;
   for(let i=0;i<Math.max(pair.left!.steps.length,pair.right.steps.length);i++){
     if(i%16===0)await new Promise<void>(r=>setImmediate(r));
-    if(Date.now()-started>timeoutMs)throw Error('기준 비교 검사 시간이 60초를 넘었습니다.');
+    if(Date.now()-started>timeoutMs)throw Object.assign(Error(`기준 비교 시간 제한(${timeoutMs}ms)을 넘었습니다. 저장 검사에서 제한을 늘려 다시 검사하세요.`),{code:'TIMEOUT',timeoutMs});
     const a=i<pair.left!.steps.length?routeStepDetails(pair,pair.left,i):null,b=i<pair.right.steps.length?routeStepDetails(pair,pair.right,i):null;
     if(b){const {before,after,changes,step,...record}=b;recordBytes+=Buffer.byteLength(JSON.stringify(record));if(recordBytes>MAX_BYTES)throw Error('현재 검사 추적이 64 MiB를 넘습니다. 경로를 나누세요.');records.push(record);}
     if(hash(a?observation(a):null)!==hash(b?observation(b):null)){changedSteps.push(i);firstCheckDifference??=i;}

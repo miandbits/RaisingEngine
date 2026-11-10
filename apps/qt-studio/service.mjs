@@ -136,6 +136,20 @@ export class QtStudioService {
       if(method==='goalBaselineBatchStop')this.goalRouteBatches.stop(params.root,params.jobId);
       return {error:null,goalBaselineBatch:await this.goalRouteBatches.status(params.root,params.jobId,this.editor.draftVersion())};
     }
+    if(method==='goalSaveCheckRetry'){
+      const root=this.editor.root;
+      const guard=async()=>{
+        if(!root||params.root!==root||this.editor.root!==root)throw Error('Saved checks do not belong to the current project.');
+        this.editor.current(params.revision);
+        if(this.editor.view().dirty)throw Error('Save the current changes before retrying saved checks. This action does not save automatically.');
+        await this.editor.assertDiskUnchanged();
+        this.editor.current(params.revision);
+        if(this.editor.root!==root||this.editor.view().dirty)throw Error('The saved project changed while preparing the retry. Save and try again.');
+      };
+      await guard();
+      const content=await this.debugSnapshot(params.revision),version=this.editor.draftVersion();
+      return {error:null,goalSaveCheck:await this.savedGoalChecks.retry(root,content,version,params.revision,params,guard)};
+    }
     if(method==='goalSaveCheckStatus'||method==='goalSaveCheckStop'){
       if(params.root!==this.editor.root)throw Error('Saved checks do not belong to the current project.');
       if(method==='goalSaveCheckStop')this.savedGoalChecks.stop(params.checkId);

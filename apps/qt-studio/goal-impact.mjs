@@ -67,10 +67,11 @@ function summarize(pair){
     beforeReached:pair.left.reached,afterReached:pair.right.reached,failure:pair.right.failure,unexecuted:pair.right.unexecuted,
     valueChanges:[...values.values()].slice(0,40),valueChangeCount:values.size,relatedRuleChanges:[...rules.values()].slice(0,40),ruleChangeCount:rules.size};
 }
-export async function checkGoalImpacts(root,content,revision,{timeoutMs=60000,runtimePolicy='strict',capturedRoutes}={}){
+export async function checkGoalImpacts(root,content,revision,{timeoutMs=60000,routeTimeoutMs=timeoutMs,runtimePolicy='strict',capturedRoutes,onRoute}={}){
   if(!['strict','verify-replay'].includes(runtimePolicy))throw Error('지원하지 않는 런타임 검사 정책입니다.');
+  for(const value of [timeoutMs,routeTimeoutMs])if(!Number.isSafeInteger(value)||value<1||value>3600000)throw Error('비교 시간 제한은 1~3600000 밀리초여야 합니다.');
   const started=Date.now(),routes=capturedRoutes??await listGoalRoutes(root),baselines=await listGoalBaselines(root),runtime=await runtimeIdentity(),selection=await goalBaselineSelection(root,baselines);
-  const report={version:1,runtimePolicy,id:randomUUID(),createdAt:new Date().toISOString(),fingerprint:content.contentFingerprint,testedRevision:revision,runtime,selectionRevision:selection.revision,routesDigest:routeDigest(routes.map(e=>e.route??{file:path.basename(e.file),error:e.error})),rows:[],baselineErrors:baselines.filter(b=>b.error),stale:false};
+  const report={version:1,runtimePolicy,id:randomUUID(),createdAt:new Date().toISOString(),fingerprint:content.contentFingerprint,testedRevision:revision,runtime,selectionRevision:selection.revision,routesDigest:routeDigest(routes.map(e=>e.route??{file:path.basename(e.file),error:e.error})),limits:{timeoutMs,routeTimeoutMs},rows:[],baselineErrors:baselines.filter(b=>b.error),stale:false};
   for(const entry of routes){
     if(!entry.route){report.rows.push({name:path.basename(entry.file),status:'error',error:entry.error});continue;}
     const route=entry.route,row={routeId:route.id,name:route.name,routeDigest:routeDigest(route)},baselineInfo=baselines.find(b=>b.id===selection.active[route.id]);
@@ -78,14 +79,17 @@ export async function checkGoalImpacts(root,content,revision,{timeoutMs=60000,ru
     if(selection.active[route.id]&&(!baselineInfo||baselineInfo.error)){report.rows.push({...row,status:'error',error:'활성 기준 기록이 없거나 손상되었습니다.'});continue;}
     if(!baselineInfo){report.rows.push({...row,status:'missing-baseline',message:'기준 기록이 없습니다. 수정 전에 기준을 저장하세요.'});continue;}
     row.baselineId=baselineInfo.id;row.baselineName=baselineInfo.name;row.baselineCreatedAt=baselineInfo.createdAt;
-    if(Date.now()-started>=timeoutMs){report.rows.push({...row,status:'incomplete',error:'저장 비교 시간 제한에 도달했습니다. 다음 저장에서 다시 검사하세요.'});continue;}
+    if(Date.now()-started>=timeoutMs){report.rows.push({...row,status:'incomplete',error:`저장 비교 전체 시간 제한(${timeoutMs}ms)에 도달했습니다. 저장 검사에서 제한을 늘려 다시 검사하세요.`});continue;}
     try{
+      onRoute?.(routes.indexOf(entry));
       const baseline=await readGoalBaseline(root,baselineInfo.id);row.baselineChecksum=baseline.checksum;
-      const compared=await compareReviewedBaseline(content,baseline,runtime,route,Math.max(1,timeoutMs-(Date.now()-started)),runtimePolicy);
+      row.timeoutMs=Math.max(1,Math.min(routeTimeoutMs,timeoutMs-(Date.now()-started)));
+      const compared=await compareReviewedBaseline(content,baseline,runtime,route,row.timeoutMs,runtimePolicy);
       row.runtimeVerification=compared.runtimeVerification;row.comparisonRuntime=compared.comparisonRuntime;
       if(!compared.pair){report.rows.push({...row,status:'error',error:'현재 런타임이 원본 기준의 실행 결과를 재현하지 못했습니다.'});continue;}
       const pair=compared.pair;report.rows.push({...row,...applyGoalPartial(summarize(pair),reviewGoalItems(pair,selection.partials[route.id]))});
-    }catch(e){report.rows.push({...row,status:/시간|60초/.test(e.message)?'incomplete':'error',error:e.message});}
+    }catch(e){report.rows.push({...row,status:e.code==='TIMEOUT'||/시간/.test(e.message)?'incomplete':'error',error:e.message});}
+    finally{onRoute?.(null);}
   }
   report.counts=Object.fromEntries(['failed','changed','unchanged','missing-baseline','error','incomplete'].map(s=>[s,report.rows.filter(r=>r.status===s).length]));
   report.complete=!report.baselineErrors.length&&!report.counts.error&&!report.counts.incomplete&&!report.counts['missing-baseline'];
