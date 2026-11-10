@@ -243,6 +243,10 @@ jobs:
           export MACOS_NODE_ROOT="$(dirname "$(dirname "$(command -v node)")")"
           node scripts/capture-build-provenance.mjs
           npm run package:macos
+          for source in native/player/{CMakeLists.txt,main.cpp,ios-accessibility.hpp,ios-accessibility.mm,portable-save-files-ios.mm,screen.hpp}; do
+            cmp "$source" "$MACOS_STUDIO_OUT/Contents/Resources/engine/$source"
+            shasum -a 256 "$source"
+          done | tee .cache/build-provenance/macos-ios-source.sha256
           npm run test:creator-smoke -- --web --desktop --package "$MACOS_STUDIO_OUT"
           npm run benchmark:creator
       - uses: actions/upload-artifact@v4

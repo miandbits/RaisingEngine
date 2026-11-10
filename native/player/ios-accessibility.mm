@@ -257,7 +257,8 @@ struct IOSAccessibility::Impl {
     element.accessibilityLabel=string(name);
     element.accessibilityLanguage=locale;
     element.accessibilityTraits=traits;
-    element.accessibilityValue=nil;
+    NSString* value=string(e->GetAttribute<Rml::String>("aria-valuetext",""));
+    element.accessibilityValue=value.length ? value : nil;
     element.activate=nil;
     element.adjust=nil;
     if(button)element.activate=^BOOL(RaisingAXElement* item) { return activate(item); };

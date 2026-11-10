@@ -44,6 +44,6 @@ node scripts/test-ios-voiceover.mjs \
   /absolute/path/to/ios-export/build-iphonesimulator/native-player/Release-iphonesimulator/RaisingPlayer.app
 ```
 
-The public `XCUIVoiceOverService` moves VoiceOver focus and captures spoken output on the starter title and reading menu at 200% game text. The test opens the menu with an ordinary tap while VoiceOver is disabled, then re-enables VoiceOver to check its spoken controls. Gesture activation and physical-device acceptance remain separate. [Apple’s VoiceOver test service](https://developer.apple.com/documentation/xcuiautomation/xcuivoiceoverservice)
+The public `XCUIVoiceOverService` moves VoiceOver focus and captures spoken output on the starter title, reading menu and first schedule at 200% game text. The test uses ordinary taps with VoiceOver disabled to open the menu and start the game. It then re-enables VoiceOver to check spoken controls and the separately exposed Skill name and initial value. Gesture activation and physical-device acceptance remain separate. [Apple’s VoiceOver test service](https://developer.apple.com/documentation/xcuiautomation/xcuivoiceoverservice)
 
 The `iOS Simulator` GitHub workflow builds a fresh public starter export on the standard `xcode-27` runner and runs the focused Files round trip and VoiceOver speech cases. It retains the checkout identity, toolchain, XCTest bundles, and public fixture receipts. Local VoiceOver evidence is written under `.cache/ios-voiceover/run-*`.

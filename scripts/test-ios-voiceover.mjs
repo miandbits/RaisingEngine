@@ -42,9 +42,9 @@ const receipt = {
   gameJsonSha256:hash(gameJson), contentFingerprint:JSON.parse(gameJson).content.contentFingerprint,
   runnerSha256:hash(await readFile(new URL(import.meta.url))),
   testSourceSha256:hash(sourceFile), resultBundle:path.join(out,'result.xcresult'),
-  scope:'Real VoiceOver focus and utterances on the public starter title and menu.',
+  scope:'Real VoiceOver focus and utterances on the public starter title, menu and first schedule.',
   limits:[
-    'An ordinary tap with VoiceOver disabled opens the menu.',
+    'Ordinary taps with VoiceOver disabled open the menu and start the game.',
     'Gesture activation and physical-device acceptance remain separate.'
   ]
 };
@@ -67,7 +67,8 @@ try {
   logTool('/usr/bin/xcrun',['simctl','install',receipt.device,app],'install.log',120000);
   logTool('/usr/bin/xcodebuild',['test','-project',project,'-scheme','SystemUITests','-destination',
     'platform=iOS Simulator,id='+receipt.device,'-derivedDataPath',path.join(out,'DerivedData'),
-    '-parallel-testing-enabled','NO','-resultBundlePath',receipt.resultBundle,'CODE_SIGNING_ALLOWED=NO'],'test.log');
+    '-parallel-testing-enabled','NO','-resultBundlePath',receipt.resultBundle,
+    'IPHONEOS_DEPLOYMENT_TARGET=27.0','CODE_SIGNING_ALLOWED=NO'],'test.log');
   receipt.passed=true;
 } catch(error) {
   receipt.error=String(error);

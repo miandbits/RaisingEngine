@@ -942,8 +942,13 @@ public:
       if(e.contains("attributeIds")&&std::find(e.at("attributeIds").begin(),e.at("attributeIds").end(),a.at("id"))==e.at("attributeIds").end())continue;
       const int value=game.state.is_null()?a.value("initial",0):game.state.at("attributes").value(a.at("id").get<std::string>(),0);
       const auto max=a.value("max",100),min=a.value("min",0); const double percent=max==min?0:(value-min)*100.0/(max-min);
-      if(e.value("statsLayout","")=="compact")out+="<div class=\"compact-stat\"><span class=\"stat-name\">"+escape(a.value("label",""))+"</span><span class=\"stat-number\">"+std::to_string(value)+"</span><div class=\"stat-meter\"><div style=\"width:"+number(std::min(100.0,value/4.0))+"%;\"/></div></div>";
-      else out+="<div class=\"stat\"><span>"+escape(a.value("label",""))+"</span><span class=\"value\">"+std::to_string(value)+"</span><div class=\"bar\"><div style=\"width:"+number(percent)+"%;\"/></div></div>";
+      auto label=a.value("label","");
+      const auto stat_label=escape(label),stat_value=std::to_string(value);
+      // Attribute values use plain text; only the rendered label needs line breaks.
+      for(auto& c:label)if(c=='\n'||c=='\r'||c=='\t')c=' ';
+      const auto semantics=" aria-label=\""+escape(label)+"\" aria-valuetext=\""+stat_value+"\"";
+      if(e.value("statsLayout","")=="compact")out+="<div class=\"compact-stat\""+semantics+"><span class=\"stat-name\">"+stat_label+"</span><span class=\"stat-number\">"+stat_value+"</span><div class=\"stat-meter\"><div style=\"width:"+number(std::min(100.0,value/4.0))+"%;\"/></div></div>";
+      else out+="<div class=\"stat\""+semantics+"><span>"+stat_label+"</span><span class=\"value\">"+stat_value+"</span><div class=\"bar\"><div style=\"width:"+number(percent)+"%;\"/></div></div>";
     }
     if(kind=="relationships")for(const auto& c:display_content.at("characters"))for(const auto& r:c.at("relationships")) {
       int value=game.state.is_null()?r.value("initial",0):game.state.at("relationships").at(c.at("id").get<std::string>()).value(r.at("id").get<std::string>(),0);
