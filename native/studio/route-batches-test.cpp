@@ -5,6 +5,36 @@
 #include <QtWidgets>
 namespace {
 bool copyRoutesFixture(QString source,QString target){QDirIterator it(source,QDir::Files|QDir::NoDotAndDotDot,QDirIterator::Subdirectories);while(it.hasNext()){auto file=it.next();if(file.contains("/.studio/"))continue;auto dest=target+"/"+QDir(source).relativeFilePath(file);if(!QDir().mkpath(QFileInfo(dest).absolutePath())||!QFile::copy(file,dest))return false;}return true;}
+QString jsonString(QString value){auto bytes=QJsonDocument(QJsonArray{value}).toJson(QJsonDocument::Compact);return QString::fromUtf8(bytes.mid(1,bytes.size()-2));}
+bool savedCheckGateService(QString engine,QString fixture,QString gate){
+ if(!QDir().mkpath(fixture+"/apps/qt-studio"))return false;QFile script(fixture+"/apps/qt-studio/service.mjs");if(!script.open(QIODevice::WriteOnly))return false;
+ // This UI test owns a queue barrier, not a machine-speed-dependent replay.
+ // Keep the real service, immutable saved queue, status and cancellation APIs;
+ // only hold automatic work before launching its route worker. Other cases
+ // exercise real running-worker cancellation and process-tree retirement.
+ const auto source=QString::fromUtf8(R"JS(import {QtStudioService} from %1;
+import {createInterface} from 'node:readline';
+import {setTimeout as delay} from 'node:timers/promises';
+import {writeFile} from 'node:fs/promises';
+const service=new QtStudioService({shareViews:true});
+const start=service.goalRouteBatches.start.bind(service.goalRouteBatches);
+service.goalRouteBatches.start=async(...args)=>{
+ const record=service.savedGoalChecks.latest;
+ if(args[6]?.impact&&record){
+  await writeFile(%2,record.id);
+  while(record===service.savedGoalChecks.latest&&record.status==='queued')await delay(10);
+  throw Error('Controlled saved-check queue was cancelled or superseded.');
+ }
+ return start(...args);
+};
+for await(const line of createInterface({input:process.stdin,crlfDelay:Infinity})){
+ let request;try{request=JSON.parse(line);const reply=await service.handle(request);process.stdout.write(JSON.stringify({id:request.id,...reply})+'\n');}
+ catch(error){process.stdout.write(JSON.stringify({id:request?.id??null,...service.editor.reply(error.message)})+'\n');}
+}
+await service.goalRouteBatches.close();await service.releaseWorkflow.close();await service.releases.close();await service.editor.close();
+)JS").arg(jsonString(QUrl::fromLocalFile(engine+"/apps/qt-studio/service.mjs").toString(QUrl::FullyEncoded)),jsonString(gate));
+ return script.write(source.toUtf8())==source.toUtf8().size();
+}
 }
 class RouteBatchTests:public QObject {
  Q_OBJECT
@@ -46,8 +76,8 @@ private slots:
  }
  void savedChecksReleaseEditorAndPreserveTypingAcrossPolling(){
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());QTemporaryDir tmp(engine+"/.cache/qt-saved-check-XXXXXX");QVERIFY(tmp.isValid());QVERIFY(copyRoutesFixture(engine+"/examples/starlight-three-months",tmp.path()));
-  QFile source(tmp.path()+"/playtests/routes/success.json");QVERIFY(source.open(QIODevice::ReadOnly));auto route=QJsonDocument::fromJson(source.readAll()).object();source.close();route["id"]="a-long";route["name"]="Saved snapshot typing witness";route["checkpointEvery"]=1;route["checkpoints"]=QJsonArray();QJsonArray commands;for(int n=0;n<10000;++n)commands.append(QJsonObject{{"type","setSchedule"},{"activityIds",QJsonArray{"study","study","rest"}}});route["commands"]=commands;QFile input(tmp.path()+"/playtests/routes/a-long.json");QVERIFY(input.open(QIODevice::WriteOnly));input.write(QJsonDocument(route).toJson());input.close();
-  StudioWindow w(engine);w.show();w.openProject(tmp.path());QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);
+  QTemporaryDir service(engine+"/.cache/qt-saved-gate-XXXXXX");QVERIFY(service.isValid());const auto gate=service.path()+"/active-check";QVERIFY(savedCheckGateService(engine,service.path(),gate));auto gatedId=[&]{QFile file(gate);return file.open(QIODevice::ReadOnly)?QString::fromUtf8(file.readAll()):QString();};
+  StudioWindow w(service.path());w.show();w.openProject(tmp.path());QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);
   auto save=w.findChild<QAction*>("saveProject");QElapsedTimer elapsed;elapsed.start();save->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.lastGoalSaveCheck.isEmpty(),10000);QVERIFY2(elapsed.elapsed()<10000,qPrintable(QString::number(elapsed.elapsed())));QVERIFY(!w.currentView().value("dirty").toBool());QVERIFY(save->isEnabled());QVERIFY(!w.findChild<QDialog*>("goalImpactDialog"));
   auto polling=w.findChild<QTimer*>("goalSaveCheckPolling");auto status=w.findChild<QPushButton*>("goalSaveCheckStatus");QVERIFY(polling&&polling->isActive());QVERIFY(status&&status->isVisible());const auto firstId=w.lastGoalSaveCheck.value("id");const auto originalVersion=w.currentView().value("draftVersion");
   save->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(w.lastGoalSaveCheck.value("id"),firstId);QCOMPARE(w.currentView().value("draftVersion"),originalVersion);QVERIFY(!status->text().contains(tr(" · 이전 사본")));
@@ -62,8 +92,9 @@ private slots:
   const auto cancelledId=w.lastGoalSaveCheck.value("id");auto transport=w.findChild<StudioBridge*>();QVERIFY(transport);bool raced=false;
   auto cancelThenSave=connect(polling,&QTimer::timeout,&w,[&]{if(raced||!transport->backgroundBusy())return;raced=true;cancel->click();text->setText("A newer saved snapshot survives an earlier cancellation");QMetaObject::invokeMethod(text,"editingFinished");});
   QTRY_VERIFY_WITH_TIMEOUT(raced&&!w.busy(),10000);disconnect(cancelThenSave);QVERIFY(save->isEnabled());save->trigger();
-  QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&w.lastGoalSaveCheck.value("id")!=cancelledId,10000);const auto replacementId=w.lastGoalSaveCheck.value("id");QSignalSpy replacementTicks(polling,&QTimer::timeout);QTRY_VERIFY_WITH_TIMEOUT(replacementTicks.count()>=2,5000);QCOMPARE(w.lastGoalSaveCheck.value("id"),replacementId);QVERIFY(w.lastGoalSaveCheck.value("status")=="running"||w.lastGoalSaveCheck.value("status")=="queued");QVERIFY(cancel->isEnabled());
-  cancel->click();QTRY_VERIFY_WITH_TIMEOUT(w.lastGoalSaveCheck.value("status")=="cancelled"&&!polling->isActive(),10000);QVERIFY(!cancel->isEnabled());QVERIFY(!w.lastGoalSaveCheck.value("ok").toBool());dialog->close();
+  QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&w.lastGoalSaveCheck.value("id")!=cancelledId,10000);const auto replacementId=w.lastGoalSaveCheck.value("id");QSignalSpy replacementTicks(polling,&QTimer::timeout);QTRY_VERIFY_WITH_TIMEOUT(replacementTicks.count()>=2&&gatedId()==replacementId.toString(),5000);QCOMPARE(w.lastGoalSaveCheck.value("id"),replacementId);QCOMPARE(w.lastGoalSaveCheck.value("status").toString(),QString("queued"));QVERIFY(cancel->isEnabled());
+  auto cancellationEvidence=[&]{QJsonObject check;for(const auto key:{"id","batchId","status","stage","stopReason","error","completed","testedRevision"}){auto value=w.lastGoalSaveCheck.value(key);check[key]=value.isString()?QJsonValue(value.toString().left(4096)):value;}return QString::fromUtf8(QJsonDocument(QJsonObject{{"check",check},{"replacementId",replacementId},{"gatedId",gatedId()},{"foregroundBusy",w.busy()},{"backgroundBusy",transport->backgroundBusy()},{"pollingActive",polling->isActive()},{"cancelEnabled",cancel->isEnabled()},{"summary",dialog->findChild<QLabel*>("goalSaveCheckSummary")->text().left(4096)}}).toJson(QJsonDocument::Compact));};
+  cancel->click();QTRY_VERIFY2_WITH_TIMEOUT(w.lastGoalSaveCheck.value("status")=="cancelled"&&!polling->isActive(),qPrintable(cancellationEvidence()),10000);QVERIFY(!cancel->isEnabled());QVERIFY(!w.lastGoalSaveCheck.value("ok").toBool());dialog->close();
   save->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&polling->isActive(),10000);w.openProject(engine+"/examples/starlight-three-months");QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&w.currentView().value("root").toString()!=tmp.path(),15000);QVERIFY(w.lastGoalSaveCheck.isEmpty());QVERIFY(!polling->isActive());QVERIFY(!status->isVisible());
  }
  void savedCheckResultsSeparateRouteSuccessAndMissingBaselines(){

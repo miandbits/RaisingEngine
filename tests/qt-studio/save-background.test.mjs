@@ -20,20 +20,21 @@ async function fixture(t){
   const long={...ordinary.route,id:'a-long',name:'Long background witness',checkpoints:[],checkpointEvery:1,commands:Array.from({length:10000},()=>({type:'setSchedule',activityIds:['study','study','rest']}))};
   return {service,root,call,ordinary,long};
 }
-async function wait(call,predicate){const end=Date.now()+30000;while(Date.now()<end){const check=(await call('goalSaveCheckStatus')).goalSaveCheck;if(predicate(check))return check;await delay(20);}throw Error('Saved check wait expired');}
-async function assertCompleted(check,phase){
-  if(check.status==='completed')return;
+async function wait(call,predicate){const end=Date.now()+30000;let check;while(Date.now()<end){check=(await call('goalSaveCheckStatus')).goalSaveCheck;if(predicate(check))return check;await delay(20);}throw Error('Saved check wait expired: '+JSON.stringify({id:check?.id,batchId:check?.batchId,status:check?.status,stage:check?.stage,stopReason:check?.stopReason,error:String(check?.error??'').slice(0,4096),completed:check?.completed}));}
+async function assertStatus(check,expectedStatus,phase){
+  if(check.status===expectedStatus)return;
   // Keep diagnostics in the already-uploaded public-fixture smoke directory.
   // Do not copy content snapshots or unbounded command/observation histories.
   const clip=value=>typeof value==='string'?value.slice(0,4096):value;
   const failure=value=>value?{code:value.code,step:value.step,message:clip(value.message),messageTruncated:typeof value.message==='string'&&value.message.length>4096}:undefined;
   const summary=value=>({id:value.id,batchId:value.batchId,status:value.status,ok:value.ok,stale:value.stale,error:clip(value.error),errorTruncated:typeof value.error==='string'&&value.error.length>4096,stopReason:value.stopReason,completed:value.completed,reports:value.reports?.slice(0,128).map(r=>({id:r.id,status:r.status,ok:r.ok,executed:r.executed,commands:r.commands,failure:failure(r.failure)})),comparison:value.goalImpact?{id:value.goalImpact.id,ok:value.goalImpact.ok,complete:value.goalImpact.complete,stale:value.goalImpact.stale,archived:value.goalImpact.archived,error:clip(value.goalImpact.error),archiveError:clip(value.goalImpact.archiveError),counts:value.goalImpact.counts}:null});
-  const diagnostic={phase,platform:process.platform,node:process.version,check:summary(check)};
+  const diagnostic={phase,expectedStatus,platform:process.platform,node:process.version,check:summary(check)};
   if(check.file)try{diagnostic.persisted=summary(JSON.parse(await readFile(check.file,'utf8')));}catch(error){diagnostic.readError=clip(error.message);}
   await mkdir('.cache/creator-smoke',{recursive:true});
   const file=path.resolve('.cache/creator-smoke/background-save-failure-'+randomUUID()+'.json');await writeFile(file,JSON.stringify(diagnostic,null,2));
-  assert.equal(check.status,'completed',JSON.stringify({...diagnostic,file}));
+  assert.equal(check.status,expectedStatus,JSON.stringify({...diagnostic,file}));
 }
+const assertCompleted=(check,phase)=>assertStatus(check,'completed',phase);
 
 test('save returns while long work runs; edits stay responsive, repeated saves coalesce, captured inputs remain immutable',{timeout:60000},async t=>{
   const {service,root,call,ordinary,long}=await fixture(t);
@@ -42,7 +43,7 @@ test('save returns while long work runs; edits stay responsive, repeated saves c
   assert.ok(performance.now()-started<5000,'Save must return without replaying the long route.');
   assert.equal(service.editor.view().dirty,false);
   assert.ok(['queued','running'].includes(first.status));
-  await wait(call,j=>j.status==='running');
+  const running=await wait(call,j=>j.status==='running');
   const repeat=(await call('save')).goalSaveCheck;assert.equal(repeat.id,first.id,'Same saved content keeps the useful active job.');
   const doc=service.editor.documents.find(d=>d.kind==='project'),data={...doc.data,description:'New saved content'};
   const editStart=performance.now();await call('edit',{edit:{type:'replace',file:doc.file,data}});assert.ok(performance.now()-editStart<5000);
@@ -59,7 +60,17 @@ test('save returns while long work runs; edits stay responsive, repeated saves c
   const input=JSON.parse(await readFile(final.file.replace(/\.json$/,'.inputs.json'),'utf8'));
   assert.equal(input.content.project.description,'New saved content');assert.equal(input.entries.find(e=>e.route.id==='a-long').route.name,'Replacement short route');
   assert.equal(captured.content,undefined,'Large snapshots are released after launch.');
-  assert.ok([...service.goalRouteBatches.jobs.values()].some(j=>j.status==='cancelled'));
+  await assertStatus(service.goalRouteBatches.public(service.goalRouteBatches.get(root,running.batchId)),'cancelled','A newer save retires the exact previously running automatic worker');
+});
+
+test('explicit cancellation retires the observed running automatic saved-check worker',{timeout:30000},async t=>{
+  const {service,root,call,long}=await fixture(t);await call('goalRouteSave',{route:long,expectedRevision:null});
+  await call('save');const running=await wait(call,j=>j.status==='running');
+  await call('goalSaveCheckStop',{checkId:running.id});
+  const final=await wait(call,j=>!['queued','running','cancelling'].includes(j.status));
+  assert.equal(final.id,running.id);await assertStatus(final,'cancelled','Explicit stop of the currently running saved check');
+  await assertStatus(service.goalRouteBatches.public(service.goalRouteBatches.get(root,running.batchId)),'cancelled','Exact owned worker after explicit automatic cancellation');
+  assert.equal(final.ok,false);
 });
 
 test('automatic save checks wait behind manual work; cancellation and close retire queued work',{timeout:30000},async t=>{
@@ -105,7 +116,7 @@ test('cancellation during worker handoff retires the newly created automatic wor
   const saved=(await call('save')).goalSaveCheck;const worker=await handoff;
   assert.equal((await call('goalSaveCheckStop')).goalSaveCheck.status,'cancelled');
   release();await service.savedGoalChecks.draining;
-  assert.equal(manager.get(service.editor.root,worker.id).status,'cancelled');
+  await assertStatus(manager.public(manager.get(service.editor.root,worker.id)),'cancelled','Automatic cancellation during worker handoff');
   assert.equal((await call('goalSaveCheckStatus')).goalSaveCheck.id,saved.id);
   assert.equal((await call('goalSaveCheckStatus')).goalSaveCheck.status,'cancelled');
 });
