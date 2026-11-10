@@ -43,19 +43,28 @@ static void main_thread(dispatch_block_t work){if([NSThread isMainThread])work()
 static bool current(const std::shared_ptr<IOSPortableState>& state,const std::shared_ptr<IOSPortableRequest>& request){
   std::lock_guard<std::mutex> lock(state->mutex);return state->alive&&state->active==request&&!request->result;
 }
-static PortableSaveResult terminal(const std::shared_ptr<IOSPortableRequest>& request,PortableSaveStatus status,const std::string& error={}){
-  return {request->id,request->kind,status,status==PortableSaveStatus::chosen&&request->kind==PortableSaveKind::import_file?request->file:nullptr,error,request->displayName};
-}
 // Escaping Objective-C blocks capture C++ reference parameters as references.
 // These callbacks must own their state/request copies until presentation/copy ends.
-static void finish(std::shared_ptr<IOSPortableState> state,std::shared_ptr<IOSPortableRequest> request,PortableSaveStatus status,std::string error={}){
+static void finish(std::shared_ptr<IOSPortableState> state,std::shared_ptr<IOSPortableRequest> request,
+                   PortableSaveStatus status,std::string error={},
+                   std::shared_ptr<PortableSaveStagedFile> imported={}){
+  __block std::shared_ptr<PortableSaveStagedFile> pendingImport=std::move(imported);
   main_thread(^{
+    auto staged=std::move(pendingImport);
     {std::lock_guard<std::mutex> lock(state->mutex);if(!state->alive||state->active!=request||request->finishing||request->result)return;request->finishing=true;}
+    if(staged)request->file=std::move(staged);
     auto publish=^{
       request->picker.delegate=nil;request->picker.presentationController.delegate=nil;
       request->picker=nil;request->delegate=nil;request->coordinator=nil;
+      // UIKit can retain completion blocks after the result is polled. Move
+      // the stage out of the captured request so that it cannot retain the file.
+      auto file=std::move(request->file);
       std::lock_guard<std::mutex> lock(state->mutex);
-      if(state->alive&&state->active==request&&!request->result)request->result=terminal(request,request->cancelled?PortableSaveStatus::cancelled:status,error);
+      if(state->alive&&state->active==request&&!request->result){
+        const auto outcome=request->cancelled?PortableSaveStatus::cancelled:status;
+        if(outcome!=PortableSaveStatus::chosen||request->kind!=PortableSaveKind::import_file)file.reset();
+        request->result=PortableSaveResult{request->id,request->kind,outcome,std::move(file),error,request->displayName};
+      }
     };
     if(request->picker.presentingViewController)[request->picker dismissViewControllerAnimated:YES completion:publish];else publish();
   });
@@ -93,7 +102,8 @@ static void selected(std::shared_ptr<IOSPortableState> state,std::shared_ptr<IOS
     // asCopy may already return an accessible sandbox URL. A false scope return
     // is not itself failure; always balance a successful acquisition.
     const BOOL scoped=[selectedURL startAccessingSecurityScopedResource];
-    __block std::string error;__block bool copied=false;
+    __block std::string error;
+    __block std::shared_ptr<PortableSaveStagedFile> imported;
     @try {
       NSError* coordinationError=nil;
       [coordinator coordinateReadingItemAtURL:selectedURL options:0 error:&coordinationError byAccessor:^(NSURL* accessorURL){
@@ -108,7 +118,7 @@ static void selected(std::shared_ptr<IOSPortableState> state,std::shared_ptr<IOS
           std::ifstream input(inputPath,std::ios::binary);if(!input)throw portable_input::Error(portable_input::Code::unreadable);
           auto bytes=portable_input::bounded_read(input);
           if(request->cancelled)return;
-          request->file=make_stage(state);write_snapshot(request->file,bytes);copied=true;
+          imported=make_stage(state);write_snapshot(imported,bytes);
         }catch(const portable_input::Error& e){error=portable_input::code_name(e.code);}
          catch(const std::bad_alloc&){error="resource-limit";}
          catch(const std::exception&){error="write-failed";}
@@ -117,10 +127,13 @@ static void selected(std::shared_ptr<IOSPortableState> state,std::shared_ptr<IOS
       if(coordinationError&&!request->cancelled&&error.empty())error="unreadable";
     } @catch(NSException*) {error="unreadable";}
       @finally {if(scoped)[selectedURL stopAccessingSecurityScopedResource];}
+    auto outcome=PortableSaveStatus::chosen;
+    if(request->cancelled)outcome=PortableSaveStatus::cancelled;
+    else if(!imported||!error.empty())outcome=PortableSaveStatus::error;
+    if(outcome!=PortableSaveStatus::chosen)imported.reset();
     {std::lock_guard<std::mutex> lock(state->mutex);state->copying=false;}
-    if(request->cancelled)finish(state,request,PortableSaveStatus::cancelled);
-    else if(copied&&error.empty())finish(state,request,PortableSaveStatus::chosen);
-    else finish(state,request,PortableSaveStatus::error,error.empty()?"unreadable":error);
+    if(outcome==PortableSaveStatus::error&&error.empty())error="unreadable";
+    finish(state,request,outcome,std::move(error),std::move(imported));
   }});
 }
 static void present(std::shared_ptr<IOSPortableState> state,std::shared_ptr<IOSPortableRequest> request){
@@ -197,8 +210,12 @@ class IOSPortableBackend final:public PortableSaveFilesBackend {
     std::shared_ptr<IOSPortableRequest> request;
     {std::lock_guard<std::mutex> lock(state_->mutex);if(!state_->alive)return;state_->alive=false;request=std::move(state_->active);if(request)request->cancelled=true;}
     if(request)main_thread(^{
-      [request->coordinator cancel];request->picker.delegate=nil;request->picker.presentationController.delegate=nil;
-      [request->picker dismissViewControllerAnimated:NO completion:nil];request->picker=nil;request->delegate=nil;request->coordinator=nil;
+      [request->coordinator cancel];auto* picker=request->picker;
+      picker.delegate=nil;picker.presentationController.delegate=nil;
+      request->picker=nil;request->delegate=nil;request->coordinator=nil;
+      if(picker.presentingViewController)
+        [picker dismissViewControllerAnimated:NO completion:^{request->file.reset();}];
+      else request->file.reset();
     });
   }
 };

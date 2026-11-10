@@ -1,0 +1,103 @@
+name: iOS Simulator
+on:
+  push:
+    paths: &ios-paths
+      - '.github/workflows/ios-simulator.yml'
+      - 'apps/qt-studio/**'
+      - 'assets/**'
+      - 'config/native-dependencies.json'
+      - 'examples/my-first-raising-game/**'
+      - 'native/**'
+      - 'package*.json'
+      - 'packages/**'
+      - 'scripts/**'
+      - 'tests/ios-system-ui/**'
+  pull_request:
+    paths: *ios-paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-simulator-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-starter:
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      BUILD_JOBS: '3'
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      RAISING_NATIVE_TRANSPORT: process
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+      - name: Record source and Simulator toolchain
+        run: |
+          mkdir -p .cache/ios-simulator-ci
+          {
+            echo "source=$(git rev-parse HEAD)"
+            xcodebuild -version
+            xcrun simctl list runtimes available
+          } | tee .cache/ios-simulator-ci/environment.txt
+      - run: npm ci
+      - run: npm run build:headless
+      - run: npm run build:player
+      - name: Export the public starter through the project service
+        run: |
+          node --input-type=module <<'JS'
+          import path from 'node:path';
+          import {cp} from 'node:fs/promises';
+          import {QtStudioService} from './apps/qt-studio/service.mjs';
+
+          const root = path.resolve('.cache/ios-simulator-ci/starter');
+          const destination = path.resolve('.cache/ios-simulator-ci/export');
+          await cp('examples/my-first-raising-game', root, {recursive:true});
+          const service = new QtStudioService();
+          try {
+            await service.handle({method:'open', params:{root}});
+            const {exported} = await service.handle({method:'export', params:{
+              revision:service.editor.revision, target:'ios', destination,
+            }});
+            if (!exported.xcodeProject || exported.warning) throw Error(exported.warning ?? 'Xcode project missing');
+          } finally {
+            await service.editor.close();
+          }
+          JS
+      - name: Build the exported iOS application
+        id: build_ios
+        run: npm run build:ios -- --project .cache/ios-simulator-ci/export
+      - name: Test the actual Files picker on iPhone Simulator
+        run: |
+          node scripts/test-ios-system-ui.mjs .cache/ios-simulator-ci/export \
+            --project .cache/ios-simulator-ci/starter --family iphone --test files-roundtrip --text-scale 2
+      - name: Test VoiceOver navigation and speech on iPhone Simulator
+        if: ${{ !cancelled() && steps.build_ios.outcome == 'success' }}
+        run: |
+          node scripts/test-ios-voiceover.mjs \
+            .cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator/RaisingPlayer.app
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: public-starter-ios-simulator-evidence
+          path: |
+            .cache/ios-simulator-ci/environment.txt
+            .cache/ios-simulator-ci/export/ios-build.json
+            .cache/ios-simulator-ci/export/xcode-*.log
+            .cache/ios-system-ui/latest.json
+            .cache/ios-system-ui/run-*/result.json
+            .cache/ios-system-ui/run-*/*-staging.json
+            .cache/ios-system-ui/run-*/*.log
+            .cache/ios-system-ui/run-*/*.xcresult
+            .cache/ios-voiceover/run-*/result.json
+            .cache/ios-voiceover/run-*/*.log
+            .cache/ios-voiceover/run-*/*.xcresult
+          include-hidden-files: true
+          retention-days: 14

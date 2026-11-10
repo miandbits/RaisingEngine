@@ -19,6 +19,8 @@ node scripts/test-ios-system-ui.mjs /absolute/path/to/ios-export \
 
 Use `--family ipad` for the tablet case and `--text-scale 2` for 200% text. `--test files|input|selection|composition|japanese` selects one case; the default `all` runs the five ordinary cases. Composition tests inspect or add keyboards through Settings on the newly created simulator only. The export must contain `build-iphonesimulator/native-player/Release-iphonesimulator/RaisingPlayer.app`. The input project must have an authored `title` screen; the public “My first raising game” starter is the intended fixture source. The runner verifies the project fingerprint against the supplied app before making a cache-only copy.
 
+`--test files-roundtrip` saves a backup through the system Files picker to the local On My iPhone or On My iPad location. It terminates the player, starts a new process at the title, then reselects the exported file, cancels the first review, and confirms the second. The test checks exact restored state and commands. The runner records both process IDs and checks that the private staging directory is empty while each process is still running.
+
 The runner never changes the original export or source project. In the copied app it replaces the title with a small text-input probe and adds a readable record modal, while retaining the native executable byte for byte. A new uniquely named Simulator and app identifier isolate its records and settings. The test invokes ordinary game controls and real system UI; a localhost endpoint only returns the player's `--editor-events` diagnostics. It does not inject picker results or dispatch game commands.
 
 Evidence is written under `.cache/ios-system-ui/run-*`: the result receipt, source and fixture fingerprints, native executable hash, harness hash, authored probe, logs, and XCTest result bundles with screenshots and accessibility transcripts. `.cache/ios-system-ui/latest.json` points to the latest result. The runner shuts down and deletes only the Simulator it created. Use `--keep-failed-device` to retain that isolated device for diagnosis after a failure. Each external build or test process has a ten-minute limit; XCTest may spend part of that time waiting for UIKit animation notifications. A timeout remains a failed, incomplete run.
@@ -31,4 +33,17 @@ The same simulator/XCTest setup has also intermittently split Korean jamo during
 
 Run the independent reference with `python3 scripts/probe-ios-keyboard.py --family ipad --mode typing`, or use `--mode mid-syllable-rotation`. Use `--runtime RUNTIME_ID` to select another installed OS from `xcrun simctl list runtimes`. It builds a plain UIKit app, uses a fresh simulator, records actual keyboard input and screenshots, and deletes only that simulator. Results are under `.cache/ios-keyboard-reference/run-*`. `completed` means an observation was collected; `textMatched` records whether the expected text was produced. A mismatch exits unsuccessfully, and `productAcceptance` is always false. This reference does not certify engine behavior or physical devices.
 
-A pass covers only the selected focused Simulator regressions. It does not establish full game usability, save import/export correctness, cloud-provider behavior, physical-device behavior, signing, or App Store readiness. The broader portable-save acceptance matrix remains separate. A failure must preserve the actual screenshot and system hierarchy so an observed OS presentation delay or test-targeting problem is not mislabeled as a game defect.
+A pass covers the selected Simulator cases and local provider. The broader portable-save acceptance matrix includes other providers, malformed backups, physical devices, and distribution. A failed test keeps the available screenshot, system hierarchy and tool logs to distinguish a game defect from an OS presentation or targeting problem.
+
+## VoiceOver focus and speech
+
+Use Xcode 27 and an installed iOS 27 or later iPhone Simulator runtime with a built public starter export.
+
+```sh
+node scripts/test-ios-voiceover.mjs \
+  /absolute/path/to/ios-export/build-iphonesimulator/native-player/Release-iphonesimulator/RaisingPlayer.app
+```
+
+The public `XCUIVoiceOverService` moves VoiceOver focus and captures spoken output on the starter title and reading menu at 200% game text. The test opens the menu with an ordinary tap while VoiceOver is disabled, then re-enables VoiceOver to check its spoken controls. Gesture activation and physical-device acceptance remain separate. [Apple’s VoiceOver test service](https://developer.apple.com/documentation/xcuiautomation/xcuivoiceoverservice)
+
+The `iOS Simulator` GitHub workflow builds a fresh public starter export on the standard `xcode-27` runner and runs the focused Files round trip and VoiceOver speech cases. It retains the checkout identity, toolchain, XCTest bundles, and public fixture receipts. Local VoiceOver evidence is written under `.cache/ios-voiceover/run-*`.

@@ -3,7 +3,7 @@ import {spawn, execFileSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
-import {cp, mkdir, mkdtemp, open, readFile, writeFile} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, open, readFile, readdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {loadProject} from '../dist/packages/project-service/loader.js';
@@ -13,10 +13,23 @@ import {analyzeInputIdleMemory} from './lib/ios-input-memory.mjs';
 const args=process.argv.slice(2), root=process.cwd();
 const option=name=>{const i=args.indexOf(name);return i<0?undefined:args[i+1];};
 if(process.platform!=='darwin'||!args[0]||!option('--project')) {
-  throw Error('Usage: node scripts/test-ios-system-ui.mjs IOS_EXPORT --project PROJECT [--family iphone|ipad] [--test all|files|input|input-idle|selection|composition|japanese|composition-probe] [--text-scale 1|2] [--keep-failed-device]');
+  throw Error('Usage: node scripts/test-ios-system-ui.mjs IOS_EXPORT --project PROJECT [--family iphone|ipad] [--test all|files|files-roundtrip|input|input-idle|selection|composition|japanese|composition-probe] [--text-scale 1|2] [--keep-failed-device]');
 }
-const selection=option('--test')??'all';assert.ok(['all','files','input','input-idle','selection','composition','composition-probe','japanese'].includes(selection),'Use --test all, files, input, input-idle, selection, composition, japanese or composition-probe');
-const cases=selection==='input-idle'?['testOwnedTextInputIdle']:selection==='japanese'?['testJapaneseMarkedComposition']:selection==='composition-probe'?['testKoreanMidSyllableRotation']:selection==='selection'?['testNativeSelectionAndFieldSwitching']:selection==='composition'?['testKoreanCompositionRotation']:selection==='input'?['testOwnedTextInputRotation']:selection==='files'?['testFilesKeyboardBackgroundRotationCancel']:['testFilesKeyboardBackgroundRotationCancel','testOwnedTextInputRotation','testNativeSelectionAndFieldSwitching','testKoreanCompositionRotation','testJapaneseMarkedComposition'];
+const selectedCases={
+  files:['testFilesKeyboardBackgroundRotationCancel'],
+  'files-roundtrip':['testFilesExportBackup','testFilesImportBackupAfterRelaunch'],
+  input:['testOwnedTextInputRotation'],
+  'input-idle':['testOwnedTextInputIdle'],
+  selection:['testNativeSelectionAndFieldSwitching'],
+  composition:['testKoreanCompositionRotation'],
+  japanese:['testJapaneseMarkedComposition'],
+  'composition-probe':['testKoreanMidSyllableRotation']
+};
+const selection=option('--test')??'all';
+assert.ok(selection==='all'||Object.hasOwn(selectedCases,selection),'Unknown system UI test selection');
+const cases=selection==='all'?[
+  ...selectedCases.files,...selectedCases.input,...selectedCases.selection,...selectedCases.composition,...selectedCases.japanese
+]:selectedCases[selection];
 const textScale=option('--text-scale')??'1';assert.ok(['1','2'].includes(textScale),'Use --text-scale 1 or 2');
 const family=option('--family')??'iphone';assert.ok(['iphone','ipad'].includes(family));
 const keepFailed=args.includes('--keep-failed-device'), source=path.resolve(args[0]), project=path.resolve(option('--project'));
@@ -40,6 +53,14 @@ const button=(id,y,label,action)=>({id,kind:'button',x:30,y,width:400,height:52,
 title.elements=[text('instructions',30,'Type a name, rotate, and continue typing.'),{id:'name-input',kind:'input',userFieldId:'system-ui-name',x:30,y:130,width:1000,height:70,color:'#263C36',fill:'#FFFDF6',fontSize:24},{id:'note-input',kind:'input',userFieldId:'system-ui-note',x:30,y:240,width:1000,height:70,color:'#263C36',fill:'#FFFDF6',fontSize:24},button('start',580,'Start','start'),{...button('load',640,'Files tools','openModal'),screenId:'system-records'}];
 title.readableLayout={items:[{elementId:'instructions'},{elementId:'name-input'},{elementId:'note-input'}],actions:['start','load']};
 authored.visual.screens.push({id:'system-records',label:'System UI probe',modal:true,elements:[{id:'slots',kind:'loadSlots',x:30,y:30,width:1000,height:540,color:'#263C36',fill:'#F5EFDF',fontSize:18},button('close',640,'Close','closeModal')],readableLayout:{items:[{elementId:'slots'}],actions:['close']}});
+if(selection==='files-roundtrip')for(const screen of authored.visual.screens) {
+  if(screen===title||screen.modal||!screen.readableLayout)continue;
+  screen.elements.push({...button('system-ui-files',640,'Files tools','openModal'),screenId:'system-records'});
+  screen.readableLayout={
+    items:screen.readableLayout.items.filter(item=>item.planningGuidance!=='first-use'),
+    actions:['system-ui-files']
+  };
+}
 const fixture=await buildSnapshot(loaded);assert.ok(fixture.ok,JSON.stringify(fixture.diagnostics));
 await mkdir(path.join(root,'.cache/ios-system-ui'),{recursive:true});
 const out=await mkdtemp(path.join(root,'.cache/ios-system-ui/run-')),app=path.join(out,'SystemUI.app');
@@ -52,14 +73,20 @@ await writeFile(path.join(app,'game/game.json'),JSON.stringify({...originalGame,
 await writeFile(path.join(out,'fixture-project.json'),JSON.stringify(authored,null,2));
 await writeFile(path.join(out,'fixture-content.json'),JSON.stringify(fixture.snapshot));
 assert.equal(hash(await readFile(path.join(app,executable))),nativeHash,'Probe must not modify the native executable');
-let currentLog,device,passed=false;
-const results=[],receipt={ok:false,actualSystemPicker:false,sourceExport:source,sourceProject:project,sourceContentFingerprint:original.snapshot.contentFingerprint,fixtureContentFingerprint:fixture.snapshot.contentFingerprint,appExecutableSha256:nativeHash,appId,family,selection,textScale,results,limits:['Simulator only; no physical device or external provider acceptance.','Cache-only authored fixture with unchanged native executable; not the caller game release.','Selected focused regressions; not the complete import/export or malformed-save matrix.','All interactions use XCTest input; HTTP only exposes read-only editor-view diagnostics.']};
+let currentLog,device,exportedState,exportedPID,passed=false;
+const results=[],receipt={ok:false,actualSystemPicker:false,actualFilesRoundTrip:false,sourceExport:source,sourceProject:project,sourceContentFingerprint:original.snapshot.contentFingerprint,fixtureContentFingerprint:fixture.snapshot.contentFingerprint,appExecutableSha256:nativeHash,appId,family,selection,textScale,results,limits:['Simulator only; no physical device or external provider acceptance.','Cache-only authored fixture with unchanged native executable; not the caller game release.','Selected focused regressions, not the complete malformed-save or provider matrix.','All interactions use XCTest input; HTTP only exposes read-only editor-view diagnostics.']};
 const server=createServer(async(req,res)=>{
   try {
-    assert.equal(req.method,'GET');assert.equal(req.url,'/state');
+    assert.equal(req.method,'GET');
+    res.setHeader('Content-Type','application/json');
+    if(req.url==='/files-export') {
+      assert.ok(exportedState,'No successful export checkpoint yet');
+      res.end(JSON.stringify(exportedState));return;
+    }
+    assert.equal(req.url,'/state');
     const lines=(await readFile(currentLog,'utf8')).split('\n');let view;
     for(let i=lines.length-1;i>=0;i--) {try{const row=JSON.parse(lines[i]);if(row.event==='editor-view'){view=row.view;break;}}catch{}}
-    assert.ok(view,'No player diagnostics yet');res.setHeader('Content-Type','application/json');res.end(JSON.stringify(view));
+    assert.ok(view,'No player diagnostics yet');res.end(JSON.stringify(view));
   } catch(error) {res.statusCode=503;res.end(JSON.stringify({error:String(error)}));}
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -78,7 +105,15 @@ try {
   assert.ok(candidates.length,'Install a matching iOS simulator runtime in Xcode first');
   const selected=candidates.at(-1);device=sim('create','RaisingEngine system UI '+path.basename(out),selected.type,selected.runtime);
   receipt.device={id:device,...selected};await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
-  sim('boot',device);await tool('/usr/bin/xcrun',['simctl','bootstatus',device,'-b'],'boot.log');sim('install',device,app);
+  sim('boot',device);
+  await tool('/usr/bin/xcrun',['simctl','bootstatus',device,'-b'],'boot.log');
+  await tool('/usr/bin/xcrun',['simctl','install',device,app],'install.log',120000);
+  let filesSaveDirectory;
+  if(selection==='files-roundtrip') {
+    const appData=sim('get_app_container',device,appId,'data');
+    filesSaveDirectory=path.join(appData,'Documents','files-roundtrip');
+    await mkdir(filesSaveDirectory,{recursive:true});
+  }
   const harness=path.join(root,'tests/ios-system-ui'),copied=path.join(out,'harness');await cp(harness,copied,{recursive:true});
   const swift=path.join(copied,'SystemUITests.swift');
   const template=await readFile(swift,'utf8');receipt.harnessSourceSha256=hash(template);
@@ -87,7 +122,8 @@ try {
   await tool('/usr/bin/xcodebuild',['build-for-testing',...buildArgs],'build.log');
   for(const name of cases) {
     currentLog=path.join(out,name+'.stdout');
-    const launched=sim('launch','--stdout='+currentLog,'--stderr='+path.join(out,name+'.stderr'),device,appId,'--editor-events','--locale','en','--reading-layout','on','--text-scale',textScale);
+    const saveArgs=filesSaveDirectory?['--save',path.join(filesSaveDirectory,'save.json')]:[];
+    const launched=sim('launch','--stdout='+currentLog,'--stderr='+path.join(out,name+'.stderr'),device,appId,'--editor-events','--locale','en','--reading-layout','on','--text-scale',textScale,...saveArgs);
     const memory=[],pid=Number(/:\s*(\d+)\s*$/.exec(launched)?.[1]);
     const idleProbe=name==='testOwnedTextInputIdle';let memoryTimer;
     const sample=()=>{
@@ -115,9 +151,34 @@ try {
       await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
       assert.ok(receipt.inputIdleMemory.diagnosticPass,'Focused idle physical footprint exceeded 8 MiB overall or a median 1 MiB/minute growth rate; inspect input-memory-samples.json');
     }
-    results.push({name,ok:true,actualUI:true,xcresult:path.join(out,name+'.xcresult')});receipt.actualSystemPicker=results.some(r=>r.name==='testFilesKeyboardBackgroundRotationCancel');await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));sim('terminate',device,appId);
+    if(name==='testFilesExportBackup') {
+      const transcript=await readFile(path.join(out,name+'.log'),'utf8');
+      const checkpoint=/FILES_EXPORT_STATE ([A-Za-z0-9+/=]+)/.exec(transcript);
+      assert.ok(checkpoint,'The export test must supply its canonical state checkpoint');
+      exportedState=JSON.parse(Buffer.from(checkpoint[1],'base64').toString('utf8'));
+      assert.ok(exportedState.state,'The export must contain started game state');
+      assert.ok(Number.isInteger(pid)&&pid>0,'The export process must have a simulator PID');
+      exportedPID=pid;
+    }
+    if(name==='testFilesImportBackupAfterRelaunch') {
+      assert.ok(Number.isInteger(pid)&&pid>0,'The import process must have a simulator PID');
+      assert.notEqual(pid,exportedPID,'The simulator must start a different player process to import the backup');
+    }
+    const result={name,ok:true,actualUI:true,pid,xcresult:path.join(out,name+'.xcresult')};
+    if(filesSaveDirectory) {
+      process.kill(pid,0);
+      const stagingEntries=await readdir(path.join(filesSaveDirectory,'portable-staging'));
+      await writeFile(path.join(out,name+'-staging.json'),JSON.stringify({pid,stagingEntries},null,2));
+      assert.deepEqual(stagingEntries,[],'Files must release owned staging files before restarting the player');
+      result.portableStagingEntries=stagingEntries.length;
+    }
+    results.push(result);
+    receipt.actualSystemPicker=results.some(r=>r.name==='testFilesKeyboardBackgroundRotationCancel'||r.name==='testFilesExportBackup');
+    receipt.actualFilesRoundTrip=selectedCases['files-roundtrip'].every(name=>results.some(r=>r.name===name));
+    await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
+    sim('terminate',device,appId);
   }
-  passed=true;receipt.ok=true;receipt.actualSystemPicker=results.some(r=>r.name==='testFilesKeyboardBackgroundRotationCancel');
+  passed=true;receipt.ok=true;
 } catch(error) {receipt.error=String(error);throw error;}
 finally {
   receipt.finishedAt=new Date().toISOString();receipt.keptDevice=!!device&&!passed&&keepFailed;

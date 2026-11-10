@@ -6,10 +6,12 @@ final class SystemUITests: XCTestCase {
   let appID = "__APP_ID__"
   let endpoint = "__READ_ONLY_URL__"
   override func setUpWithError() throws { continueAfterFailure = false }
-  func view() throws -> [String: Any] {
+  func view(_ path:String?=nil) throws -> [String: Any] {
     let done=expectation(description:"Read-only player diagnostics")
+    let base=URL(string:endpoint)!
+    let url=path.map { base.deletingLastPathComponent().appendingPathComponent($0) } ?? base
     var bytes:Data?,failure:Error?
-    URLSession.shared.dataTask(with:URL(string:endpoint)!) {data,_,error in bytes=data;failure=error;done.fulfill()}.resume()
+    URLSession.shared.dataTask(with:url) {data,_,error in bytes=data;failure=error;done.fulfill()}.resume()
     wait(for:[done],timeout:10)
     if let failure {throw failure}
     return try XCTUnwrap(JSONSerialization.jsonObject(with:XCTUnwrap(bytes)) as? [String:Any])
@@ -105,6 +107,119 @@ final class SystemUITests: XCTestCase {
     XCUIDevice.shared.orientation = .portrait;RunLoop.current.run(until:Date().addingTimeInterval(2))
     try geometry(false);try record(app,"files-cancelled-portrait")
     for key in ["state","commands","scheduleDraft"] {XCTAssertEqual(try canonical(before[key] ?? NSNull()),try canonical(view()[key] ?? NSNull()),key+" must be unchanged")}
+  }
+  func testFilesExportBackup() throws {
+    let app=filesPlayer()
+    try tap(app,"start")
+    let before=try backupState()
+    XCTAssertFalse(before["state"] is NSNull,"Start the game through its title control")
+    try tap(app,"system-ui-files")
+    try tapRecordControl(app,"system-records__slots-portable-export")
+    try waitStatus("picking-export")
+    try waitForFiles(app)
+    try openLocalFiles(app)
+    try record(app,"files-export-local-destination")
+    let save=app.buttons["Save"].firstMatch
+    XCTAssertTrue(save.waitForExistence(timeout:10) && save.isHittable)
+    save.tap()
+    try waitStatus("idle")
+    XCTAssertEqual((try view()["portableSave"] as? [String:Any])?["notice"] as? String,"Exported a backup of current progress.")
+    XCTAssertEqual(try canonical(before),try canonical(backupState()))
+    try record(app,"files-export-confirmed")
+    print("FILES_EXPORT_STATE "+(try canonical(before)).base64EncodedString())
+  }
+  func testFilesImportBackupAfterRelaunch() throws {
+    let app=filesPlayer()
+    XCTAssertEqual(try view()["screenId"] as? String,"title")
+    let before=try backupState()
+    XCTAssertTrue(before["state"] is NSNull,"Import must start in a new app process before a game has started")
+    try tap(app,"load")
+    try chooseFilesBackup(app,"files-import-before-cancel")
+    XCTAssertEqual(try canonical(before),try canonical(backupState()))
+    try tap(app,"engine-portable-cancel")
+    try waitStatus("idle")
+    XCTAssertEqual((try view()["portableSave"] as? [String:Any])?["notice"] as? String,"Backup operation cancelled.")
+    XCTAssertEqual(try canonical(before),try canonical(backupState()))
+    try record(app,"files-import-review-cancelled")
+    try chooseFilesBackup(app,"files-import-before-confirm")
+    try tap(app,"engine-portable-confirm")
+    try waitStatus("idle")
+    XCTAssertEqual(try canonical(view("files-export")),try canonical(backupState()))
+    try record(app,"files-import-restored")
+  }
+  func chooseFilesBackup(_ app:XCUIApplication,_ checkpoint:String) throws {
+    try tapRecordControl(app,"system-records__slots-portable-import")
+    try waitStatus("picking-import")
+    try waitForFiles(app)
+    let backup=NSPredicate(format:"label BEGINSWITH %@ OR identifier == %@","raising-save","raising-save.json")
+    if fileElement(app,backup,timeout:1)==nil {try openLocalFiles(app)}
+    let source=try XCTUnwrap(fileElement(app,backup,timeout:12),"Files must expose the real exported JSON")
+    try record(app,checkpoint+"-files-item")
+    source.tap()
+    try waitStatus("review")
+    try record(app,checkpoint)
+  }
+  func filesPlayer() -> XCUIApplication {
+    let app=XCUIApplication(bundleIdentifier:appID);app.activate()
+    XCTAssertTrue(app.wait(for:.runningForeground,timeout:15))
+    XCUIDevice.shared.orientation = .portrait
+    RunLoop.current.run(until:Date().addingTimeInterval(1))
+    return app
+  }
+  func backupState() throws -> [String:Any] {
+    let ui=try view()
+    return Dictionary(uniqueKeysWithValues:["state","commands","scheduleDraft","timeline"].map {($0,ui[$0] ?? NSNull())})
+  }
+  func tapRecordControl(_ app:XCUIApplication,_ id:String) throws {
+    for _ in 0..<12 {
+      let layout=try XCTUnwrap(view()["readingLayout"] as? [String:Any])
+      let controls=try XCTUnwrap(layout["controls"] as? [[String:Any]])
+      let control=try XCTUnwrap(controls.first(where:{$0["id"] as? String==id}),id)
+      let pane=try XCTUnwrap(layout["reading-main"] as? [String:Any])
+      let y=try XCTUnwrap(control["y"] as? Double),height=try XCTUnwrap(control["height"] as? Double)
+      let top=try XCTUnwrap(pane["y"] as? Double),extent=try XCTUnwrap(pane["clientHeight"] as? Double)
+      if y>=top && y+height<=top+extent {try tap(app,id);return}
+      let origin=app.coordinate(withNormalizedOffset:CGVector(dx:0,dy:0))
+      let x=app.frame.width/2
+      let upper=origin.withOffset(CGVector(dx:x,dy:top+extent*0.22))
+      let lower=origin.withOffset(CGVector(dx:x,dy:top+extent*0.78))
+      if y<top {upper.press(forDuration:0.05,thenDragTo:lower)}
+      else {lower.press(forDuration:0.05,thenDragTo:upper)}
+      RunLoop.current.run(until:Date().addingTimeInterval(0.3))
+    }
+    XCTFail("Scrolling did not reveal "+id)
+  }
+  func waitForFiles(_ app:XCUIApplication) throws {
+    let deadline=Date().addingTimeInterval(45)
+    repeat {
+      if app.searchFields.firstMatch.exists || app.buttons["Search"].firstMatch.exists || app.buttons["Save"].firstMatch.exists {return}
+      RunLoop.current.run(until:Date().addingTimeInterval(0.25))
+    } while Date()<deadline
+    try record(app,"files-picker-unavailable")
+    XCTFail("No native Files controls appeared")
+  }
+  func fileElement(_ app:XCUIApplication,_ predicate:NSPredicate,timeout:TimeInterval) -> XCUIElement? {
+    let deadline=Date().addingTimeInterval(timeout)
+    repeat {
+      let queries=[app.buttons,app.cells,app.staticTexts,app.otherElements]
+      for query in queries {
+        if let item=query.matching(predicate).allElementsBoundByIndex.first(where:{$0.exists && $0.isHittable}) {return item}
+      }
+      RunLoop.current.run(until:Date().addingTimeInterval(0.25))
+    } while Date()<deadline
+    return nil
+  }
+  func openLocalFiles(_ app:XCUIApplication) throws {
+    let locations=NSPredicate(format:"label IN %@",["On My iPhone","On My iPad"])
+    let navigation=NSPredicate(format:"label IN %@",["Browse","Locations","Show Sidebar"])
+    if let location=fileElement(app,locations,timeout:3) {location.tap();return}
+    for _ in 0..<3 {
+      guard let back=fileElement(app,navigation,timeout:3) else {break}
+      back.tap()
+      if let location=fileElement(app,locations,timeout:3) {location.tap();return}
+    }
+    try record(app,"files-local-destination-unavailable")
+    XCTFail("Files must expose its local On My iPhone or On My iPad location")
   }
   func testOwnedTextInputRotation() throws {try exerciseOwnedTextInput()}
   func testOwnedTextInputIdle() throws {try exerciseOwnedTextInput(idleSeconds:480)}

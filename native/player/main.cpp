@@ -30,6 +30,9 @@
 
 #include "route-recording.hpp"
 #include "recollection.hpp"
+#ifdef SDL_PLATFORM_IOS
+#include "ios-accessibility.hpp"
+#endif
 #include "editor-preview.hpp"
 #ifdef SDL_PLATFORM_MACOS
 void configure_macos_player();
@@ -85,6 +88,32 @@ public:
   }
   SDL_Window* window;
   SDL_Renderer* renderer;
+#ifdef SDL_PLATFORM_IOS
+  std::unique_ptr<IOSAccessibility> accessibility;
+  uint64_t accessibility_generation=0;
+  Rml::Element* accessibility_root=nullptr;
+  std::string accessibility_surface;
+  void update_accessibility(bool editing) {
+    auto& ui=active_markup();
+    if(accessibility_generation!=document_generation) {
+      accessibility_generation=document_generation;
+      auto* root=preview()||editor_live ? nullptr : static_cast<Rml::Element*>(document);
+      auto surface=(recalling()?"recollection/":"")+ui.screen_id+"/"+ui.ui_modal;
+      if(root) {
+        if(ui.readable_active)surface+="/"+(ui.readable_view.rfind("timeline:",0)==0 ? "timeline" : ui.readable_view);
+        // An opaque canvas overlay replaces the underlying accessibility tree.
+        // The reading layout already renders only the active surface.
+        for(const auto* id:{"gallery","direction-overlay","ui-confirmation","ui-modal","timeline-overlay"}) {
+          if(ui.readable_active&&std::string_view(id)=="timeline-overlay")continue;
+          if(auto* overlay=root->GetElementById(id);overlay&&overlay->IsVisible(true)){root=overlay;surface+="/"+std::string(id);break;}
+        }
+      }
+      accessibility_root=root;
+      accessibility_surface=std::move(surface);
+    }
+    accessibility->update(accessibility_root,ui.labels,accessibility_surface,ui.locale,editing);
+  }
+#endif
   Rml::Context* context=nullptr;
   Rml::ElementDocument* document=nullptr;
   fs::path save_file;
@@ -194,6 +223,9 @@ public:
   std::map<SDL_JoystickID,SDL_Gamepad*> gamepads;
   PlayerApplication(Json bundle, fs::path root, SDL_Window* window, SDL_Renderer* renderer, fs::path save_file)
     :markup(game,bundle.at("assets"),std::move(root)),window(window),renderer(renderer),save_file(std::move(save_file)) {
+#ifdef SDL_PLATFORM_IOS
+    accessibility=std::make_unique<IOSAccessibility>(window,renderer);
+#endif
     portable_files=std::make_unique<raising_player::PortableSaveFiles>(window,portable_staging_root());
     markup.portable_available=portable_files->available();
     gallery_bundle=bundle;game.gallery_manifest=bundle.value("extensions",Json());
@@ -1045,6 +1077,9 @@ int main(int argc,char** argv) {
         SDL_FRect display_rect{};SDL_GetRenderLogicalPresentationRect(renderer,&display_rect);
         fonts.set_output_scale(display_rect.h/std::max(1,app.active_markup().height));
         app.apply_preview();app.update_timeline_visual();app.update_extensions();app.update_dialogue_visual();app.context->Update();app.update_tooltip();app.context->Update();system.UpdateKeyboard();
+#ifdef SDL_PLATFORM_IOS
+        app.update_accessibility(system.OwnsKeyboard());
+#endif
         if(app.editor_events){const auto keyboard_report=system.KeyboardReport();if(app.editor_input_dirty||keyboard_report!=last_keyboard_report){app.editor_input_dirty=false;last_keyboard_report=keyboard_report;std::cout<<Json({{"event","editor-view"},{"command",Json::object()},{"view",app.ui_state()}}).dump()<<std::endl;}}
         SDL_SetRenderDrawColor(renderer,19,35,28,255);SDL_RenderClear(renderer);render.BeginFrame();app.context->Render();render.EndFrame();app.after_slot_frame();app.capture_reading_frame();
         if(wait_frames>0)--wait_frames;
@@ -1110,6 +1145,9 @@ int main(int argc,char** argv) {
       }
       report["final"]=app.ui_state();report["elapsedMs"]=SDL_GetTicks()-automation_started;report["ok"]=true;
       if(!report_file.empty()){fs::create_directories(report_file.parent_path());std::ofstream out(report_file);out<<report.dump(2);}
+#ifdef SDL_PLATFORM_IOS
+      app.accessibility->clear();
+#endif
       system.CloseKeyboard();if(app.document)app.document->Close();Rml::Shutdown();
     }
     SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();return 0;
