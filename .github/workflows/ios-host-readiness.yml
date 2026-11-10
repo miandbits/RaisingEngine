@@ -1,0 +1,103 @@
+name: iOS hosted Simulator readiness probe
+on:
+  push:
+    branches: [codex/ios-host-readiness]
+    paths: [.github/workflows/ios-host-readiness.yml]
+permissions:
+  contents: read
+jobs:
+  readiness:
+    runs-on: xcode-27
+    timeout-minutes: 16
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    steps:
+      - name: Boot iOS 27.2 and check app services
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, plistlib, subprocess, time
+
+          out = pathlib.Path(os.environ["RUNNER_TEMP"]) / "ios-host-readiness"
+          out.mkdir()
+          sim = ["/usr/bin/xcrun", "simctl"]
+          results = {"source": os.environ["GITHUB_SHA"], "primaryError": None, "cleanupErrors": {}}
+
+          def step(name, argv, seconds):
+              started = time.monotonic()
+              log = out / (name + ".log")
+              print(name, flush=True)
+              try:
+                  with log.open("w") as stream:
+                      subprocess.run(argv, stdout=stream, stderr=subprocess.STDOUT,
+                                     timeout=seconds, check=True)
+                  return log.read_text()
+              finally:
+                  print(f"{name} finished after {time.monotonic() - started:.1f}s", flush=True)
+
+          def resources(prefix):
+              for name, argv in {
+                  "host": ["/bin/bash", "-c",
+                           'printf "ImageOS=%s\\nImageVersion=%s\\n" "$ImageOS" "$ImageVersion"; '
+                           'sw_vers; uname -m; sysctl hw.ncpu hw.memsize; uptime; vm_stat; df -h .'],
+                  "devices": [*sim, "list", "devices", "available"],
+              }.items():
+                  try:
+                      step(prefix + "-" + name, argv, 20)
+                  except (subprocess.SubprocessError, OSError) as error:
+                      print(f"{prefix}-{name}: {error}", flush=True)
+
+          device = None
+          resources("before")
+          try:
+              step("xcode", ["/usr/bin/xcodebuild", "-version"], 20)
+              step("runtimes", [*sim, "list", "runtimes", "available"], 20)
+              app = out / "Probe.app"
+              app.mkdir()
+              (out / "main.c").write_text("int main(void) { return 0; }\\n")
+              sdk = step("sdk", ["/usr/bin/xcrun", "--sdk", "iphonesimulator", "--show-sdk-path"], 20).strip()
+              step("compile", ["/usr/bin/xcrun", "clang", "-target", "arm64-apple-ios27.0-simulator",
+                               "-isysroot", sdk, "-fobjc-arc", "-framework", "UIKit",
+                               str(out / "main.m"), "-o", str(app / "Probe")], 30)
+              (app / "Info.plist").write_bytes(plistlib.dumps({
+                  "CFBundleExecutable": "Probe", "CFBundleIdentifier": "org.raisingengine.hostreadiness",
+                  "CFBundleName": "Probe", "CFBundlePackageType": "APPL",
+                  "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0",
+                  "CFBundleSupportedPlatforms": ["iPhoneSimulator"], "MinimumOSVersion": "27.0",
+                  "UIDeviceFamily": [1],
+              }))
+              device = step("create", [*sim, "create", "RaisingEngine readiness probe",
+                                       "com.apple.CoreSimulator.SimDeviceType.iPhone-17e",
+                                       "com.apple.CoreSimulator.SimRuntime.iOS-27-2"], 40).strip()
+              results["device"] = device
+              step("boot", [*sim, "boot", device], 60)
+              step("bootstatus", [*sim, "bootstatus", device, "-b"], 180)
+              step("listapps", [*sim, "listapps", device], 45)
+              step("settings", [*sim, "launch", device, "com.apple.Preferences"], 45)
+              step("install", [*sim, "install", device, str(app)], 120)
+              step("installed-path", [*sim, "get_app_container", device,
+                                      "org.raisingengine.hostreadiness", "app"], 30)
+              step("launch-probe", [*sim, "launch", device, "org.raisingengine.hostreadiness"], 45)
+          except (subprocess.SubprocessError, OSError) as error:
+              results["primaryError"] = str(error)
+          finally:
+              if device:
+                  for action in ["shutdown", "delete"]:
+                      try:
+                          step(action, [*sim, action, device], 45)
+                      except (subprocess.SubprocessError, OSError) as error:
+                          results["cleanupErrors"][action] = str(error)
+              resources("after")
+              (out / "result.json").write_text(json.dumps(results, indent=2) + "\\n")
+              print(json.dumps(results), flush=True)
+          raise SystemExit(bool(results["primaryError"] or results["cleanupErrors"]))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-host-readiness
+          path: |
+            ${{ runner.temp }}/ios-host-readiness/*.log
+            ${{ runner.temp }}/ios-host-readiness/result.json
+            ${{ runner.temp }}/ios-host-readiness/main.m
+          retention-days: 14
