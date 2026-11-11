@@ -146,6 +146,7 @@ jobs:
       - name: Archive the audited Windows payload
         run: node scripts/package-preview-artifacts.mjs
       - name: Record Windows package environment and installer signature
+        id: windows-signature
         shell: pwsh
         run: |
           $signature = Get-AuthenticodeSignature -LiteralPath $env:QT_INSTALLER_OUT
@@ -187,6 +188,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           Copy-Item .cache/qt-release/latest.json .cache/qt-release/portable-ko.json
       - name: Run the English installed pilot beside the published preview and verify safe uninstall
+        if: ${{ !cancelled() && steps.windows-signature.conclusion == 'success' }}
         env:
           RAISING_TEST_UI_LANGUAGE: en
         run: node scripts/test-windows-preview-upgrade.mjs

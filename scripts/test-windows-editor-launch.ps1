@@ -60,7 +60,10 @@ try {
   } while ($clock.Elapsed.TotalSeconds -lt 30)
   if ($window -eq [IntPtr]::Zero) { throw "No visible project launcher in locale $Locale" }
   if (![RaisingWindow]::PostMessage($window, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)) { throw 'Cannot close project launcher' }
-  if (!$app.WaitForExit(10000) -or $app.ExitCode -ne 0) { throw 'Installed editor did not exit normally' }
+  # StudioBridge::shutdown allows 10 seconds for EOF and 1.5 for cleanup.
+  $closing = [System.Diagnostics.Stopwatch]::StartNew()
+  if (!$app.WaitForExit(20000)) { throw 'Installed editor did not close within 20 seconds' }
+  if ($app.ExitCode -ne 0) { throw "Installed editor closed with exit code $($app.ExitCode)" }
   @{
     ok = $true
     locale = $Locale
@@ -68,6 +71,7 @@ try {
     editorSha256 = (Get-FileHash -LiteralPath $Editor -Algorithm SHA256).Hash.ToLowerInvariant()
     qpaPlatform = $env:QT_QPA_PLATFORM
     systemRuntimePathsRemoved = $true
+    closeElapsedMilliseconds = $closing.ElapsedMilliseconds
     exitCode = $app.ExitCode
   } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Evidence 'windows-launch.json')
 } finally {
