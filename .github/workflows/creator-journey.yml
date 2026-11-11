@@ -125,10 +125,6 @@ jobs:
           "EMSDK=$env:GITHUB_WORKSPACE/.cache/emsdk" >> $env:GITHUB_ENV
       - run: npm run build:web
       - run: npx playwright install chromium
-      - name: Test the creator journey on Windows
-        # npm.ps1 can consume the argument separator in PowerShell. Invoke
-        # Node directly so desktop/Web/portable flags reach the test scripts.
-        run: node scripts/smoke-creator.mjs --web --desktop
       - name: Package the current source with verified Qt sources
         run: |
           npm run prepare:qt-source
@@ -149,6 +145,20 @@ jobs:
           node scripts/build-qt-installer.mjs
       - name: Archive the audited Windows payload
         run: node scripts/package-preview-artifacts.mjs
+      - name: Record Windows package environment and installer signature
+        shell: pwsh
+        run: |
+          $signature = Get-AuthenticodeSignature -LiteralPath $env:QT_INSTALLER_OUT
+          if ($signature.Status.ToString() -ne 'NotSigned') { throw 'Unexpected installer signature status' }
+          $os = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+          @{
+            architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+            product = $os.ProductName
+            build = $os.CurrentBuildNumber
+            runnerImage = $env:ImageOS
+            runnerImageVersion = $env:ImageVersion
+            authenticodeStatus = $signature.Status.ToString()
+          } | ConvertTo-Json > .cache/build-provenance/windows-environment.json
       - name: Run the Korean pilot from the exact portable ZIP
         shell: pwsh
         env:
@@ -169,6 +179,10 @@ jobs:
           tar.exe -xf $zip.FullName -C $unpacked.FullName
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $env:QT_PACKAGE_OUT = Join-Path $unpacked.FullName RaisingStudio
+          $bundleManifest = Join-Path $env:QT_PACKAGE_OUT package-manifest.json
+          if ((Get-FileHash -LiteralPath $bundleManifest -Algorithm SHA256).Hash -ne $manifest.packageManifestSha256) {
+            throw 'Portable ZIP does not contain the audited package manifest'
+          }
           node scripts/test-qt-package.mjs --portable --creator-pilot
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           Copy-Item .cache/qt-release/latest.json .cache/qt-release/portable-ko.json
@@ -176,6 +190,9 @@ jobs:
         env:
           RAISING_TEST_UI_LANGUAGE: en
         run: node scripts/test-windows-preview-upgrade.mjs
+      - name: Test the creator journey on Windows
+        # npm.ps1 can consume the argument separator in PowerShell.
+        run: node scripts/smoke-creator.mjs --web --desktop
       - name: Publish Windows evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -291,7 +308,7 @@ jobs:
           done | tee .cache/build-provenance/macos-ios-source.sha256
           npm run test:creator-smoke -- --web --desktop --package "$MACOS_STUDIO_OUT"
           npm run benchmark:creator
-      - name: Archive the macOS preview candidate
+      - name: Verify the macOS archive and record its provenance
         shell: bash
         run: |
           version=$(node -p "require('./config/preview-candidate.json').version")
@@ -301,14 +318,11 @@ jobs:
           extracted=$(mktemp -d)
           trap 'rm -rf "$extracted"' EXIT
           /usr/bin/ditto -x -k "$archive" "$extracted"
-          /usr/bin/codesign --verify --deep --strict "$extracted/RaisingStudio.app"
-          (cd release/macos-preview && shasum -a 256 "$(basename "$archive")" > SHA256SUMS.txt)
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-preview-candidate-arm64
-          path: release/macos-preview/
-          if-no-files-found: error
-          retention-days: 14
+          candidate="$extracted/RaisingStudio.app"
+          /usr/bin/codesign --verify --deep --strict "$candidate"
+          cp "$candidate/Contents/Resources/package-manifest.json" .cache/build-provenance/macos-package-manifest.json
+          /usr/bin/codesign --display --verbose=4 "$candidate" > .cache/build-provenance/macos-signature.txt 2>&1
+          (cd release/macos-preview && shasum -a 256 "$(basename "$archive")") > .cache/build-provenance/macos-archive.sha256
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -21,7 +21,7 @@ const escape=s=>{if(/[\r\n]/.test(s))throw Error('Newline in installer path');re
 const files=[...manifest.files.map(f=>f.path),'package-manifest.json'];
 const dirs=new Set();for(const f of files){let d=dirname(f).replaceAll('\\','/');while(d!=='.'){dirs.add(d);d=dirname(d).replaceAll('\\','/');}}
 const lines=[
- 'Unicode true','RequestExecutionLevel user','SetCompressor /SOLID lzma','Name "Raising Studio Qt Preview"',
+ 'Unicode true','RequestExecutionLevel user','SetCompressor /SOLID lzma',`Name "Raising Studio ${version}"`,
  `OutFile "${escape(output)}"`,`InstallDir "$LOCALAPPDATA\\Programs\\RaisingEngine-${version}"`,
  '!include "MUI2.nsh"',`!insertmacro MUI_PAGE_LICENSE "${escape(join(bundle,'LICENSE'))}"`,
  '!define MUI_DIRECTORYPAGE_TEXT_TOP "$(FreshDirectoryHint)"','!insertmacro MUI_PAGE_DIRECTORY','!insertmacro MUI_PAGE_INSTFILES','!insertmacro MUI_UNPAGE_CONFIRM','!insertmacro MUI_UNPAGE_INSTFILES','!insertmacro MUI_LANGUAGE "English"','!insertmacro MUI_LANGUAGE "Korean"','!insertmacro MUI_LANGUAGE "Japanese"',
