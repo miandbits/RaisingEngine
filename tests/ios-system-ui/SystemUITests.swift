@@ -6,15 +6,54 @@ final class SystemUITests: XCTestCase {
   let appID = "__APP_ID__"
   let endpoint = "__READ_ONLY_URL__"
   override func setUpWithError() throws { continueAfterFailure = false }
+  private struct DiagnosticsError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+  }
   func view(_ path:String?=nil) throws -> [String: Any] {
-    let done=expectation(description:"Read-only player diagnostics")
     let base=URL(string:endpoint)!
     let url=path.map { base.deletingLastPathComponent().appendingPathComponent($0) } ?? base
-    var bytes:Data?,failure:Error?
-    URLSession.shared.dataTask(with:url) {data,_,error in bytes=data;failure=error;done.fulfill()}.resume()
-    wait(for:[done],timeout:10)
-    if let failure {throw failure}
-    return try XCTUnwrap(JSONSerialization.jsonObject(with:XCTUnwrap(bytes)) as? [String:Any])
+    let bytes=try readDiagnostics(url)
+    return try XCTUnwrap(JSONSerialization.jsonObject(with:bytes) as? [String:Any])
+  }
+  private func readDiagnostics(_ url:URL) throws -> Data {
+    let transient: Set<URLError.Code> = [.timedOut,.networkConnectionLost,.cannotConnectToHost]
+    var failures: [String] = []
+    for attempt in 1...2 {
+      let done=XCTestExpectation(description:"Read-only player diagnostics")
+      let request=URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:5)
+      var result: Result<Data,Error>?
+      let task=URLSession.shared.dataTask(with:request) {data,response,error in
+        defer {done.fulfill()}
+        if let error {
+          result = .failure(error)
+        } else if let response=response as? HTTPURLResponse, response.statusCode==200, let data {
+          result = .success(data)
+        } else {
+          let status=(response as? HTTPURLResponse)?.statusCode
+          result = .failure(DiagnosticsError(message:"Invalid diagnostics response for "+url.path+" (HTTP "+(status.map(String.init) ?? "unknown")+")"))
+        }
+      }
+      task.resume()
+      let failure: String
+      switch XCTWaiter.wait(for:[done],timeout:7) {
+      case .completed:
+        do {return try XCTUnwrap(result).get()}
+        catch let error as URLError where transient.contains(error.code) {
+          failure=String(describing:error)
+        }
+      case .timedOut:
+        task.cancel()
+        failure="no diagnostics response within 7 seconds"
+      default:
+        task.cancel()
+        throw DiagnosticsError(message:"Read-only diagnostics wait was interrupted for "+url.path)
+      }
+      let details="attempt \(attempt): "+failure
+      failures.append(details)
+      print("DIAGNOSTICS_READ "+url.path+" "+details)
+    }
+    throw DiagnosticsError(message:"Read-only diagnostics request failed for "+url.path+": "+failures.joined(separator:"; "))
   }
   func record(_ app:XCUIApplication,_ name:String) throws {
     let diagnostics=try JSONSerialization.data(withJSONObject:view(),options:[.sortedKeys,.prettyPrinted])

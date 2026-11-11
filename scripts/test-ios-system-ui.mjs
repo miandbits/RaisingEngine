@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {readFileSync} from 'node:fs';
+import {createWriteStream, readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
 import {cp, mkdir, mkdtemp, readFile, readdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
+import {finished} from 'node:stream/promises';
 import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
 import {analyzeInputIdleMemory} from './lib/ios-input-memory.mjs';
@@ -76,7 +77,14 @@ await writeFile(path.join(out,'fixture-content.json'),JSON.stringify(fixture.sna
 assert.equal(hash(await readFile(path.join(app,executable))),nativeHash,'Probe must not modify the native executable');
 let currentLog,device,exportedState,exportedPID,passed=false;
 const results=[],receipt={ok:false,actualSystemPicker:false,actualFilesRoundTrip:false,sourceExport:source,sourceProject:project,sourceContentFingerprint:original.snapshot.contentFingerprint,fixtureContentFingerprint:fixture.snapshot.contentFingerprint,appExecutableSha256:nativeHash,appId,family,selection,textScale,results,limits:['Simulator only; no physical device or external provider acceptance.','Cache-only authored fixture with unchanged native executable; not the caller game release.','Selected focused regressions, not the complete malformed-save or provider matrix.','All interactions use XCTest input; HTTP only exposes read-only editor-view diagnostics.']};
+const diagnosticsLog=createWriteStream(path.join(out,'diagnostics-http.log'));
+const diagnosticsLogFinished=finished(diagnosticsLog).catch(error=>String(error));
 const server=createServer(async(req,res)=>{
+  const started=Date.now();
+  res.setHeader('Connection','close');
+  res.once('close',()=>diagnosticsLog.write(JSON.stringify({at:new Date().toISOString(),
+    method:req.method,route:req.url,status:res.statusCode,sent:res.writableFinished,
+    elapsedMs:Date.now()-started})+'\n'));
   try {
     assert.equal(req.method,'GET');
     res.setHeader('Content-Type','application/json');
@@ -178,6 +186,8 @@ try {
 finally {
   receipt.keptDevice=!!device&&!passed&&keepFailed;
   server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
+  diagnosticsLog.end();
+  receipt.diagnosticsLogError=await diagnosticsLogFinished;
   if(device&&!receipt.keptDevice) {
     receipt.cleanupErrors=await cleanUpIOSSimulator(device,(action,id)=>
       tool('/usr/bin/xcrun',['simctl',action,id],action+'.log',60000));
