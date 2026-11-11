@@ -101,7 +101,7 @@ final class SystemUITests: XCTestCase {
     } while Date()<deadline
     XCTFail("Portable operation did not reach "+expected)
   }
-  func tap(_ app:XCUIApplication,_ id:String) throws {
+  func tap(_ app:XCUIApplication,_ id:String, contactDuration:TimeInterval?=nil) throws {
     let layout=try XCTUnwrap(view()["readingLayout"] as? [String:Any])
     let controls=try XCTUnwrap(layout["controls"] as? [[String:Any]])
     let c=try XCTUnwrap(controls.first(where:{$0["id"] as? String==id}),"Missing visible control "+id)
@@ -111,7 +111,9 @@ final class SystemUITests: XCTestCase {
     XCTAssertGreaterThanOrEqual(width,44);XCTAssertGreaterThanOrEqual(height,44)
     XCTAssertGreaterThanOrEqual(x,0);XCTAssertGreaterThanOrEqual(y,0)
     XCTAssertLessThanOrEqual(x+width,app.frame.width+1);XCTAssertLessThanOrEqual(y+height,app.frame.height+1)
-    app.coordinate(withNormalizedOffset:CGVector(dx:0,dy:0)).withOffset(CGVector(dx:x+width/2,dy:y+height/2)).tap()
+    let target=app.coordinate(withNormalizedOffset:CGVector(dx:0,dy:0)).withOffset(CGVector(dx:x+width/2,dy:y+height/2))
+    if let contactDuration {target.press(forDuration:contactDuration)}
+    else {target.tap()}
     RunLoop.current.run(until:Date().addingTimeInterval(0.4))
   }
   func geometry(_ landscape:Bool) throws {
@@ -179,7 +181,8 @@ final class SystemUITests: XCTestCase {
   }
   func testFilesExportBackup() throws {
     let app=filesPlayer()
-    try tap(app,"start")
+    // Give the newly attached Simulator digitizer one continuous first contact.
+    try tap(app,"start",contactDuration:0.20)
     let before=try backupState()
     XCTAssertFalse(before["state"] is NSNull,"Start the game through its title control")
     try tap(app,"system-ui-files")
