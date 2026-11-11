@@ -262,8 +262,8 @@ final class SystemUITests: XCTestCase {
     XCTFail("Scrolling did not reveal "+id)
   }
   func waitForFiles(_ app:XCUIApplication, importing:Bool=false) throws {
-    // The separate import service can be cold after restarting the player.
-    let deadline=Date().addingTimeInterval(importing ? 90 : 45)
+    // The Files service can be cold for either operation.
+    let deadline=Date().addingTimeInterval(90)
     let localTitle=NSPredicate(format:"label IN %@",["On My iPhone","On My iPad"])
     repeat {
       if app.searchFields.firstMatch.exists || app.buttons["Search"].firstMatch.exists || app.buttons["Save"].firstMatch.exists {return}
