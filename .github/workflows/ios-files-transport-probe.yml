@@ -2,7 +2,10 @@ name: iOS 26 Files diagnostics transport probe
 on:
   push:
     branches: [codex/ios-files-transport-probe]
-    paths: [.github/workflows/ios-files-transport-probe.yml]
+    paths:
+      - .github/workflows/ios-files-transport-probe.yml
+      - scripts/test-ios-system-ui.mjs
+      - tests/ios-system-ui/**
 permissions:
   contents: read
   actions: read
