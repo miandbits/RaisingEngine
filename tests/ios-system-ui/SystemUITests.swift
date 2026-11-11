@@ -189,7 +189,7 @@ final class SystemUITests: XCTestCase {
   func chooseFilesBackup(_ app:XCUIApplication,_ checkpoint:String) throws {
     try tapRecordControl(app,"system-records__slots-portable-import")
     try waitStatus("picking-import")
-    try waitForFiles(app)
+    try waitForFiles(app, importing:true)
     let backup=NSPredicate(format:"label BEGINSWITH %@ OR identifier == %@","raising-save","raising-save.json")
     if fileElement(app,backup,timeout:1)==nil {try openLocalFiles(app)}
     let source=try XCTUnwrap(fileElement(app,backup,timeout:12),"Files must expose the real exported JSON")
@@ -228,10 +228,13 @@ final class SystemUITests: XCTestCase {
     }
     XCTFail("Scrolling did not reveal "+id)
   }
-  func waitForFiles(_ app:XCUIApplication) throws {
-    let deadline=Date().addingTimeInterval(45)
+  func waitForFiles(_ app:XCUIApplication, importing:Bool=false) throws {
+    // The separate import service can be cold after restarting the player.
+    let deadline=Date().addingTimeInterval(importing ? 90 : 45)
+    let localTitle=NSPredicate(format:"label IN %@",["On My iPhone","On My iPad"])
     repeat {
       if app.searchFields.firstMatch.exists || app.buttons["Search"].firstMatch.exists || app.buttons["Save"].firstMatch.exists {return}
+      if importing && (app.buttons["Browse"].firstMatch.exists || app.staticTexts.matching(localTitle).firstMatch.exists) {return}
       RunLoop.current.run(until:Date().addingTimeInterval(0.25))
     } while Date()<deadline
     try record(app,"files-picker-unavailable")
