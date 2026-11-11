@@ -76,6 +76,7 @@ jobs:
             .cache/ios-simulator-ci/transfer/*.sha256
             .cache/ios-system-ui/latest.json
             .cache/ios-system-ui/run-*/result.json
+            .cache/ios-system-ui/run-*/files-export-checkpoint.json
             .cache/ios-system-ui/run-*/*-staging.json
             .cache/ios-system-ui/run-*/*.log
             .cache/ios-system-ui/run-*/*.stdout
