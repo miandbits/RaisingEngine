@@ -18,11 +18,11 @@ export function selectIOSSimulator(runtimes,{family='iphone',minimumMajor=16,run
   throw Error(`No available iOS ${minimumMajor}+ Simulator supports ${target}`);
 }
 
-export async function runBoundedAppleTool(command,args,{cwd,logFile,timeout=600000}) {
+export async function runBoundedAppleTool(command,args,{cwd,logFile,timeout=600000,env}) {
   const fd=await open(logFile,'w');
   let timer,forceTimer;
   try {
-    const child=spawn(command,args,{cwd,stdio:['ignore',fd.fd,fd.fd]});
+    const child=spawn(command,args,{cwd,env,stdio:['ignore',fd.fd,fd.fd]});
     let expired=false;
     timer=setTimeout(()=>{
       expired=true;

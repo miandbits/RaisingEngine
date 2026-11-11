@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {createWriteStream, readFileSync} from 'node:fs';
+import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {createServer} from 'node:http';
-import {cp, mkdir, mkdtemp, readFile, readdir, writeFile} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, readFile, readdir, rename, stat, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
-import {finished} from 'node:stream/promises';
 import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
 import {analyzeInputIdleMemory} from './lib/ios-input-memory.mjs';
@@ -75,32 +73,11 @@ await writeFile(path.join(app,'game/game.json'),JSON.stringify({...originalGame,
 await writeFile(path.join(out,'fixture-project.json'),JSON.stringify(authored,null,2));
 await writeFile(path.join(out,'fixture-content.json'),JSON.stringify(fixture.snapshot));
 assert.equal(hash(await readFile(path.join(app,executable))),nativeHash,'Probe must not modify the native executable');
-let currentLog,device,exportedState,exportedPID,passed=false;
-const results=[],receipt={ok:false,actualSystemPicker:false,actualFilesRoundTrip:false,sourceExport:source,sourceProject:project,sourceContentFingerprint:original.snapshot.contentFingerprint,fixtureContentFingerprint:fixture.snapshot.contentFingerprint,appExecutableSha256:nativeHash,appId,family,selection,textScale,results,limits:['Simulator only; no physical device or external provider acceptance.','Cache-only authored fixture with unchanged native executable; not the caller game release.','Selected focused regressions, not the complete malformed-save or provider matrix.','All interactions use XCTest input; HTTP only exposes read-only editor-view diagnostics.']};
-const diagnosticsLog=createWriteStream(path.join(out,'diagnostics-http.log'));
-const diagnosticsLogFinished=finished(diagnosticsLog).catch(error=>String(error));
-const server=createServer(async(req,res)=>{
-  const started=Date.now();
-  res.setHeader('Connection','close');
-  res.once('close',()=>diagnosticsLog.write(JSON.stringify({at:new Date().toISOString(),
-    method:req.method,route:req.url,status:res.statusCode,sent:res.writableFinished,
-    elapsedMs:Date.now()-started})+'\n'));
-  try {
-    assert.equal(req.method,'GET');
-    res.setHeader('Content-Type','application/json');
-    if(req.url==='/files-export') {
-      assert.ok(exportedState,'No successful export checkpoint yet');
-      res.end(JSON.stringify(exportedState));return;
-    }
-    assert.equal(req.url,'/state');
-    const lines=(await readFile(currentLog,'utf8')).split('\n');let view;
-    for(let i=lines.length-1;i>=0;i--) {try{const row=JSON.parse(lines[i]);if(row.event==='editor-view'){view=row.view;break;}}catch{}}
-    assert.ok(view,'No player diagnostics yet');res.end(JSON.stringify(view));
-  } catch(error) {res.statusCode=503;res.end(JSON.stringify({error:String(error)}));}
-});
-await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-const tool=(command,values,logName,timeout)=>runBoundedAppleTool(command,values,
-  {cwd:root,logFile:path.join(out,logName),timeout});
+let device,exportedPID,passed=false;
+const results=[],receipt={ok:false,actualSystemPicker:false,actualFilesRoundTrip:false,sourceExport:source,sourceProject:project,sourceContentFingerprint:original.snapshot.contentFingerprint,fixtureContentFingerprint:fixture.snapshot.contentFingerprint,appExecutableSha256:nativeHash,appId,family,selection,textScale,results,diagnosticsTransport:'simulator-stdout',limits:['Simulator only; no physical device or external provider acceptance.','Cache-only authored fixture with unchanged native executable; not the caller game release.','Selected focused regressions, not the complete malformed-save or provider matrix.','XCTest performs all interactions and reads diagnostics from per-launch player stdout.']};
+const exportCheckpoint=path.join(out,'files-export-checkpoint.json');
+const tool=(command,values,logName,timeout,env)=>runBoundedAppleTool(command,values,
+  {cwd:root,logFile:path.join(out,logName),timeout,env});
 try {
   const {runtimes}=JSON.parse(sim('list','runtimes','--json'));
   const selected=selectIOSSimulator(runtimes,{family,runtimeId:process.env.RAISING_IOS_SIMULATOR_RUNTIME,
@@ -109,7 +86,7 @@ try {
   const harness=path.join(root,'tests/ios-system-ui'),copied=path.join(out,'harness');await cp(harness,copied,{recursive:true});
   const swift=path.join(copied,'SystemUITests.swift');
   const template=await readFile(swift,'utf8');receipt.harnessSourceSha256=hash(template);
-  await writeFile(swift,template.replaceAll('__APP_ID__',appId).replaceAll('__READ_ONLY_URL__',`http://127.0.0.1:${server.address().port}/state`));
+  await writeFile(swift,template.replaceAll('__APP_ID__',appId));
   const buildArgs=['-project',path.join(copied,'SystemUI.xcodeproj'),'-scheme','SystemUITests','-derivedDataPath',path.join(out,'DerivedData'),'CODE_SIGNING_ALLOWED=NO'];
   await tool('/usr/bin/xcodebuild',['build-for-testing',...buildArgs,'-destination','generic/platform=iOS Simulator'],'build.log');
   device=sim('create','RaisingEngine system UI '+path.basename(out),selected.type,selected.runtime);
@@ -125,7 +102,8 @@ try {
   }
   const testDestination='platform=iOS Simulator,id='+device;
   for(const name of cases) {
-    currentLog=path.join(out,name+'.stdout');
+    const currentLog=path.join(out,name+'.stdout');
+    await writeFile(currentLog,'',{flag:'wx',mode:0o600});
     const saveArgs=filesSaveDirectory?['--save',path.join(filesSaveDirectory,'save.json')]:[];
     const launchLog=name+'-launch.log';
     await tool('/usr/bin/xcrun',['simctl','launch','--stdout='+currentLog,
@@ -134,6 +112,15 @@ try {
     const launched=await readFile(path.join(out,launchLog),'utf8');
     const pidLine=launched.split('\n').find(line=>line.startsWith(appId+':'));
     const memory=[],pid=Number(pidLine?.slice(appId.length+1).trim());
+    assert.ok(Number.isInteger(pid)&&pid>0,'Simulator launch must report its app PID');
+    process.kill(pid,0);
+    if(name==='testFilesImportBackupAfterRelaunch') {
+      assert.ok(exportedPID,'The import requires a successful export process');
+      assert.notEqual(pid,exportedPID,'The simulator must start a different player process to import the backup');
+    }
+    const {dev,ino}=await stat(currentLog,{bigint:true});
+    const diagnostics={session:appId,test:name,pid,stdout:currentLog,device:String(dev),inode:String(ino),exportedPID};
+    const testEnvironment={...process.env,TEST_RUNNER_RAISING_SYSTEM_UI_DIAGNOSTICS:JSON.stringify(diagnostics)};
     const idleProbe=name==='testOwnedTextInputIdle';let memoryTimer;
     const sample=()=>{
       try {
@@ -145,10 +132,10 @@ try {
         memory.push({at:Date.now(),rssKiB,cpuPercent,footprintKiB:process.footprint/1024});
       } catch(error) {memory.push({at:Date.now(),error:String(error)});}
     };
-    if(idleProbe){assert.ok(Number.isInteger(pid)&&pid>0,'Simulator launch must report its app PID');sample();memoryTimer=setInterval(sample,15000);}
+    if(idleProbe){sample();memoryTimer=setInterval(sample,15000);}
     try {
       await delay(1000);
-      await tool('/usr/bin/xcodebuild',['test-without-building',...buildArgs,'-destination',testDestination,'-parallel-testing-enabled','NO','-resultBundlePath',path.join(out,name+'.xcresult'),'-only-testing:SystemUITests/SystemUITests/'+name],name+'.log');
+      await tool('/usr/bin/xcodebuild',['test-without-building',...buildArgs,'-destination',testDestination,'-parallel-testing-enabled','NO','-resultBundlePath',path.join(out,name+'.xcresult'),'-only-testing:SystemUITests/SystemUITests/'+name],name+'.log',undefined,testEnvironment);
     } finally {
       clearInterval(memoryTimer);
       if(idleProbe){sample();await writeFile(path.join(out,'input-memory-samples.json'),JSON.stringify(memory,null,2));}
@@ -160,19 +147,6 @@ try {
       await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
       assert.ok(receipt.inputIdleMemory.diagnosticPass,'Focused idle physical footprint exceeded 8 MiB overall or a median 1 MiB/minute growth rate; inspect input-memory-samples.json');
     }
-    if(name==='testFilesExportBackup') {
-      const transcript=await readFile(path.join(out,name+'.log'),'utf8');
-      const checkpoint=/FILES_EXPORT_STATE ([A-Za-z0-9+/=]+)/.exec(transcript);
-      assert.ok(checkpoint,'The export test must supply its canonical state checkpoint');
-      exportedState=JSON.parse(Buffer.from(checkpoint[1],'base64').toString('utf8'));
-      assert.ok(exportedState.state,'The export must contain started game state');
-      assert.ok(Number.isInteger(pid)&&pid>0,'The export process must have a simulator PID');
-      exportedPID=pid;
-    }
-    if(name==='testFilesImportBackupAfterRelaunch') {
-      assert.ok(Number.isInteger(pid)&&pid>0,'The import process must have a simulator PID');
-      assert.notEqual(pid,exportedPID,'The simulator must start a different player process to import the backup');
-    }
     const result={name,ok:true,actualUI:true,pid,xcresult:path.join(out,name+'.xcresult')};
     if(filesSaveDirectory) {
       process.kill(pid,0);
@@ -180,6 +154,17 @@ try {
       await writeFile(path.join(out,name+'-staging.json'),JSON.stringify({pid,stagingEntries},null,2));
       assert.deepEqual(stagingEntries,[],'Files must release owned staging files before restarting the player');
       result.portableStagingEntries=stagingEntries.length;
+    }
+    if(name==='testFilesExportBackup') {
+      const transcript=await readFile(path.join(out,name+'.log'),'utf8');
+      const checkpoint=/FILES_EXPORT_STATE ([A-Za-z0-9+/=]+)/.exec(transcript);
+      assert.ok(checkpoint,'The export test must supply its canonical state checkpoint');
+      const state=JSON.parse(Buffer.from(checkpoint[1],'base64').toString('utf8'));
+      assert.ok(state.state,'The export must contain started game state');
+      const pending=exportCheckpoint+'.pending';
+      await writeFile(pending,JSON.stringify({session:appId,pid,state}),{flag:'wx',mode:0o600});
+      await rename(pending,exportCheckpoint);
+      exportedPID=pid;
     }
     results.push(result);
     receipt.actualSystemPicker=results.some(r=>r.name==='testFilesKeyboardBackgroundRotationCancel'||r.name==='testFilesExportBackup');
@@ -191,9 +176,6 @@ try {
 } catch(error) {receipt.error=String(error);throw error;}
 finally {
   receipt.keptDevice=!!device&&!passed&&keepFailed;
-  server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
-  diagnosticsLog.end();
-  receipt.diagnosticsLogError=await diagnosticsLogFinished;
   if(device&&!receipt.keptDevice) {
     receipt.cleanupErrors=await cleanUpIOSSimulator(device,(action,id)=>
       tool('/usr/bin/xcrun',['simctl',action,id],action+'.log',60000));
