@@ -106,6 +106,12 @@ try {
   const selected=selectIOSSimulator(runtimes,{family,runtimeId:process.env.RAISING_IOS_SIMULATOR_RUNTIME,
     deviceType:process.env.RAISING_IOS_SIMULATOR_DEVICE_TYPE});
   receipt.device=selected;await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
+  const harness=path.join(root,'tests/ios-system-ui'),copied=path.join(out,'harness');await cp(harness,copied,{recursive:true});
+  const swift=path.join(copied,'SystemUITests.swift');
+  const template=await readFile(swift,'utf8');receipt.harnessSourceSha256=hash(template);
+  await writeFile(swift,template.replaceAll('__APP_ID__',appId).replaceAll('__READ_ONLY_URL__',`http://127.0.0.1:${server.address().port}/state`));
+  const buildArgs=['-project',path.join(copied,'SystemUI.xcodeproj'),'-scheme','SystemUITests','-derivedDataPath',path.join(out,'DerivedData'),'CODE_SIGNING_ALLOWED=NO'];
+  await tool('/usr/bin/xcodebuild',['build-for-testing',...buildArgs,'-destination','generic/platform=iOS Simulator'],'build.log');
   device=sim('create','RaisingEngine system UI '+path.basename(out),selected.type,selected.runtime);
   receipt.device={id:device,...selected};await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
   await tool('/usr/bin/xcrun',['simctl','boot',device],'boot-start.log',60000);
@@ -117,17 +123,17 @@ try {
     filesSaveDirectory=path.join(appData,'Documents','files-roundtrip');
     await mkdir(filesSaveDirectory,{recursive:true});
   }
-  const harness=path.join(root,'tests/ios-system-ui'),copied=path.join(out,'harness');await cp(harness,copied,{recursive:true});
-  const swift=path.join(copied,'SystemUITests.swift');
-  const template=await readFile(swift,'utf8');receipt.harnessSourceSha256=hash(template);
-  await writeFile(swift,template.replaceAll('__APP_ID__',appId).replaceAll('__READ_ONLY_URL__',`http://127.0.0.1:${server.address().port}/state`));
-  const buildArgs=['-project',path.join(copied,'SystemUI.xcodeproj'),'-scheme','SystemUITests','-destination','platform=iOS Simulator,id='+device,'-derivedDataPath',path.join(out,'DerivedData'),'CODE_SIGNING_ALLOWED=NO'];
-  await tool('/usr/bin/xcodebuild',['build-for-testing',...buildArgs],'build.log');
+  const testDestination='platform=iOS Simulator,id='+device;
   for(const name of cases) {
     currentLog=path.join(out,name+'.stdout');
     const saveArgs=filesSaveDirectory?['--save',path.join(filesSaveDirectory,'save.json')]:[];
-    const launched=sim('launch','--stdout='+currentLog,'--stderr='+path.join(out,name+'.stderr'),device,appId,'--editor-events','--locale','en','--reading-layout','on','--text-scale',textScale,...saveArgs);
-    const memory=[],pid=Number(/:\s*(\d+)\s*$/.exec(launched)?.[1]);
+    const launchLog=name+'-launch.log';
+    await tool('/usr/bin/xcrun',['simctl','launch','--stdout='+currentLog,
+      '--stderr='+path.join(out,name+'.stderr'),device,appId,'--editor-events','--locale','en',
+      '--reading-layout','on','--text-scale',textScale,...saveArgs],launchLog,90000);
+    const launched=await readFile(path.join(out,launchLog),'utf8');
+    const pidLine=launched.split('\n').find(line=>line.startsWith(appId+':'));
+    const memory=[],pid=Number(pidLine?.slice(appId.length+1).trim());
     const idleProbe=name==='testOwnedTextInputIdle';let memoryTimer;
     const sample=()=>{
       try {
@@ -142,7 +148,7 @@ try {
     if(idleProbe){assert.ok(Number.isInteger(pid)&&pid>0,'Simulator launch must report its app PID');sample();memoryTimer=setInterval(sample,15000);}
     try {
       await delay(1000);
-      await tool('/usr/bin/xcodebuild',['test-without-building',...buildArgs,'-parallel-testing-enabled','NO','-resultBundlePath',path.join(out,name+'.xcresult'),'-only-testing:SystemUITests/SystemUITests/'+name],name+'.log');
+      await tool('/usr/bin/xcodebuild',['test-without-building',...buildArgs,'-destination',testDestination,'-parallel-testing-enabled','NO','-resultBundlePath',path.join(out,name+'.xcresult'),'-only-testing:SystemUITests/SystemUITests/'+name],name+'.log');
     } finally {
       clearInterval(memoryTimer);
       if(idleProbe){sample();await writeFile(path.join(out,'input-memory-samples.json'),JSON.stringify(memory,null,2));}
