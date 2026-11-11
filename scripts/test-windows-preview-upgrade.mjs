@@ -47,15 +47,15 @@ try {
   const pilot=spawnSync(process.execPath,['scripts/test-qt-package.mjs','--creator-pilot'],{
     env:process.env,windowsHide:true,stdio:'inherit',timeout:900000,
   });
+  assert.equal(run('reg.exe',['query',registryKey]),registration);
+  const after=await Promise.all(files.map(async file=>sha256(await readFile(file))));
+  assert.deepEqual(after,before);
   assert.equal(pilot.status,0,pilot.error?.message||'Installed candidate pilot failed');
   const proof=JSON.parse(await readFile('.cache/qt-release/latest.json','utf8'));
   assert.equal(proof.ok,true);
   assert.equal(proof.portable,false);
   assert.equal(proof.overwriteRejected,true);
   assert.equal(proof.uninstallPreservedUnknownFiles,true);
-  assert.equal(run('reg.exe',['query',registryKey]),registration);
-  const after=await Promise.all(files.map(async file=>sha256(await readFile(file))));
-  assert.deepEqual(after,before);
   const result={ok:true,priorReleaseVersion:published.version,priorReleaseSource:published.sourceCommit,
     priorInstallerSha256:priorAsset.sha256,priorEditorSha256:before[0],candidateReleaseVersion:candidate.version,
     priorInstallationAndRegistrationPreserved:true,candidatePilot:proof};

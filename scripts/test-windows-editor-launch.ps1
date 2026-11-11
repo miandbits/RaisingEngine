@@ -12,7 +12,9 @@ $env:RAISING_PROJECT_HISTORY = Join-Path $Evidence 'launcher-history.ini'
 Add-Type @'
 using System;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 public static class RaisingWindow {
   private delegate bool Callback(IntPtr handle, IntPtr data);
@@ -26,6 +28,11 @@ public static class RaisingWindow {
     uint code;
     if (!GetExitCodeProcess(handle, out code)) throw new Win32Exception(Marshal.GetLastWin32Error());
     return code;
+  }
+  public static string FileSha256(string file) {
+    using (var input = File.OpenRead(file))
+    using (var sha256 = SHA256.Create())
+      return BitConverter.ToString(sha256.ComputeHash(input)).Replace("-", "").ToLowerInvariant();
   }
   public static IntPtr Find(uint process, string expected) {
     IntPtr window = IntPtr.Zero;
@@ -75,16 +82,17 @@ try {
   if (!$app.WaitForExit(20000)) { throw 'Installed editor did not close within 20 seconds' }
   $exitCode = [RaisingWindow]::ExitCode($handle)
   if ($exitCode -ne 0) { throw "Installed editor closed with exit code $exitCode" }
-  @{
+  $receipt = @{
     ok = $true
     locale = $Locale
     title = $title
-    editorSha256 = (Get-FileHash -LiteralPath $Editor -Algorithm SHA256).Hash.ToLowerInvariant()
+    editorSha256 = [RaisingWindow]::FileSha256($Editor)
     qpaPlatform = $env:QT_QPA_PLATFORM
     systemRuntimePathsRemoved = $true
     closeElapsedMilliseconds = $closing.ElapsedMilliseconds
     exitCode = $exitCode
-  } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Evidence 'windows-launch.json')
+  } | ConvertTo-Json
+  [IO.File]::WriteAllText([IO.Path]::Combine($Evidence,'windows-launch.json'), $receipt)
 } finally {
   if (!$app.HasExited) { Stop-Process -Id $app.Id -Force }
 }
