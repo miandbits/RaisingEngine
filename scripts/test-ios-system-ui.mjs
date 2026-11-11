@@ -122,6 +122,9 @@ try {
     const diagnostics={session:appId,test:name,pid,stdout:currentLog,device:String(dev),inode:String(ino),exportedPID};
     const testEnvironment={...process.env,TEST_RUNNER_RAISING_SYSTEM_UI_DIAGNOSTICS:JSON.stringify(diagnostics)};
     const idleProbe=name==='testOwnedTextInputIdle';let memoryTimer;
+    const resultBundle=path.join(out,name+'.xcresult');
+    const selectedTests=['-only-testing:SystemUITests/SystemUITests/'+name];
+    if(name==='testFilesExportBackup')selectedTests.push('-only-testing:SystemUITests/SystemUIDiagnosticsTests');
     const sample=()=>{
       try {
         const [rssKiB,cpuPercent]=execFileSync('/bin/ps',['-o','rss=,%cpu=','-p',String(pid)],{encoding:'utf8',timeout:2000}).trim().split(/\s+/).map(Number);
@@ -135,7 +138,7 @@ try {
     if(idleProbe){sample();memoryTimer=setInterval(sample,15000);}
     try {
       await delay(1000);
-      await tool('/usr/bin/xcodebuild',['test-without-building',...buildArgs,'-destination',testDestination,'-parallel-testing-enabled','NO','-resultBundlePath',path.join(out,name+'.xcresult'),'-only-testing:SystemUITests/SystemUITests/'+name],name+'.log',undefined,testEnvironment);
+      await tool('/usr/bin/xcodebuild',['test-without-building',...buildArgs,'-destination',testDestination,'-parallel-testing-enabled','NO','-resultBundlePath',resultBundle,...selectedTests],name+'.log',undefined,testEnvironment);
     } finally {
       clearInterval(memoryTimer);
       if(idleProbe){sample();await writeFile(path.join(out,'input-memory-samples.json'),JSON.stringify(memory,null,2));}
@@ -147,7 +150,7 @@ try {
       await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
       assert.ok(receipt.inputIdleMemory.diagnosticPass,'Focused idle physical footprint exceeded 8 MiB overall or a median 1 MiB/minute growth rate; inspect input-memory-samples.json');
     }
-    const result={name,ok:true,actualUI:true,pid,xcresult:path.join(out,name+'.xcresult')};
+    const result={name,ok:true,actualUI:true,pid,xcresult:resultBundle};
     if(filesSaveDirectory) {
       process.kill(pid,0);
       const stagingEntries=await readdir(path.join(filesSaveDirectory,'portable-staging'));
@@ -157,6 +160,10 @@ try {
     }
     if(name==='testFilesExportBackup') {
       const transcript=await readFile(path.join(out,name+'.log'),'utf8');
+      const faultTests=[...transcript.matchAll(/^Test Case '-\[(?:[\w.]+\.)?SystemUIDiagnosticsTests (test\w+)\]' (passed|failed|skipped) /gm)];
+      assert.ok(faultTests.length,'Files XCTest must execute the diagnostics fault tests');
+      assert.ok(faultTests.every(test=>test[2]==='passed'),'All diagnostics fault tests must pass');
+      receipt.diagnosticsFaultTests=faultTests.map(test=>test[1]);
       const checkpoint=/FILES_EXPORT_STATE ([A-Za-z0-9+/=]+)/.exec(transcript);
       assert.ok(checkpoint,'The export test must supply its canonical state checkpoint');
       const state=JSON.parse(Buffer.from(checkpoint[1],'base64').toString('utf8'));
