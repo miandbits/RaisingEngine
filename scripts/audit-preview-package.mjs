@@ -1,15 +1,17 @@
-import {readFile,stat,readdir,mkdir,writeFile} from 'node:fs/promises';
-import {resolve,join,dirname} from 'node:path';
+import {readFile,readdir,mkdir,writeFile} from 'node:fs/promises';
+import {join,dirname} from 'node:path';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {auditReleaseMedia} from './release-sample-media.mjs';
-const root=resolve(process.env.QT_PACKAGE_OUT||'release/qt-preview/RaisingStudio');
+import {windowsPreviewCandidate} from './lib/preview-artifact-metadata.mjs';
+const {bundle:root,version}=await windowsPreviewCandidate();
 const manifest=JSON.parse(await readFile(join(root,'package-manifest.json'),'utf8'));
+assert.equal(manifest.releaseVersion,version);
 const present=new Map(manifest.files.map(f=>[f.path,f]));
 const required=['LICENSE','THIRD_PARTY_NOTICES.md','licenses/README.md','licenses/qt/LGPL-3.0-only.txt','licenses/qt/GPL-3.0-only.txt',
  'licenses/mingw/gcc/COPYING.RUNTIME','licenses/node/LICENSE-v22.14.0.txt','licenses/player/stb_image.txt','licenses/player/RmlUi-containers.txt',
  'licenses/player/Freetype.txt','licenses/player/libwebp.txt','licenses/player/libwebp-PATENTS.txt','licenses/player/miniaudio.txt','licenses/nlohmann-json.txt',
- 'fonts/NotoSansJP.ttf','fonts/OFL-NotoSansJP.txt',
+ 'fonts/NotoSansJP.ttf','fonts/OFL-NotoSansJP.txt','guides/README.md','FIRST-GAME.md',
  ...['ko','en','ja'].flatMap(l=>['translations/qtbase_'+l+'.qm','guides/'+l+'.md']),
  ...['react','react-dom','scheduler','NotoSansKR-OFL','nlohmann-json'].map(n=>'engine/dist/web/licenses/'+n+'.txt')];
 for(const file of required)assert.ok(present.has(file),'Missing notice/source/guide: '+file);

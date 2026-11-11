@@ -5,13 +5,15 @@ import {createRequire} from 'node:module';
 import {replaceReleaseMedia,auditReleaseMedia} from './release-sample-media.mjs';
 import {studioTemplates} from '../dist/packages/studio-service/templates.js';
 import {createPackagedEditorIdentity} from '../apps/qt-studio/editor-identity.mjs';
+import {windowsPreviewCandidate} from './lib/preview-artifact-metadata.mjs';
 
-const root=resolve('.'),out=resolve(process.env.QT_PACKAGE_OUT||'release/qt-preview/RaisingStudio');
+const candidate=await windowsPreviewCandidate();
+const root=resolve('.'),out=candidate.bundle;
 const qt=resolve(process.env.QT_STUDIO_OUT||'dist/qt-studio');
 const windows=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME||'dist/native-player-app');
 const web=resolve(process.env.RAISING_WEB_PLAYER_RUNTIME||'dist/web');
 const release=JSON.parse(await readFile('config/preview-release.json','utf8'));
-const editorIdentity=await createPackagedEditorIdentity(root,{platform:'win32',arch:'x64',releaseVersion:release.version,channel:release.channel});
+const editorIdentity=await createPackagedEditorIdentity(root,{platform:'win32',arch:'x64',releaseVersion:candidate.version,channel:candidate.channel});
 const qtSources=JSON.parse(await readFile('config/qt-corresponding-source.json','utf8'));
 const sourceDir=resolve(process.env.QT_SOURCE_ARCHIVES||'.cache/preview-release/qt-sources');
 for(const source of qtSources.archives){
@@ -60,7 +62,8 @@ await copy('LICENSE','LICENSE');await copy('licenses','licenses');await copy('TH
 for(const source of qtSources.archives)await copy(join(sourceDir,source.file),'licenses/qt/sources/'+source.file);
 await copy('config/qt-corresponding-source.json','licenses/qt/corresponding-source.json');
 await copy('docs/development/preview-license-review.md','licenses/README.md');
-await copy('docs/getting-started/preview','guides');
+for(const language of release.editorLanguages)await copy(`docs/getting-started/preview/${language}.md`,`guides/${language}.md`);
+await copy('docs/getting-started/creator-pilot.md','guides/README.md');
 await copy('docs/getting-started/first-game.md','FIRST-GAME.md');
 for(const doc of ['getting-started/first-game.md','development/platform-support.md','development/platform-capabilities.json','development/public-assets.md','development/qt-preview-release.md'])await copy('docs/'+doc,'engine/docs/'+doc);
 await copy('LICENSE','engine/LICENSE');await copy('THIRD_PARTY_NOTICES.md','engine/THIRD_PARTY_NOTICES.md');
@@ -95,6 +98,6 @@ async function inventory(dir){for(const e of await readdir(dir,{withFileTypes:tr
  if(e.isDirectory())await inventory(file);else{const bytes=await readFile(file),sha256=createHash('sha256').update(bytes).digest('hex');if(blocked.has(sha256))throw Error('Private reference asset in package: '+file);files.push({path:relative(out,file).replaceAll('\\','/'),bytes:bytes.length,sha256});}
 }}
 await inventory(out);files.sort((a,b)=>a.path.localeCompare(b.path));
-const manifest={version:1,product:'Raising Studio Qt',engineVersion:editorIdentity.engineVersion,editorIdentity,releaseVersion:release.version,channel:release.channel,publicReleaseReady:false,editorLanguages:release.editorLanguages,editorTranslationStatus:release.editorTranslationStatus,sourceCommit:editorIdentity.source.commit,sourceTreeDirty:editorIdentity.source.dirty,node:process.version,qt:'6.10.1',qtCorrespondingSource:qtSources.archives,templates,dependencies:[...dependencies.values()],files};
+const manifest={version:1,product:'Raising Studio Qt',engineVersion:editorIdentity.engineVersion,editorIdentity,releaseVersion:candidate.version,channel:candidate.channel,publicReleaseReady:false,editorLanguages:release.editorLanguages,editorTranslationStatus:release.editorTranslationStatus,sourceCommit:editorIdentity.source.commit,sourceTreeDirty:editorIdentity.source.dirty,node:process.version,qt:'6.10.1',qtCorrespondingSource:qtSources.archives,templates,dependencies:[...dependencies.values()],files};
 await writeFile(join(out,'package-manifest.json'),JSON.stringify(manifest,null,2));
 console.log(JSON.stringify({out,files:files.length,bytes:files.reduce((n,f)=>n+f.bytes,0),publicReleaseReady:false}));

@@ -51,8 +51,9 @@ test('Windows unsigned preview policy is explicit and cannot mark an Apple packa
 
 test('historical Windows publication approval cannot certify newly packaged artifacts',()=>{
  const policy={version:'0.1.0-preview.3',channel:'unsigned-preview',platform:'windows',architecture:'x64',publicReleaseReady:true,remainingReleaseChecks:[],signingPolicy:{ownerDecision:'unsigned-preview',status:'deferred'}};
- const manifest={sourceCommit:'a'.repeat(40),sourceTreeDirty:false,editorIdentity:{engineVersion:'0.1.0'}},files=[{file:'installer.exe',bytes:12,sha256:'b'.repeat(64)}],before=structuredClone(policy);
+ const manifest={releaseVersion:'0.1.0-preview.4',sourceCommit:'a'.repeat(40),sourceTreeDirty:false,editorIdentity:{engineVersion:'0.1.0',source:{tree:'b'.repeat(40)}}},files=[{file:'installer.exe',bytes:12,sha256:'b'.repeat(64)}],before=structuredClone(policy);
  const receipt=previewArtifactMetadata(policy,manifest,files);
+ assert.equal(receipt.version,'0.1.0-preview.4');assert.equal(receipt.sourceTree,'b'.repeat(40));assert.equal(receipt.historicalPublicationPolicy.version,'0.1.0-preview.3');
  assert.equal(receipt.publicReleaseReady,false);assert.equal(receipt.publicationStatus,'not-evaluated');assert.ok(receipt.remainingReleaseChecks.length);
  assert.equal(receipt.historicalPublicationPolicy.publicReleaseReady,true);assert.equal(receipt.historicalPublicationPolicy.platform,'windows');assert.deepEqual(receipt.historicalPublicationPolicy.signingPolicy,policy.signingPolicy);
  assert.deepEqual(receipt.files,files);assert.equal(receipt.sourceCommit,manifest.sourceCommit);assert.deepEqual(policy,before);assert.equal(receipt.signed,false);

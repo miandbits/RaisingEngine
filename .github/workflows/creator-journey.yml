@@ -75,10 +75,17 @@ jobs:
       QT_COMPILER: C:/Qt/Tools/mingw1310_64/bin
       QT_BUILD_TARGETS: RaisingStudioQt,qt-canvas-state-test,qt-first-game-test,qt-studio-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-editor-language-test,qt-readable-layout-test,qt-update-compatibility-test,qt-analysis-priorities-test,qt-resume-context-test,qt-route-batches-test,qt-editor-interaction-test,qt-layout-diagnostics-test,qt-surface-authoring-test,qt-creator-workflow-test,qt-release-settings-test,qt-analysis-periods-test,qt-presentation-update-test,qt-activity-board-test,qt-growth-authoring-test,qt-raising-screen-flow-test,qt-shared-section-test,qt-timeline-batch-test,qt-activity-workflow-test,qt-release-center-test
       QT_PACKAGE_OUT: release/qt-ci/RaisingStudio
-      QT_INSTALLER_OUT: release/qt-ci/RaisingStudio-P1-Windows.exe
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Resolve the Windows preview candidate name
+        shell: pwsh
+        run: |
+          $candidate = Get-Content config/preview-candidate.json -Raw | ConvertFrom-Json
+          "QT_INSTALLER_OUT=release/qt-ci/RaisingEngine-$($candidate.version)-windows-x64.exe" >> $env:GITHUB_ENV
+          "QT_PORTABLE_ARCHIVE=release/qt-ci/RaisingEngine-$($candidate.version)-windows-x64-portable.zip" >> $env:GITHUB_ENV
       - uses: actions/setup-node@v4
         with:
           node-version: '22.14.0'
@@ -133,8 +140,6 @@ jobs:
           node scripts/audit-preview-package.mjs
       - name: Test the packaged starter without developer tools on PATH
         run: node scripts/test-windows-first-game-package.mjs "$env:QT_PACKAGE_OUT"
-      - name: Test portable installation and exports
-        run: node scripts/test-qt-package.mjs --portable
       - name: Build the Windows installer
         shell: pwsh
         run: |
@@ -142,8 +147,35 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $env:NSIS_COMPILER = 'C:/Program Files (x86)/NSIS/makensis.exe'
           node scripts/build-qt-installer.mjs
-      - name: Test install, exported game, save/load and safe uninstall
-        run: npm run test:qt-package
+      - name: Archive the audited Windows payload
+        run: node scripts/package-preview-artifacts.mjs
+      - name: Run the Korean pilot from the exact portable ZIP
+        shell: pwsh
+        env:
+          RAISING_TEST_UI_LANGUAGE: ko
+        run: |
+          $manifest = Get-Content release/qt-ci/release-artifacts.json -Raw | ConvertFrom-Json
+          $head = git rev-parse HEAD
+          $tree = git rev-parse 'HEAD^{tree}'
+          if ($manifest.sourceCommit -ne $head -or $manifest.sourceTree -ne $tree -or $manifest.sourceTreeDirty -ne $false) {
+            throw 'Windows candidate does not identify the clean checked-out source'
+          }
+          $zip = Get-Item -LiteralPath $env:QT_PORTABLE_ARCHIVE
+          $pin = $manifest.files | Where-Object { $_.file -ceq $zip.Name }
+          if ($zip.Length -ne $pin.bytes -or (Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash -ne $pin.sha256) {
+            throw 'Portable ZIP hash mismatch'
+          }
+          $unpacked = New-Item -ItemType Directory (Join-Path $env:RUNNER_TEMP 'preview-portable')
+          tar.exe -xf $zip.FullName -C $unpacked.FullName
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:QT_PACKAGE_OUT = Join-Path $unpacked.FullName RaisingStudio
+          node scripts/test-qt-package.mjs --portable --creator-pilot
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Copy-Item .cache/qt-release/latest.json .cache/qt-release/portable-ko.json
+      - name: Run the English installed pilot beside the published preview and verify safe uninstall
+        env:
+          RAISING_TEST_UI_LANGUAGE: en
+        run: node scripts/test-windows-preview-upgrade.mjs
       - name: Publish Windows evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -189,18 +221,26 @@ jobs:
             .cache/first-game-web/run-*/*.png
             .cache/windows-first-game-package/result.json
             .cache/qt-release/latest.json
+            .cache/qt-release/portable-ko.json
             .cache/qt-release/run-*/evidence/*.json
             .cache/qt-release/run-*/evidence/*.txt
+            .cache/qt-release/run-*/evidence/*.png
+            .cache/windows-preview-upgrade/run-*/result.json
             .cache/preview-release/package-audit.json
             release/qt-ci/RaisingStudio/package-manifest.json
             release/qt-ci/*.exe.json
           include-hidden-files: true
           retention-days: 14
-      - name: Upload tested installer for review
+      - name: Upload tested Windows candidate for review
         uses: actions/upload-artifact@v4
         with:
-          name: windows-p1-installer
-          path: release/qt-ci/RaisingStudio-P1-Windows.exe
+          name: windows-preview-candidate
+          path: |
+            release/qt-ci/RaisingEngine-*-windows-x64.exe
+            release/qt-ci/RaisingEngine-*-windows-x64-portable.zip
+            release/qt-ci/SHA256SUMS.txt
+            release/qt-ci/release-artifacts.json
+          compression-level: 0
           if-no-files-found: error
           retention-days: 14
   macos-package:
@@ -215,6 +255,8 @@ jobs:
       MACOS_STUDIO_OUT: dist/macos/RaisingStudio.app
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22.14.0'
@@ -242,13 +284,31 @@ jobs:
         run: |
           export MACOS_NODE_ROOT="$(dirname "$(dirname "$(command -v node)")")"
           node scripts/capture-build-provenance.mjs
-          npm run package:macos
+          npm run package:macos -- --candidate
           for source in native/player/{CMakeLists.txt,main.cpp,ios-accessibility.hpp,ios-accessibility.mm,portable-save-files-ios.mm,screen.hpp}; do
             cmp "$source" "$MACOS_STUDIO_OUT/Contents/Resources/engine/$source"
             shasum -a 256 "$source"
           done | tee .cache/build-provenance/macos-ios-source.sha256
           npm run test:creator-smoke -- --web --desktop --package "$MACOS_STUDIO_OUT"
           npm run benchmark:creator
+      - name: Archive the macOS preview candidate
+        shell: bash
+        run: |
+          version=$(node -p "require('./config/preview-candidate.json').version")
+          mkdir -p release/macos-preview
+          archive="$PWD/release/macos-preview/RaisingStudio-$version-macOS-arm64.zip"
+          /usr/bin/ditto -c -k --keepParent "$MACOS_STUDIO_OUT" "$archive"
+          extracted=$(mktemp -d)
+          trap 'rm -rf "$extracted"' EXIT
+          /usr/bin/ditto -x -k "$archive" "$extracted"
+          /usr/bin/codesign --verify --deep --strict "$extracted/RaisingStudio.app"
+          (cd release/macos-preview && shasum -a 256 "$(basename "$archive")" > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-preview-candidate-arm64
+          path: release/macos-preview/
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always()
         with:

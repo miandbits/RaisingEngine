@@ -1,12 +1,29 @@
 import {spawnSync,execFileSync} from 'node:child_process';
-import {readFile,mkdir,mkdtemp,readdir,realpath} from 'node:fs/promises';
+import {access,readFile,mkdir,mkdtemp,readdir,realpath} from 'node:fs/promises';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import assert from 'node:assert/strict';
 
-if(process.platform!=='darwin'||!process.argv[2])throw Error('Usage: node scripts/test-macos-package.mjs PATH_TO_EDITOR.app [--ios]');
+if(process.platform!=='darwin'||!process.argv[2])throw Error('Usage: node scripts/test-macos-package.mjs PATH_TO_EDITOR.app [--candidate] [--ios]');
 const app=await realpath(process.argv[2]),contents=path.join(app,'Contents'),engine=path.join(contents,'Resources/engine');
 const executable=path.join(contents,'MacOS/RaisingStudioQt');
+const manifest=JSON.parse(await readFile(path.join(contents,'Resources/package-manifest.json'),'utf8'));
+if(manifest.releaseVersion!==undefined||process.argv.includes('--candidate')) {
+  const policy=JSON.parse(await readFile(new URL('../config/preview-candidate.json',import.meta.url),'utf8'));
+  const identity=JSON.parse(await readFile(path.join(engine,'editor-identity.json'),'utf8'));
+  const bundleVersion=execFileSync('/usr/bin/plutil',['-extract','RaisingStudioReleaseVersion','raw',path.join(contents,'Info.plist')],{encoding:'utf8'}).trim();
+  const bundledNode=execFileSync(path.join(engine,'node'),['--version'],{encoding:'utf8'}).trim();
+  assert.equal(bundleVersion,policy.version);
+  assert.equal(manifest.releaseVersion,policy.version);
+  assert.deepEqual(identity,manifest.editorIdentity);
+  assert.deepEqual(identity.distribution,{kind:'package',platform:'darwin',arch:policy.platforms.darwin.architecture,releaseVersion:policy.version,channel:policy.platforms.darwin.channel});
+  assert.equal(manifest.node,'v22.14.0');
+  assert.equal(bundledNode,manifest.node);
+  assert.equal(manifest.publicReleaseReady,false);
+  assert.ok(manifest.templates.includes('my-first-raising-game'));
+  await access(path.join(contents,'Resources/CREATOR-PILOT.md'));
+  await access(path.join(engine,'dist/web/index.html'));
+}
 async function binaries(directory) {
   const files=[];
   for(const entry of await readdir(directory,{withFileTypes:true})) {

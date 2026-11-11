@@ -11,7 +11,12 @@ import {createPackagedEditorIdentity} from '../apps/qt-studio/editor-identity.mj
 
 if(process.platform!=='darwin')throw Error('Build the macOS editor package on a Mac.');
 const root=fileURLToPath(new URL('..',import.meta.url));
-const editorIdentity=await createPackagedEditorIdentity(root,{platform:'darwin',arch:process.arch});
+const candidate=process.argv.includes('--candidate')
+  ?JSON.parse(await readFile(path.join(root,'config/preview-candidate.json'),'utf8')):null;
+const candidatePlatform=candidate?.platforms?.darwin;
+if(candidate&&candidatePlatform?.architecture!==process.arch)throw Error('The macOS preview candidate requires Apple Silicon.');
+const editorIdentity=await createPackagedEditorIdentity(root,{platform:'darwin',arch:process.arch,
+  ...(candidate?{releaseVersion:candidate.version,channel:candidatePlatform.channel}:{})});
 const out=path.resolve(process.env.MACOS_STUDIO_OUT??'dist/macos/RaisingStudio.app');
 if(existsSync(out))throw Error('Choose a new MACOS_STUDIO_OUT; existing apps are never overwritten.');
 const nodeRoot=path.resolve(process.env.MACOS_NODE_ROOT??`.cache/macos-node/node-v22.14.0-darwin-${process.arch}`);
@@ -19,15 +24,20 @@ const node=path.join(nodeRoot,'bin/node');await access(path.join(nodeRoot,'LICEN
 const nodeInfo=JSON.parse(execFileSync(node,['-p','JSON.stringify({version:process.version,arch:process.arch})'],{encoding:'utf8'}));
 const [nodeMajor,nodeMinor]=nodeInfo.version.slice(1).split('.').map(Number);
 if(nodeInfo.arch!==process.arch||nodeMajor<22||(nodeMajor===22&&nodeMinor<12))throw Error('Use an official Node 22.12+ macOS archive matching this build architecture.');
+if(candidate&&nodeInfo.version!=='v22.14.0')throw Error('The macOS preview candidate requires the official Node v22.14.0 archive.');
+const web=path.resolve(process.env.RAISING_WEB_PLAYER_RUNTIME??'dist/web');
+if(candidate)await access(path.join(web,'index.html'));
 const linked=execFileSync('/usr/bin/otool',['-L',node],{encoding:'utf8'}).split('\n').slice(1).map(s=>s.trim().split(' ')[0]).filter(Boolean);
 if(linked.some(s=>!s.startsWith('/usr/lib/')&&!s.startsWith('/System/Library/')))throw Error('The bundled Node must be standalone; Homebrew Node requires external libraries. Use an official nodejs.org archive.');
 const qt=process.env.QT_ROOT??['/opt/homebrew/opt/qt','/usr/local/opt/qt'].find(p=>existsSync(path.join(p,'bin/macdeployqt')));
 if(!qt)throw Error('Set QT_ROOT to a Qt 6 macOS installation.');
 const query=key=>execFileSync(path.join(qt,'bin/qtpaths'),['--query',key],{encoding:'utf8'}).trim();
 const pluginRoot=query('QT_INSTALL_PLUGINS'),libraryRoot=query('QT_INSTALL_LIBS');
+const qtVersion=execFileSync(path.join(qt,'bin/qtpaths'),['--qt-version'],{encoding:'utf8'}).trim();
 // Validate an explicit repair before creating any package output. The installed kit is never modified.
 const cocoa=await prepareCocoaRepair(process.env.MACOS_QT_COCOA_REPAIR,{qt,libraryRoot});
 await cp(path.resolve(process.env.QT_STUDIO_OUT??'dist/qt-studio','RaisingStudioQt.app'),out,{recursive:true,force:false,errorOnExist:true});
+if(candidate)execFileSync('/usr/bin/plutil',['-insert','RaisingStudioReleaseVersion','-string',editorIdentity.distribution.releaseVersion,path.join(out,'Contents/Info.plist')]);
 const pluginPaths=[];
 for(const name of ['platforms/libqcocoa.dylib','imageformats/libqjpeg.dylib','imageformats/libqwebp.dylib','imageformats/libqsvg.dylib']) {
   const source=name==='platforms/libqcocoa.dylib'&&cocoa?cocoa.plugin:path.join(pluginRoot,name);if(!existsSync(source))throw Error('Missing Qt plugin: '+source);
@@ -65,7 +75,6 @@ await copy('dist/native/runtime.json','engine/dist/native/runtime.json');
 await copy('dist/native/'+runtime.executable,'engine/dist/native/'+runtime.executable);
 const player=path.resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-app');
 await copy(player,'engine/dist/native-player-app');
-const web=path.resolve(process.env.RAISING_WEB_PLAYER_RUNTIME??'dist/web');
 if(existsSync(path.join(web,'index.html')))await copy(web,'engine/dist/web');
 for(const id of studioTemplates)await copy('examples/'+id,'engine/examples/'+id);
 await copy('examples/rule-extension-lab','engine/examples/rule-extension-lab');
@@ -76,6 +85,7 @@ for(const entry of ['CMakeLists.txt','include','src','vendor','player','mobile/i
 for(const file of ['LICENSE','THIRD_PARTY_NOTICES.md'])await copy(file,'engine/'+file);
 await copy('licenses','licenses/repository');
 await copy('docs/getting-started/first-game.md','FIRST-GAME.md');
+if(candidate)await copy('docs/getting-started/creator-pilot.md','CREATOR-PILOT.md');
 const dependencies=new Map();
 async function dependency(name,from=path.join(root,'package.json')) {
   const require=createRequire(from);let manifest;
@@ -87,7 +97,7 @@ async function dependency(name,from=path.join(root,'package.json')) {
   for(const child of Object.keys(p.dependencies??{}))await dependency(child,manifest);
 }
 for(const name of ['ajv','jsonc-parser','yauzl','resedit'])await dependency(name);
-const packageManifest={version:1,platform:'darwin',arch:process.arch,engineVersion:editorIdentity.engineVersion,editorIdentity,sourceCommit:editorIdentity.source.commit,sourceTreeDirty:editorIdentity.source.dirty,node:nodeInfo.version,templates:studioTemplates,dependencies:Object.fromEntries(dependencies),...(cocoaPackage?{qtCocoaRepair:cocoaPackage}:{}),publicReleaseReady:false,notes:'Local development bundle. Distribution still requires Qt corresponding-source/license review, Developer ID signing, notarization and a clean-machine test.'};
+const packageManifest={version:1,platform:'darwin',arch:process.arch,engineVersion:editorIdentity.engineVersion,editorIdentity,...(candidate?{releaseVersion:editorIdentity.distribution.releaseVersion}:{}),sourceCommit:editorIdentity.source.commit,sourceTreeDirty:editorIdentity.source.dirty,node:nodeInfo.version,qtVersion,templates:studioTemplates,dependencies:Object.fromEntries(dependencies),...(cocoaPackage?{qtCocoaRepair:cocoaPackage}:{}),publicReleaseReady:false,notes:'Local development bundle. Distribution still requires Qt corresponding-source/license review, Developer ID signing, notarization and a clean-machine test.'};
 await writeFile(path.join(resources,'package-manifest.json'),JSON.stringify(packageManifest,null,2));
 execFileSync('/usr/bin/codesign',['--force','--deep','--sign','-',out],{stdio:'inherit'});
 if(cocoaPackage) {
