@@ -24,6 +24,9 @@ final class SystemUITests: XCTestCase {
     continueAfterFailure = false
     let environment = ProcessInfo.processInfo.environment
     let source = try XCTUnwrap(environment["RAISING_SYSTEM_UI_DIAGNOSTICS"],"Missing Simulator launch diagnostics")
+    try configureDiagnostics(source)
+  }
+  fileprivate func configureDiagnostics(_ source:String) throws {
     let launch = try JSONDecoder().decode(DiagnosticsSource.self,from:Data(source.utf8))
     let file = URL(fileURLWithPath:launch.stdout)
     guard launch.session == appID, launch.pid > 0, name.hasSuffix(" \(launch.test)]"),
@@ -40,7 +43,7 @@ final class SystemUITests: XCTestCase {
     } while ProcessInfo.processInfo.systemUptime < deadline
     throw DiagnosticsError(message:"No complete editor-view record for \(diagnostics.test), PID \(diagnostics.pid)")
   }
-  private func latestCompleteView() throws -> [String: Any]? {
+  fileprivate func latestCompleteView() throws -> [String: Any]? {
     guard kill(diagnostics.pid,0) == 0 else {
       throw DiagnosticsError(message:"Cannot observe player PID \(diagnostics.pid) (errno \(errno))")
     }
@@ -71,7 +74,7 @@ final class SystemUITests: XCTestCase {
     }
     return nil
   }
-  private func exportedState() throws -> [String: Any] {
+  fileprivate func exportedState() throws -> [String: Any] {
     let url = URL(fileURLWithPath:diagnostics.stdout).deletingLastPathComponent().appendingPathComponent("files-export-checkpoint.json")
     let data = try Data(contentsOf:url)
     let checkpoint = try JSONSerialization.jsonObject(with:data) as? [String:Any]
@@ -536,4 +539,90 @@ final class SystemUITests: XCTestCase {
     XCTAssertEqual(after["marked"] as? Bool,true)
   }
 
+}
+
+final class SystemUIDiagnosticsTests: XCTestCase {
+  private let importTest = "testFilesImportBackupAfterRelaunch"
+  private let first = Data((#"{"event":"editor-view","view":{"screenId":"title"}}"# + "\n").utf8)
+  private let next = Data((#"{"event":"editor-view","view":{"screenId":"ready"}}"# + "\n").utf8)
+
+  private func fixture() throws -> (reader:SystemUITests,stdout:URL) {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:false)
+    addTeardownBlock {try FileManager.default.removeItem(at:directory)}
+    let stdout = directory.appendingPathComponent(importTest+".stdout")
+    try first.write(to:stdout)
+    let reader = SystemUITests(selector:#selector(SystemUITests.testFilesImportBackupAfterRelaunch))
+    return (reader,stdout)
+  }
+
+  private func configure(_ reader:SystemUITests,stdout:URL,session:String?=nil,pid:pid_t=getpid(),
+                         exportedPID:pid_t?=nil) throws {
+    var identity = stat()
+    XCTAssertEqual(stat(stdout.path,&identity),0)
+    var source:[String:Any] = ["session":session ?? reader.appID,"test":importTest,"pid":Int(pid),
+                              "stdout":stdout.path,"device":String(identity.st_dev),"inode":String(identity.st_ino)]
+    if let exportedPID {source["exportedPID"] = Int(exportedPID)}
+    let data = try JSONSerialization.data(withJSONObject:source)
+    try reader.configureDiagnostics(String(decoding:data,as:UTF8.self))
+  }
+
+  func testOnlyReadsCompleteAppendOnlyViews() throws {
+    let (reader,stdout) = try fixture()
+    try configure(reader,stdout:stdout)
+    XCTAssertEqual(try reader.latestCompleteView()?["screenId"] as? String,"title")
+    XCTAssertEqual(try reader.latestCompleteView()?["screenId"] as? String,"title")
+
+    let writer = try FileHandle(forWritingTo:stdout)
+    defer {try? writer.close()}
+    try writer.seekToEnd()
+    try writer.write(contentsOf:next.dropLast())
+    XCTAssertNil(try reader.latestCompleteView())
+    try writer.write(contentsOf:next.suffix(1))
+    XCTAssertEqual(try reader.latestCompleteView()?["screenId"] as? String,"ready")
+
+    try writer.seek(toOffset:UInt64(first.count))
+    try writer.write(contentsOf:first)
+    XCTAssertThrowsError(try reader.latestCompleteView()) {
+      XCTAssertEqual($0.localizedDescription,"Player diagnostics regressed or were overwritten")
+    }
+    try writer.truncate(atOffset:UInt64(first.count))
+    XCTAssertThrowsError(try reader.latestCompleteView()) {
+      XCTAssertEqual($0.localizedDescription,"Player diagnostics regressed or were overwritten")
+    }
+    try first.write(to:stdout,options:.atomic)
+    XCTAssertThrowsError(try reader.latestCompleteView()) {
+      XCTAssertEqual($0.localizedDescription,"Player diagnostics file was replaced")
+    }
+  }
+
+  func testRejectsWrongLaunchAndUncommittedCheckpoint() throws {
+    let (reader,stdout) = try fixture()
+    XCTAssertThrowsError(try configure(reader,stdout:stdout,session:"earlier-run")) {
+      XCTAssertEqual($0.localizedDescription,"Diagnostics do not belong to this test launch")
+    }
+    try configure(reader,stdout:stdout,pid:pid_t.max)
+    XCTAssertThrowsError(try reader.latestCompleteView()) {
+      XCTAssertTrue($0.localizedDescription.hasPrefix("Cannot observe player PID"))
+    }
+
+    let exportPID = getpid()+1
+    try configure(reader,stdout:stdout,exportedPID:exportPID)
+    let directory = stdout.deletingLastPathComponent()
+    let checkpoint = directory.appendingPathComponent("files-export-checkpoint.json")
+    let pending = checkpoint.appendingPathExtension("pending")
+    func writeCheckpoint(_ url:URL,session:String,pid:pid_t) throws {
+      let data = try JSONSerialization.data(withJSONObject:["session":session,"pid":Int(pid),"state":["state":["started":true]]])
+      try data.write(to:url,options:.atomic)
+    }
+    try writeCheckpoint(pending,session:reader.appID,pid:exportPID)
+    XCTAssertThrowsError(try reader.exportedState())
+    try FileManager.default.moveItem(at:pending,to:checkpoint)
+    let state = try reader.exportedState()["state"] as? [String:Bool]
+    XCTAssertEqual(state?["started"],true)
+    try writeCheckpoint(checkpoint,session:"earlier-run",pid:exportPID)
+    XCTAssertThrowsError(try reader.exportedState())
+    try writeCheckpoint(checkpoint,session:reader.appID,pid:getpid())
+    XCTAssertThrowsError(try reader.exportedState())
+  }
 }
