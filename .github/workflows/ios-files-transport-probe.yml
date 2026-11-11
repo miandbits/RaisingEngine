@@ -1,0 +1,82 @@
+name: iOS 26 Files diagnostics transport probe
+on:
+  push:
+    branches: [codex/ios-files-transport-probe]
+    paths: [.github/workflows/ios-files-transport-probe.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  public-starter-files:
+    name: Test the actual Files picker on iOS 26 Simulator
+    runs-on: macos-26
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      RAISING_IOS_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17e
+      RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          name: public-starter-ios-simulator-app
+          run-id: 42923128421
+          github-token: ${{ github.token }}
+          path: .cache/ios-simulator-ci/transfer
+      - name: Verify source and unpack the exact exported app
+        shell: bash
+        run: |
+          transfer=.cache/ios-simulator-ci/transfer
+          bundle=.cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator
+          (cd "$transfer" && shasum -a 256 -c transfer.sha256)
+          test "$(cat "$transfer/source.txt")" = 3776c1c74153a83836732f6eebfba59a801c692a
+          git diff --exit-code 09a963751299f6164831566a21e03f77ca158d11 HEAD -- native apps packages assets examples package.json package-lock.json
+          mkdir -p "$bundle"
+          tar -xf "$transfer/starter-app.tar" -C "$bundle"
+          shasum -a 256 -c "$transfer/bundle.sha256"
+      - name: Record the Files test toolchain
+        shell: bash
+        run: |
+          test -x "$DEVELOPER_DIR/usr/bin/xcodebuild"
+          {
+            echo "source=$(git rev-parse HEAD)"
+            echo "testRuntime=$RAISING_IOS_SIMULATOR_RUNTIME"
+            echo "testDeviceType=$RAISING_IOS_SIMULATOR_DEVICE_TYPE"
+            xcodebuild -version
+            xcrun simctl list runtimes available
+          } | tee .cache/ios-simulator-ci/files-environment.txt
+      - run: npm ci
+      - name: Build the project service used by the public Files fixture
+        run: |
+          node scripts/generate-types.mjs
+          npx --no-install tsc -p tsconfig.json
+          node scripts/copy-schemas.mjs
+      - name: Test export and import through the actual Files picker
+        run: |
+          node scripts/test-ios-system-ui.mjs .cache/ios-simulator-ci/export \
+            --project examples/my-first-raising-game --family iphone --test files-roundtrip --text-scale 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: public-starter-ios-files-transport-probe
+          path: |
+            .cache/ios-simulator-ci/files-environment.txt
+            .cache/ios-simulator-ci/transfer/*.txt
+            .cache/ios-simulator-ci/transfer/*.sha256
+            .cache/ios-system-ui/latest.json
+            .cache/ios-system-ui/run-*/result.json
+            .cache/ios-system-ui/run-*/*-staging.json
+            .cache/ios-system-ui/run-*/*.log
+            .cache/ios-system-ui/run-*/*.stdout
+            .cache/ios-system-ui/run-*/*.stderr
+            .cache/ios-system-ui/run-*/*.xcresult
+          include-hidden-files: true
+          retention-days: 14
