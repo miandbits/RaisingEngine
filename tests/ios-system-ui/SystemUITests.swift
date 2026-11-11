@@ -1,59 +1,86 @@
+import Darwin
 import XCTest
 
-// The HTTP endpoint only returns editor-view diagnostics. Every action below
-// uses genuine XCTest touch/keyboard input against UIKit or the SDL window.
+// Only the Simulator-launched player writes its editor-view diagnostics.
+// Every action below uses genuine XCTest input against UIKit or the SDL window.
 final class SystemUITests: XCTestCase {
   let appID = "__APP_ID__"
-  let endpoint = "__READ_ONLY_URL__"
-  override func setUpWithError() throws { continueAfterFailure = false }
+  private struct DiagnosticsSource: Decodable {
+    let session: String
+    let test: String
+    let pid: pid_t
+    let stdout: String
+    let device: String
+    let inode: String
+    let exportedPID: pid_t?
+  }
   private struct DiagnosticsError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
   }
-  func view(_ path:String?=nil) throws -> [String: Any] {
-    let base=URL(string:endpoint)!
-    let url=path.map { base.deletingLastPathComponent().appendingPathComponent($0) } ?? base
-    let bytes=try readDiagnostics(url)
-    return try XCTUnwrap(JSONSerialization.jsonObject(with:bytes) as? [String:Any])
-  }
-  private func readDiagnostics(_ url:URL) throws -> Data {
-    let transient: Set<URLError.Code> = [.timedOut,.networkConnectionLost,.cannotConnectToHost]
-    var failures: [String] = []
-    for attempt in 1...2 {
-      let done=XCTestExpectation(description:"Read-only player diagnostics")
-      let request=URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:5)
-      var result: Result<Data,Error>?
-      let task=URLSession.shared.dataTask(with:request) {data,response,error in
-        defer {done.fulfill()}
-        if let error {
-          result = .failure(error)
-        } else if let response=response as? HTTPURLResponse, response.statusCode==200, let data {
-          result = .success(data)
-        } else {
-          let status=(response as? HTTPURLResponse)?.statusCode
-          result = .failure(DiagnosticsError(message:"Invalid diagnostics response for "+url.path+" (HTTP "+(status.map(String.init) ?? "unknown")+")"))
-        }
-      }
-      task.resume()
-      let failure: String
-      switch XCTWaiter.wait(for:[done],timeout:7) {
-      case .completed:
-        do {return try XCTUnwrap(result).get()}
-        catch let error as URLError where transient.contains(error.code) {
-          failure=String(describing:error)
-        }
-      case .timedOut:
-        task.cancel()
-        failure="no diagnostics response within 7 seconds"
-      default:
-        task.cancel()
-        throw DiagnosticsError(message:"Read-only diagnostics wait was interrupted for "+url.path)
-      }
-      let details="attempt \(attempt): "+failure
-      failures.append(details)
-      print("DIAGNOSTICS_READ "+url.path+" "+details)
+  private var diagnostics: DiagnosticsSource!
+  private var lastRecord: (range: Range<Int>, bytes: Data)?
+  override func setUpWithError() throws {
+    continueAfterFailure = false
+    let environment = ProcessInfo.processInfo.environment
+    let source = try XCTUnwrap(environment["RAISING_SYSTEM_UI_DIAGNOSTICS"],"Missing Simulator launch diagnostics")
+    let launch = try JSONDecoder().decode(DiagnosticsSource.self,from:Data(source.utf8))
+    let file = URL(fileURLWithPath:launch.stdout)
+    guard launch.session == appID, launch.pid > 0, name.hasSuffix(" \(launch.test)]"),
+          file.lastPathComponent == launch.test+".stdout" else {
+      throw DiagnosticsError(message:"Diagnostics do not belong to this test launch")
     }
-    throw DiagnosticsError(message:"Read-only diagnostics request failed for "+url.path+": "+failures.joined(separator:"; "))
+    diagnostics = launch
+  }
+  func view() throws -> [String: Any] {
+    let deadline = ProcessInfo.processInfo.systemUptime+5
+    repeat {
+      if let view = try latestCompleteView() {return view}
+      RunLoop.current.run(until:Date().addingTimeInterval(0.05))
+    } while ProcessInfo.processInfo.systemUptime < deadline
+    throw DiagnosticsError(message:"No complete editor-view record for \(diagnostics.test), PID \(diagnostics.pid)")
+  }
+  private func latestCompleteView() throws -> [String: Any]? {
+    guard kill(diagnostics.pid,0) == 0 else {
+      throw DiagnosticsError(message:"Cannot observe player PID \(diagnostics.pid) (errno \(errno))")
+    }
+    let file = try FileHandle(forReadingFrom:URL(fileURLWithPath:diagnostics.stdout))
+    defer {try? file.close()}
+    var identity = stat()
+    guard fstat(file.fileDescriptor,&identity) == 0, String(identity.st_dev) == diagnostics.device,
+          String(identity.st_ino) == diagnostics.inode else {
+      throw DiagnosticsError(message:"Player diagnostics file was replaced")
+    }
+    let bytes = try file.readToEnd() ?? Data()
+    if let lastRecord {
+      let end = lastRecord.range.upperBound
+      guard bytes.count > end, bytes[lastRecord.range] == lastRecord.bytes, bytes[end] == 0x0A else {
+        throw DiagnosticsError(message:"Player diagnostics regressed or were overwritten")
+      }
+    }
+    // The newline commits a stdout record. Wait for the producer if a read
+    // ends mid-record so an older view cannot stand in for the in-flight one.
+    guard bytes.last == 0x0A else {return nil}
+    for line in bytes.split(separator:0x0A).reversed() where line.first == 0x7B {
+      let row = try JSONSerialization.jsonObject(with:line) as? [String:Any]
+      if row?["event"] as? String == "editor-view" {
+        let view = try XCTUnwrap(row?["view"] as? [String:Any],"Invalid editor-view record")
+        lastRecord = (line.startIndex..<line.endIndex,Data(line))
+        return view
+      }
+    }
+    return nil
+  }
+  private func exportedState() throws -> [String: Any] {
+    let url = URL(fileURLWithPath:diagnostics.stdout).deletingLastPathComponent().appendingPathComponent("files-export-checkpoint.json")
+    let data = try Data(contentsOf:url)
+    let checkpoint = try JSONSerialization.jsonObject(with:data) as? [String:Any]
+    guard let expectedPID = diagnostics.exportedPID, expectedPID > 0, expectedPID != diagnostics.pid,
+          checkpoint?["session"] as? String == diagnostics.session, checkpoint?["pid"] as? Int == Int(expectedPID),
+          let state = checkpoint?["state"] as? [String:Any] else {
+      throw DiagnosticsError(message:"Export checkpoint does not belong to the preceding Files export launch")
+    }
+    return state
   }
   func record(_ app:XCUIApplication,_ name:String) throws {
     let diagnostics=try JSONSerialization.data(withJSONObject:view(),options:[.sortedKeys,.prettyPrinted])
@@ -183,7 +210,7 @@ final class SystemUITests: XCTestCase {
     try chooseFilesBackup(app,"files-import-before-confirm")
     try tap(app,"engine-portable-confirm")
     try waitStatus("idle")
-    XCTAssertEqual(try canonical(view("files-export")),try canonical(backupState()))
+    XCTAssertEqual(try canonical(exportedState()),try canonical(backupState()))
     try record(app,"files-import-restored")
   }
   func chooseFilesBackup(_ app:XCUIApplication,_ checkpoint:String) throws {
