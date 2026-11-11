@@ -11,6 +11,7 @@ $env:RAISING_PROJECT_HISTORY = Join-Path $Evidence 'launcher-history.ini'
 
 Add-Type @'
 using System;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 public static class RaisingWindow {
@@ -20,6 +21,12 @@ public static class RaisingWindow {
   [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr handle, out uint process);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetWindowText(IntPtr handle, StringBuilder title, int capacity);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
+  [DllImport("kernel32.dll", SetLastError=true)] private static extern bool GetExitCodeProcess(IntPtr handle, out uint exitCode);
+  public static uint ExitCode(IntPtr handle) {
+    uint code;
+    if (!GetExitCodeProcess(handle, out code)) throw new Win32Exception(Marshal.GetLastWin32Error());
+    return code;
+  }
   public static IntPtr Find(uint process, string expected) {
     IntPtr window = IntPtr.Zero;
     EnumWindows((handle, data) => {
@@ -51,9 +58,12 @@ if (!$title) { throw 'Missing project launcher title in the editor catalog' }
 
 $app = Start-Process -FilePath $Editor -WorkingDirectory $Evidence -ArgumentList '--ui-language',$Locale -PassThru -RedirectStandardError (Join-Path $Evidence 'windows-launch-stderr.txt')
 try {
+  # Windows PowerShell Start-Process with stderr redirection can lose ExitCode
+  # unless the process handle is retained while the child is still running.
+  $handle = $app.Handle
   $clock = [System.Diagnostics.Stopwatch]::StartNew()
   do {
-    if ($app.HasExited) { throw "Installed editor exited during startup ($($app.ExitCode))" }
+    if ($app.HasExited) { throw "Installed editor exited during startup ($([RaisingWindow]::ExitCode($handle)))" }
     $window = [RaisingWindow]::Find($app.Id, $title)
     if ($window -ne [IntPtr]::Zero) { break }
     Start-Sleep -Milliseconds 150
@@ -63,7 +73,8 @@ try {
   # StudioBridge::shutdown allows 10 seconds for EOF and 1.5 for cleanup.
   $closing = [System.Diagnostics.Stopwatch]::StartNew()
   if (!$app.WaitForExit(20000)) { throw 'Installed editor did not close within 20 seconds' }
-  if ($app.ExitCode -ne 0) { throw "Installed editor closed with exit code $($app.ExitCode)" }
+  $exitCode = [RaisingWindow]::ExitCode($handle)
+  if ($exitCode -ne 0) { throw "Installed editor closed with exit code $exitCode" }
   @{
     ok = $true
     locale = $Locale
@@ -72,7 +83,7 @@ try {
     qpaPlatform = $env:QT_QPA_PLATFORM
     systemRuntimePathsRemoved = $true
     closeElapsedMilliseconds = $closing.ElapsedMilliseconds
-    exitCode = $app.ExitCode
+    exitCode = $exitCode
   } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Evidence 'windows-launch.json')
 } finally {
   if (!$app.HasExited) { Stop-Process -Id $app.Id -Force }

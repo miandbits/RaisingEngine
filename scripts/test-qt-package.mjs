@@ -23,7 +23,7 @@ if(!portable){await access(shortcut);const registration=run('reg.exe',['query',r
 for(const f of manifest.files)assert.equal(createHash('sha256').update(await readFile(join(installed,f.path))).digest('hex'),f.sha256,f.path);
 const env={...process.env,PATH:process.env.SystemRoot+'\\System32',QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_RELEASE_EVIDENCE:evidence,RAISING_TEST_UI_LANGUAGE:process.env.RAISING_TEST_UI_LANGUAGE||'ko',RAISING_EDITOR_SETTINGS:join(evidence,'editor-settings.ini')};
 for(const name of Object.keys(env))if((name.startsWith('RAISING_')&&!['RAISING_QT_TEST','RAISING_RELEASE_EVIDENCE','RAISING_TEST_UI_LANGUAGE','RAISING_EDITOR_SETTINGS'].includes(name))||['QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH','NODE_PATH','NODE_OPTIONS'].includes(name))delete env[name];
-let pilot, source, testedArtifact;
+let pilot, source, testedArtifact, launcherFailure;
 if (creatorPilot) {
   pilot = await import('./lib/installed-creator-pilot.mjs');
   const candidate = JSON.parse(await readFile('config/preview-candidate.json','utf8'));
@@ -48,7 +48,12 @@ if (creatorPilot) {
   }
   env.RAISING_RELEASE_CREATOR_PILOT = '1';
   const powershell = join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe');
-  run(powershell,['-NoProfile','-ExecutionPolicy','RemoteSigned','-File',resolve('scripts/test-windows-editor-launch.ps1'),'-Editor',join(installed,'RaisingStudioQt.exe'),'-Evidence',evidence,'-Locale',env.RAISING_TEST_UI_LANGUAGE],env,60000);
+  try {
+    run(powershell,['-NoProfile','-ExecutionPolicy','RemoteSigned','-File',resolve('scripts/test-windows-editor-launch.ps1'),'-Editor',join(installed,'RaisingStudioQt.exe'),'-Evidence',evidence,'-Locale',env.RAISING_TEST_UI_LANGUAGE],env,60000);
+  } catch (error) {
+    launcherFailure = error;
+    console.error(error.message);
+  }
 }
 // Only the test driver and QtTest DLL are temporary; the editor/service/player use installed files.
 const driver=join(installed,'release-workflow-test.exe'),testDll=join(installed,'Qt6Test.dll'),offscreen=join(installed,'platforms/qoffscreen.dll');
@@ -94,6 +99,10 @@ assert.notEqual(spawnSync('reg.exe',['query',registryKey],{windowsHide:true}).st
 assert.equal(await readFile(join(installed,'user-keep.txt'),'utf8'),'User-created file survives uninstall');await access(join(workflow.project,'project.json'));await access(save);
 if (preserved) for (const item of preserved) assert.equal(await pilot.sha256(item.file),item.sha256);
 }
-const result={ok:true,portable,root,evidence,project:workflow.project,web:join(evidence,'web'),windows:game,installedManifestFiles:manifest.files.length,systemNodeAndQtPathsRemoved:true,createdEditedExportedInQt:true,windowsSaveExact:true,overwriteRejected:portable?'not-tested':true,uninstallPreservedUnknownFiles:portable?'not-tested':true};
-if (creatorPilot) Object.assign(result,{source,testedArtifact,editorLanguage:workflow.editorLanguage,restoredProject:workflow.restoredProject,creatorPilot:creatorProof,preserved});
+const result={ok:!launcherFailure,portable,root,evidence,project:workflow.project,web:join(evidence,'web'),windows:game,installedManifestFiles:manifest.files.length,systemNodeAndQtPathsRemoved:true,createdEditedExportedInQt:true,windowsSaveExact:true,overwriteRejected:portable?'not-tested':true,uninstallPreservedUnknownFiles:portable?'not-tested':true};
+if (creatorPilot) {
+  Object.assign(result,{source,testedArtifact,editorLanguage:workflow.editorLanguage,restoredProject:workflow.restoredProject,creatorPilot:creatorProof,preserved,nativeLauncherVerified:!launcherFailure});
+  await writeFile(join(evidence,'package-validation.json'),JSON.stringify(result,null,2));
+}
 await writeFile('.cache/qt-release/latest.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+if (launcherFailure) throw launcherFailure;
