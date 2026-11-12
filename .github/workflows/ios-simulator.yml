@@ -146,7 +146,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       RAISING_IOS_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17e
-      RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-5
+      RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-4
     steps:
       - uses: actions/checkout@v4
         with:
