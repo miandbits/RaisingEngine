@@ -4,6 +4,17 @@ import CoreGraphics
 import Darwin
 import Foundation
 
+var phaseEnabled=false
+var phaseHistory=[[String:Any]]()
+var phaseWritesAllowed=true
+func tracePhase(_ phase:String) {
+  guard phaseWritesAllowed,phaseEnabled,phaseHistory.last?["phase"] as? String != phase else {return}
+  let row:[String:Any]=["event":"host-contact-stage","pid":getpid(),"phase":phase,"uptime":ProcessInfo.processInfo.systemUptime]
+  phaseHistory.append(row);if phaseHistory.count>64 {phaseHistory.removeFirst()}
+  // stderr is the runner's retained regular logfile, not a pipe or OS query.
+  // Only stage boundaries are written, never the held DOWN-to-UP interval.
+  if var data=try? JSONSerialization.data(withJSONObject:row,options:.sortedKeys) {data.append(0x0A);try? FileHandle.standardError.write(contentsOf:data)}
+}
 struct ProbeError: Error, CustomStringConvertible { let description: String }
 func require(_ value: Bool, _ message: String) throws { if !value { throw ProbeError(description: message) } }
 let overallDeadline = Date().addingTimeInterval(90)
@@ -124,10 +135,12 @@ func validateLaunchEvidence(_ url:URL,_ pid:pid_t,_ uuid:String,_ appID:String,_
   return ["pid":Int(pid),"appID":appID,"deviceUDID":uuid,"stdoutIdentity":observed.json,"home":home,"saveFile":save,"contentFingerprint":fingerprint,"nonce":nonce,"actualReceiptMatched":true]
 }
 func simulatorIdentity(_ app:NSRunningApplication) throws -> [String:String] {
+  tracePhase("NSRunningApplication.identity")
   guard !app.isTerminated,let bundle=app.bundleURL,let executable=app.executableURL,let launch=app.launchDate else {throw ProbeError(description:"Selected Simulator public process identity unavailable/terminated")}
   return ["pid":String(app.processIdentifier),"bundleURL":canonical(bundle.path).path,"executableURL":canonical(executable.path).path,"launchDate":String(launch.timeIntervalSince1970)]
 }
 func cgWindows(_ pid: pid_t) -> [[String:Any]] {
+  tracePhase("CGWindowListCopyWindowInfo")
   let all = CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements],kCGNullWindowID) as? [[String:Any]] ?? []
   return all.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(pid) && ($0[kCGWindowLayer as String] as? Int) == 0 }
 }
@@ -155,6 +168,7 @@ func snapshot(_ app: NSRunningApplication, _ deviceName: String) -> [String:Any]
   let ax = AXUIElementCreateApplication(app.processIdentifier)
   AXUIElementSetMessagingTimeout(ax,2)
   let visible = cgWindows(app.processIdentifier)
+  tracePhase("window:AXWindows-and-properties")
   let (windowsValue,windowsStatus)=observedAttribute(ax,kAXWindowsAttribute)
   let windows=windowsValue as? [AXUIElement]
   var complete=windowsStatus == .success && windows != nil
@@ -224,6 +238,7 @@ func viewportCandidates(_ window:AXUIElement,_ guest:CGRect) throws -> [(AXUIEle
     guard status == .success,let children=value as? [AXUIElement] else {throw ProbeError(description:"Incomplete viewport AX descendants")}
     for child in children {try visit(child,depth+1)}
   }
+  tracePhase("viewport:AX-descendants")
   try visit(window,0)
   try require(!axObservationIncomplete,"Viewport AX observation incomplete")
   let index=try selectViewport(rows,outer,guest)
@@ -257,6 +272,7 @@ func publishExclusive(_ data:Data,_ destination:URL) throws {
 func hitBelongs(_ point:CGPoint,_ viewport:AXUIElement,_ window:AXUIElement,_ pid:pid_t) throws {
   var hit:AXUIElement?
   let system=AXUIElementCreateSystemWide();AXUIElementSetMessagingTimeout(system,0.02)
+  tracePhase("AXUIElementCopyElementAtPosition")
   try require(AXUIElementCopyElementAtPosition(system,Float(point.x),Float(point.y),&hit) == .success,"Cannot observe actual host hit target")
   guard var node=hit else {throw ProbeError(description:"Host hit target missing")}
   var owner:pid_t=0
@@ -283,32 +299,115 @@ func exactRequest(_ url:URL) throws -> ([String:Any],Data) {
   try require(created<=now && expiry>now && expiry-created==45000,"Contact request expired or invalid lifetime")
   return (row,bytes)
 }
-func holdUntil(_ deadline:Double,_ observe:()->Void) {
+func holdUntil(_ deadline:Double) {
   var fired=false
   DispatchQueue.main.asyncAfter(deadline:.now()+max(0,deadline-ProcessInfo.processInfo.systemUptime)){fired=true}
-  while !fired {observe();RunLoop.current.run(until:Date().addingTimeInterval(0.001))}
+  while !fired {RunLoop.current.run(until:Date().addingTimeInterval(0.001))}
 }
-let args=CommandLine.arguments
-if args.count != 12 {fputs("Expected original nine GUI ownership arguments, requestPath, responsePath\n",stderr);exit(2)}
+struct PreparedGUI {
+  let identity:[String:String],windowID:UInt32,windowFrame:CGRect
+  init(_ row:[String:Any],uuid:String,appID:String,pid:pid_t,test:String) throws {
+    guard row["version"] as? Int==1,row["kind"] as? String=="host-contact-preparation",row["ok"] as? Bool==true,row["noInputPosted"] as? Bool==true,
+          row["deviceUDID"] as? String==uuid,row["appID"] as? String==appID,
+          let originalPID=row["pid"] as? Int,originalPID>0,
+          let identity=row["simulatorIdentity"] as? [String:String],let guiPID=Int(identity["pid"] ?? ""),guiPID>0,
+          let launchDate=Double(identity["launchDate"] ?? ""),launchDate.isFinite,
+          !(identity["bundleURL"] ?? "").isEmpty,!(identity["executableURL"] ?? "").isEmpty,
+          let windowID=row["windowID"] as? UInt32,windowID>0 else {throw ProbeError(description:"Exact prepared GUI identity missing")}
+    try require(test=="testFilesExportBackup" ? originalPID==Int(pid) : test=="testFilesImportBackupAfterRelaunch" && originalPID != Int(pid),"Prepared export PID provenance differs")
+    self.identity=identity;self.windowID=windowID;self.windowFrame=try decodedRect(row["windowFrame"])
+  }
+  func validate(_ currentIdentity:[String:String],_ currentWindowID:UInt32,_ currentFrame:CGRect) throws {
+    try require(identity==currentIdentity && windowID==currentWindowID && windowFrame==currentFrame,"Prepared Simulator process or window changed")
+  }
+}
+func ownedContactDirectory(_ args:[String]) throws -> URL {
+  let request=URL(fileURLWithPath:args[10]),response=URL(fileURLWithPath:args[11]),receipt=URL(fileURLWithPath:args[7]),launch=URL(fileURLWithPath:args[9]),parent=request.deletingLastPathComponent()
+  var directory=stat()
+  try require(parent.path.hasPrefix("/") && canonical(parent.path)==parent && response.deletingLastPathComponent()==parent && receipt.deletingLastPathComponent()==parent && launch.deletingLastPathComponent()==parent && request.lastPathComponent=="request.json" && response.lastPathComponent=="response.json" && lstat(parent.path,&directory)==0 && directory.st_mode & S_IFMT == S_IFDIR && directory.st_mode & 0o777==0o700 && directory.st_uid==getuid(),"Host contact paths are not the exact owned private directory")
+  return parent
+}
+func prepare(_ args:[String]) -> Int32 {
+  let simulator=canonical(args[1]),uuid=args[2],name=args[3],runtime=args[4],appID=args[5]
+  let parent=URL(fileURLWithPath:args[10]).deletingLastPathComponent(),destination=parent.appendingPathComponent("prepared.json")
+  var record:[String:Any]=["version":1,"kind":"host-contact-preparation","ok":false,"noInputPosted":true,"deviceUDID":uuid,"appID":appID]
+  var code:Int32=1
+  do {
+    _=try ownedContactDirectory(args)
+    phaseEnabled=true
+    tracePhase("prepare:validate-launch")
+    guard let pid=pid_t(args[6]),pid>0 else {throw ProbeError(description:"Invalid preparation player PID")}
+    record["pid"]=Int(pid)
+    let root=try prebootRoot(URL(fileURLWithPath:args[8]),uuid,name,runtime)
+    let before=try validateLaunchEvidence(URL(fileURLWithPath:args[9]),pid,uuid,appID,root.url)
+    tracePhase("AXIsProcessTrusted")
+    try require(AXIsProcessTrusted(),"Existing AX permission unavailable")
+    tracePhase("NSRunningApplication.runningApplications")
+    let running=NSRunningApplication.runningApplications(withBundleIdentifier:"com.apple.iphonesimulator")
+    try require(running.count<=1 && running.allSatisfy{$0.bundleURL.map{canonical($0.path)}==simulator},"Selected Simulator process is ambiguous")
+    var selected=running.first
+    if let app=selected {
+      let state=snapshot(app,name)
+      try require(verified(state) || (state["windowObservationComplete"] as? Bool==true && state["totalAXWindowCount"] as? Int==0 && state["onScreenWindowCount"] as? Int==0),"Existing Simulator window is not the owned device")
+    }
+    if selected==nil {
+      var done=false,launchError:Error?
+      let configuration=NSWorkspace.OpenConfiguration();configuration.activates=true
+      tracePhase("NSWorkspace.openApplication")
+      NSWorkspace.shared.openApplication(at:simulator,configuration:configuration){app,error in DispatchQueue.main.async{selected=app;launchError=error;done=true}}
+      tracePhase("NSWorkspace.openApplication:waiting-completion")
+      try require(waitUntil(Date().addingTimeInterval(15)){done},"Simulator preparation launch timed out")
+      if let error=launchError {throw error}
+    }
+    guard let app=selected else {throw ProbeError(description:"Prepared Simulator did not launch")}
+    let identity=try simulatorIdentity(app)
+    try require(identity["bundleURL"]==simulator.path && identity["executableURL"]==simulator.appendingPathComponent("Contents/MacOS/Simulator").path,"Prepared Simulator executable differs")
+    tracePhase("NSRunningApplication.isFinishedLaunching")
+    try require(waitUntil(Date().addingTimeInterval(10)){app.isFinishedLaunching},"Prepared Simulator did not finish launching")
+    tracePhase("NSRunningApplication.activate")
+    app.activate(options:[])
+    var state=[String:Any]()
+    try require(waitUntil(Date().addingTimeInterval(20)){state=snapshot(app,name);return app.isActive && verified(state)},"Owned prepared visible window unavailable")
+    let row=(state["ownedWindows"] as! [[String:Any]])[0]
+    tracePhase("prepare:revalidate-launch")
+    try require(NSDictionary(dictionary:try validateLaunchEvidence(URL(fileURLWithPath:args[9]),pid,uuid,appID,root.url)).isEqual(to:before),"Player launch changed during preparation")
+    try root.validate()
+    try require(try simulatorIdentity(app)==identity,"Prepared Simulator identity changed")
+    let final=snapshot(app,name),finalRows=final["ownedWindows"] as? [[String:Any]] ?? []
+    try require(verified(final) && finalRows[0]["windowID"] as? UInt32==row["windowID"] as? UInt32 && NSDictionary(dictionary:finalRows[0]["frame"] as! [String:Double]).isEqual(to:row["frame"] as! [String:Double]),"Prepared owned window changed")
+    record.merge(["ok":true,"simulatorIdentity":identity,"windowID":row["windowID"]!,"windowFrame":row["frame"]!,"windowEvidence":final,"launchEvidence":before]){_,new in new}
+    tracePhase("prepare:ready")
+    code=0
+  } catch {record["error"]=String(describing:error);tracePhase("prepare:failed")}
+  record["phases"]=phaseHistory
+  do {_=try ownedContactDirectory(args);try publishExclusive(JSONSerialization.data(withJSONObject:record,options:[.prettyPrinted,.sortedKeys]),destination)} catch {fputs("Preparation receipt failed: \(error)\n",stderr);code=1}
+  return code
+}
+let rawArgs=CommandLine.arguments
+if rawArgs.count != 13 || !["prepare","contact"].contains(rawArgs[1]) {fputs("Expected prepare|contact then original eleven arguments\n",stderr);exit(2)}
+let mode=rawArgs[1],args=[rawArgs[0]]+Array(rawArgs.dropFirst(2))
+if mode=="prepare" {exit(prepare(args))}
 let simulatorURL=canonical(args[1]),uuid=args[2],deviceName=args[3],runtime=args[4],appID=args[5]
 let receiptURL=URL(fileURLWithPath:args[7]),launchURL=URL(fileURLWithPath:args[9]),requestURL=URL(fileURLWithPath:args[10]),responseURL=URL(fileURLWithPath:args[11])
 var receipt:[String:Any]=["version":1,"kind":"owned-simulator-host-contact","ok":false,"postedDown":false,"postedUp":false,"pixelReadinessVerified":false]
 var destinationsValid=false
 var code:Int32=1,selected:NSRunningApplication?,downPosted=false,upPosted=false,hostPoint=CGPoint.zero
-var contactSource:CGEventSource?,releaseEvent:CGEvent?,ownedIdentity=[String:String]()
+var contactSource:CGEventSource?,releaseEvent:CGEvent?,ownedIdentity=[String:String](),ownedPID:pid_t=0
 func release() throws {
-  guard downPosted && !upPosted,let app=selected else {return}
-  try require(!app.isTerminated,"Owned Simulator terminated while contact held")
+  guard downPosted && !upPosted else {return}
+  // NSRunningApplication properties are atomic run-loop snapshots; reuse the
+  // retained object, never look up a numeric PID again or query AX during hold.
+  guard let app=selected else {throw ProbeError(description:"Owned Simulator instance missing for release")}
+  try require(ownedPID>0 && app.processIdentifier==ownedPID && !app.isTerminated,"Owned Simulator instance terminated before release")
   guard let up=releaseEvent else {throw ProbeError(description:"Preallocated release event missing")}
   let now=ProcessInfo.processInfo.systemUptime;receipt["upUptime"]=now
   up.timestamp=CGEventTimestamp(now*1e9)
-  up.postToPid(app.processIdentifier);upPosted=true;receipt["postedUp"]=true
+  up.postToPid(ownedPID);upPosted=true;receipt["postedUp"]=true
 }
 do {
-  let parent=requestURL.deletingLastPathComponent()
-  var directory=stat()
-  try require(parent.path.hasPrefix("/") && canonical(parent.path)==parent && responseURL.deletingLastPathComponent()==parent && receiptURL.deletingLastPathComponent()==parent && launchURL.deletingLastPathComponent()==parent && requestURL.lastPathComponent=="request.json" && responseURL.lastPathComponent=="response.json" && lstat(parent.path,&directory)==0 && directory.st_mode & S_IFMT == S_IFDIR && directory.st_mode & 0o777==0o700 && directory.st_uid==getuid(),"Host contact paths are not the exact owned private directory")
+  let parent=try ownedContactDirectory(args)
   destinationsValid=true
+  phaseEnabled=true;tracePhase("contact:validate-request")
   let (request,originalBytes)=try exactRequest(requestURL)
   let admissionURL=requestURL.deletingLastPathComponent().appendingPathComponent("admission.json")
   let consumedURL=requestURL.deletingLastPathComponent().appendingPathComponent("consumed.json")
@@ -322,29 +421,29 @@ do {
   try require(request["version"] as? Int==1 && request["pid"] as? Int==Int(pid) && (request["generation"] as? Int ?? 0)>0 && nonce.range(of:#"^[a-f0-9]{64}$"#,options:.regularExpression) != nil,"Request launch identity malformed")
   try require((test=="testFilesExportBackup" && control=="start" && duration==0.20) || (test=="testFilesImportBackupAfterRelaunch" && control=="load" && duration==0.05),"Request is not the original required first contact")
   receipt.merge(["nonce":nonce,"requestID":requestID,"pid":Int(pid),"point":point,"duration":duration,"request":request]){_,new in new}
+  tracePhase("contact:validate-launch")
   let root=try prebootRoot(URL(fileURLWithPath:args[8]),uuid,deviceName,runtime)
   let launch=try validateLaunchEvidence(launchURL,pid,uuid,appID,root.url)
   let rawLaunch=try JSONSerialization.jsonObject(with:Data(contentsOf:launchURL)) as! [String:Any]
   try require(request["stdout"] as? String==rawLaunch["stdout"] as? String && request["stdoutDevice"] as? String==rawLaunch["stdoutDevice"] as? String && request["stdoutInode"] as? String==rawLaunch["stdoutInode"] as? String,"Request stdout differs from live launch")
   receipt["launchEvidence"]=launch
-  try require(AXIsProcessTrusted() && CGPreflightPostEventAccess(),"Existing AX/post-event access unavailable; no permission request allowed")
+  tracePhase("AXIsProcessTrusted");try require(AXIsProcessTrusted(),"Existing AX access unavailable")
+  tracePhase("CGPreflightPostEventAccess");try require(CGPreflightPostEventAccess(),"Existing post-event access unavailable")
   try require(!CGEventSource.buttonState(.combinedSessionState,button:.left) && CGEventSource.flagsState(.combinedSessionState).intersection([.maskShift,.maskControl,.maskAlternate,.maskCommand]).isEmpty,"Host input already held or modified")
+  tracePhase("contact:read-prepared-identity")
+  guard let prepared=try JSONSerialization.jsonObject(with:Data(contentsOf:parent.appendingPathComponent("prepared.json"))) as? [String:Any] else {throw ProbeError(description:"Prepared GUI receipt missing")}
+  let preparation=try PreparedGUI(prepared,uuid:uuid,appID:appID,pid:pid,test:test!)
+  tracePhase("NSRunningApplication.runningApplications")
   let running=NSRunningApplication.runningApplications(withBundleIdentifier:"com.apple.iphonesimulator")
-  try require(running.count<=1 && running.allSatisfy{$0.bundleURL.map{canonical($0.path)}==simulatorURL},"Selected Simulator process is ambiguous")
-  selected=running.first
-  if selected==nil {
-    var done=false,launchError:Error?
-    let configuration=NSWorkspace.OpenConfiguration();configuration.activates=true
-    NSWorkspace.shared.openApplication(at:simulatorURL,configuration:configuration){app,error in DispatchQueue.main.async{selected=app;launchError=error;done=true}}
-    try require(waitUntil(Date().addingTimeInterval(15)){done},"Simulator launch timed out")
-    if let error=launchError {throw error}
-  }
-  guard let app=selected else {throw ProbeError(description:"Simulator did not launch")}
-  ownedIdentity=try simulatorIdentity(app)
-  try require(ownedIdentity["bundleURL"]==simulatorURL.path && ownedIdentity["executableURL"]==simulatorURL.appendingPathComponent("Contents/MacOS/Simulator").path,"Selected Simulator executable differs")
-  app.activate(options:[])
-  var state=[String:Any]()
-  try require(waitUntil(Date().addingTimeInterval(20)){state=snapshot(app,deviceName);return app.isActive && verified(state)},"Unique owned frontmost device window unavailable")
+  try require(running.count==1,"Prepared Simulator process is absent or ambiguous")
+  let app=running[0];selected=app;ownedIdentity=try simulatorIdentity(app);ownedPID=app.processIdentifier
+  try require(ownedIdentity==preparation.identity && ownedIdentity["bundleURL"]==simulatorURL.path && ownedIdentity["executableURL"]==simulatorURL.appendingPathComponent("Contents/MacOS/Simulator").path,"Prepared Simulator identity changed")
+  // Contact never opens, activates, or waits for a GUI. Setup is complete before
+  // XCTest; this original action only validates its still-live owned window.
+  let state=snapshot(app,deviceName)
+  try require(app.isActive && verified(state),"Prepared Simulator is no longer uniquely visible/frontmost")
+  let currentRow=(state["ownedWindows"] as! [[String:Any]])[0]
+  try preparation.validate(ownedIdentity,currentRow["windowID"] as! UInt32,decodedRect(currentRow["frame"]))
   receipt["windowBefore"]=state;receipt["simulatorIdentity"]=ownedIdentity
   let row=(state["ownedWindows"] as! [[String:Any]])[0],windowID=row["windowID"] as! UInt32
   let axApp=AXUIElementCreateApplication(app.processIdentifier);AXUIElementSetMessagingTimeout(axApp,0.02)
@@ -372,27 +471,32 @@ do {
   releaseEvent=CGEvent(mouseEventSource:source,mouseType:.leftMouseUp,mouseCursorPosition:hostPoint,mouseButton:.left)
   try require(releaseEvent != nil,"Could not preallocate release event")
   down.setIntegerValueField(.mouseEventClickState,value:1);releaseEvent!.setIntegerValueField(.mouseEventClickState,value:1)
+  tracePhase("contact:validate-current-view")
   try validateRequestedView(rawLaunch,request)
   // Finish all potentially blocking ownership checks before DOWN. Release at
   // the absolute hold deadline to this same process, then revalidate geometry.
   try currentTarget()
+  tracePhase("contact:posting-down")
   let (_,finalBytes)=try exactRequest(requestURL);try require(finalBytes==originalBytes,"Request revoked before DOWN")
+  phaseWritesAllowed=false
   let downTime=ProcessInfo.processInfo.systemUptime;receipt["downUptime"]=downTime;down.timestamp=CGEventTimestamp(downTime*1e9)
-  down.postToPid(app.processIdentifier);downPosted=true;receipt["postedDown"]=true
-  var focusLost=false
-  holdUntil(downTime+duration){if !app.isActive || app.isTerminated {focusLost=true}}
+  down.postToPid(ownedPID);downPosted=true;receipt["postedDown"]=true
+  holdUntil(downTime+duration)
   try release()
-  try require(!focusLost,"Owned Simulator lost foreground during contact")
+  phaseWritesAllowed=true;tracePhase("contact:posted-up")
   try currentTarget()
   let elapsed=(receipt["upUptime"] as! Double)-(receipt["downUptime"] as! Double)
   try require(abs(elapsed-duration)<=0.025,"Host hold duration exceeded requested contact tolerance")
   try require(NSDictionary(dictionary:try validateLaunchEvidence(launchURL,pid,uuid,appID,root.url)).isEqual(to:launch),"Bound player identity changed after contact")
   receipt["ok"]=true;receipt["hostElapsed"]=elapsed;code=0
+  tracePhase("contact:complete")
 } catch {
   receipt["error"]=String(describing:error)
   do {try release()} catch {receipt["releaseError"]=String(describing:error)}
+  phaseWritesAllowed=true;tracePhase("contact:failed")
 }
 receipt["postedDown"]=downPosted;receipt["postedUp"]=upPosted
+receipt["phases"]=phaseHistory
 receipt["finishedAt"]=Date().timeIntervalSince1970*1000
 let data=(try? JSONSerialization.data(withJSONObject:receipt,options:[.prettyPrinted,.sortedKeys])) ?? Data()
 do {try require(destinationsValid,"Receipt destination was not validated");try publishExclusive(data,receiptURL);try publishExclusive(data,responseURL)} catch {fputs("Contact receipt write failed: \(error)\n",stderr);code=1}

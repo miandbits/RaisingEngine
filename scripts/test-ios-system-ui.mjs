@@ -104,7 +104,7 @@ try {
   await tool('/usr/bin/xcrun',['simctl','boot',device],'boot-start.log',60000);
   await tool('/usr/bin/xcrun',['simctl','bootstatus',device,'-b'],'boot.log',180000);
   await tool('/usr/bin/xcrun',['simctl','install',device,app],'install.log',120000);
-  let filesSaveDirectory;
+  let filesSaveDirectory,hostPreparationBytes;
   const testDestination='platform=iOS Simulator,id='+device;
   for(const name of cases) {
     const currentLog=path.join(out,name+'.stdout');
@@ -132,6 +132,9 @@ try {
       assert.ok(receiptIdentity.dev===dev&&receiptIdentity.ino===ino,'Player stdout was replaced');
       const expected={nonce:sandboxNonce,pid,contentFingerprint:fixture.snapshot.contentFingerprint,gameId:authored.gameId,deviceDataPath};
       const sandbox=await validateIOSSandboxReceipt(sandboxReceipt,expected);
+      if(filesSaveDirectory)assert.equal(sandbox.directory,filesSaveDirectory,'Relaunch must use the same app sandbox');
+      filesSaveDirectory=sandbox.directory;
+      receipt.sandbox={home:sandbox.home,saveFile:sandbox.saveFile};
       if(hostContactTool) {
         const directory=path.join(out,'host-contact-'+name);
         await mkdir(directory,{mode:0o700});
@@ -139,11 +142,26 @@ try {
         await writeFile(launchEvidence,JSON.stringify({appID:appId,deviceUDID:device,stdout:currentLog,
           stdoutDevice:String(dev),stdoutInode:String(ino),executableSha256:nativeHash,expected,sandboxReceipt,sandbox},null,2)+'\n',
         {flag:'wx',mode:0o600});
-        hostContact={directory,launchEvidence,requestPath:path.join(directory,'request.json'),responsePath:path.join(directory,'response.json')};
+        const requestPath=path.join(directory,'request.json'),responsePath=path.join(directory,'response.json');
+        const preparedPath=path.join(directory,'prepared.json');
+        const toolArgs=[path.join(process.env.DEVELOPER_DIR,'Applications','Simulator.app'),device,deviceName,selected.runtime,
+          appId,String(pid),path.join(directory,'window.json'),hostInventory,launchEvidence,requestPath,responsePath];
+        hostContact={directory,requestPath,responsePath,toolArgs};
+        if(name==='testFilesExportBackup') {
+          await tool(hostContactTool,['prepare',...toolArgs],name+'-host-prepare.log',55000);
+          hostPreparationBytes=await readFile(preparedPath);
+          const preparation=JSON.parse(hostPreparationBytes);
+          assert.ok(preparation.version===1&&preparation.ok===true&&preparation.noInputPosted===true&&
+            preparation.deviceUDID===device&&preparation.appID===appId&&preparation.pid===pid&&
+            Number.isSafeInteger(preparation.windowID)&&preparation.windowID>0&&preparation.simulatorIdentity&&preparation.windowFrame,
+          'Host preparation must bind the owned GUI to the original export launch without posting input');
+          receipt.hostContactPreparation={file:path.relative(out,preparedPath),pid,windowID:preparation.windowID};
+        } else {
+          assert.ok(hostPreparationBytes,'The fresh import requires the original owned GUI preparation');
+          await writeFile(preparedPath,hostPreparationBytes,{flag:'wx',mode:0o600});
+          receipt.hostContactPreparation.reusedByFreshPID=pid;
+        }
       }
-      if(filesSaveDirectory)assert.equal(sandbox.directory,filesSaveDirectory,'Relaunch must use the same app sandbox');
-      filesSaveDirectory=sandbox.directory;
-      receipt.sandbox={home:sandbox.home,saveFile:sandbox.saveFile};
       await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
     }
     if(name==='testFilesImportBackupAfterRelaunch') {
@@ -186,9 +204,7 @@ try {
         const contact=runHostContact({requestPath:hostContact.requestPath,responsePath:hostContact.responsePath,
           expected:{nonce:inputProofNonce,test:name,pid,stdout:currentLog,stdoutDevice:String(dev),stdoutInode:String(ino)},
           finished:()=>testFinished,
-          invoke:()=>tool(hostContactTool,[path.join(process.env.DEVELOPER_DIR,'Applications','Simulator.app'),device,deviceName,selected.runtime,
-            appId,String(pid),path.join(hostContact.directory,'window.json'),hostInventory,hostContact.launchEvidence,
-            hostContact.requestPath,hostContact.responsePath],name+'-host-contact.log',55000)
+          invoke:()=>tool(hostContactTool,['contact',...hostContact.toolArgs],name+'-host-contact.log',55000)
         }).finally(()=>{helperFinished=true;});
         const [testOutcome,contactOutcome]=await Promise.allSettled([boundedTest,contact]);
         receipt.hostContacts??={};
