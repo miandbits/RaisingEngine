@@ -77,6 +77,7 @@ jobs:
       - name: Compile the Simulator GUI attachment probe
         shell: bash
         run: |
+          shasum -a 256 scripts/lib/ios-simulator-gui-attachment.swift | tee -a .cache/ios-simulator-ci/files-environment.txt
           xcrun --sdk macosx swiftc scripts/lib/ios-simulator-gui-attachment.swift \
             -module-cache-path .cache/ios-simulator-ci/swift-module-cache \
             -o .cache/ios-simulator-ci/gui-attachment
@@ -102,6 +103,7 @@ jobs:
             .cache/ios-system-ui/latest.json
             .cache/ios-system-ui/run-*/result.json
             .cache/ios-system-ui/run-*/simulator-gui-attachment*.json
+            .cache/ios-system-ui/run-*/simulator-gui-attachment*.png
             .cache/ios-system-ui/run-*/files-export-checkpoint.json
             .cache/ios-system-ui/run-*/*-staging.json
             .cache/ios-system-ui/run-*/*.log
