@@ -103,7 +103,6 @@ jobs:
             .cache/ios-system-ui/latest.json
             .cache/ios-system-ui/run-*/result.json
             .cache/ios-system-ui/run-*/simulator-gui-attachment*.json
-            .cache/ios-system-ui/run-*/simulator-gui-attachment*.png
             .cache/ios-system-ui/run-*/files-export-checkpoint.json
             .cache/ios-system-ui/run-*/*-staging.json
             .cache/ios-system-ui/run-*/*.log
