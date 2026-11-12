@@ -187,7 +187,12 @@ jobs:
           npx --no-install tsc -p tsconfig.json
           node scripts/copy-schemas.mjs
       - name: Test export and import through the actual Files picker
+        env:
+          RAISING_IOS_CAPTURE_TOUCH_LOG: '1'
+        shell: bash
         run: |
+          test -z "${SDL_EVENT_LOGGING+x}${SIMCTL_CHILD_SDL_EVENT_LOGGING+x}"
+          test -z "${RAISING_INPUT_TRACE+x}${SIMCTL_CHILD_RAISING_INPUT_TRACE+x}"
           node scripts/test-ios-system-ui.mjs .cache/ios-simulator-ci/export \
             --project examples/my-first-raising-game --family iphone --test files-roundtrip --text-scale 2
       - uses: actions/upload-artifact@v4
