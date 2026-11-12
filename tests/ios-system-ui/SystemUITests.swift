@@ -74,6 +74,25 @@ final class SystemUITests: XCTestCase {
     }
     return nil
   }
+  fileprivate func waitForStartedGame(after generation:Int,timeout:TimeInterval=10) throws -> [String:Any] {
+    let deadline = ProcessInfo.processInfo.systemUptime + timeout
+    var lastView:[String:Any]?
+    repeat {
+      if let current = try latestCompleteView() {
+        lastView = current
+        if current["screenId"] as? String == "schedule",
+           let currentGeneration = current["documentGeneration"] as? Int, currentGeneration > generation,
+           let state = current["state"], !(state is NSNull) {return current}
+      }
+      if ProcessInfo.processInfo.systemUptime >= deadline {break}
+      RunLoop.current.run(until:Date().addingTimeInterval(0.05))
+    } while true
+    let screen = lastView?["screenId"] as? String ?? "missing"
+    let observedGeneration = (lastView?["documentGeneration"] as? Int).map(String.init) ?? "missing"
+    let stateValue = lastView?["state"]
+    let state = stateValue == nil ? "missing" : (stateValue is NSNull ? "null" : "non-null")
+    throw DiagnosticsError(message:"Start did not reach schedule with non-null state after generation \(generation) for \(diagnostics.test), PID \(diagnostics.pid); last screen=\(screen), generation=\(observedGeneration), state=\(state)")
+  }
   fileprivate func exportedState() throws -> [String: Any] {
     let url = URL(fileURLWithPath:diagnostics.stdout).deletingLastPathComponent().appendingPathComponent("files-export-checkpoint.json")
     let data = try Data(contentsOf:url)
@@ -181,9 +200,12 @@ final class SystemUITests: XCTestCase {
   }
   func testFilesExportBackup() throws {
     let app=filesPlayer()
+    let initial=try view()
+    let generation=try XCTUnwrap(initial["documentGeneration"] as? Int)
     // Give the newly attached Simulator digitizer one continuous first contact.
     try tap(app,"start",contactDuration:0.20)
-    let before=try backupState()
+    let started=try waitForStartedGame(after:generation)
+    let before=backupState(started)
     XCTAssertFalse(before["state"] is NSNull,"Start the game through its title control")
     try tap(app,"system-ui-files")
     try tapRecordControl(app,"system-records__slots-portable-export")
@@ -239,7 +261,9 @@ final class SystemUITests: XCTestCase {
     return app
   }
   func backupState() throws -> [String:Any] {
-    let ui=try view()
+    return backupState(try view())
+  }
+  func backupState(_ ui:[String:Any]) -> [String:Any] {
     return Dictionary(uniqueKeysWithValues:["state","commands","scheduleDraft","timeline"].map {($0,ui[$0] ?? NSNull())})
   }
   func tapRecordControl(_ app:XCUIApplication,_ id:String) throws {
@@ -596,6 +620,33 @@ final class SystemUIDiagnosticsTests: XCTestCase {
     try first.write(to:stdout,options:.atomic)
     XCTAssertThrowsError(try reader.latestCompleteView()) {
       XCTAssertEqual($0.localizedDescription,"Player diagnostics file was replaced")
+    }
+  }
+
+  func testWaitsForStartedGameFromBoundProcess() throws {
+    let (reader,stdout) = try fixture()
+    try configure(reader,stdout:stdout)
+    let title = Data((#"{"event":"editor-view","view":{"screenId":"title","documentGeneration":1,"state":null}}"# + "\n").utf8)
+    let pending = Data((#"{"event":"editor-view","view":{"screenId":"schedule","documentGeneration":2,"state":null}}"# + "\n").utf8)
+    let started = Data((#"{"event":"editor-view","view":{"screenId":"schedule","documentGeneration":2,"state":{"started":true}}}"# + "\n").utf8)
+    let writer = try FileHandle(forWritingTo:stdout)
+    defer {try? writer.close()}
+    try writer.seekToEnd()
+    try writer.write(contentsOf:title)
+    try writer.write(contentsOf:pending)
+    XCTAssertThrowsError(try reader.waitForStartedGame(after:1,timeout:0.1)) {
+      XCTAssertTrue($0.localizedDescription.contains("last screen=schedule, generation=2, state=null"))
+    }
+    let timer = Timer.scheduledTimer(withTimeInterval:0.1,repeats:false) { _ in
+      do {try writer.write(contentsOf:started)}
+      catch {XCTFail("Failed to append started view: \(error)")}
+    }
+    defer {timer.invalidate()}
+    XCTAssertEqual((try reader.waitForStartedGame(after:1,timeout:1)["state"] as? [String:Bool])?["started"],true)
+    XCTAssertThrowsError(try reader.waitForStartedGame(after:2,timeout:0))
+    try configure(reader,stdout:stdout,pid:pid_t.max)
+    XCTAssertThrowsError(try reader.waitForStartedGame(after:1,timeout:0)) {
+      XCTAssertTrue($0.localizedDescription.hasPrefix("Cannot observe player PID"))
     }
   }
 
