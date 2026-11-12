@@ -32,6 +32,9 @@
 #include "recollection.hpp"
 #ifdef SDL_PLATFORM_IOS
 #include "ios-accessibility.hpp"
+#include <unistd.h>
+#include <cstdlib>
+#include <TargetConditionals.h>
 #endif
 #include "editor-preview.hpp"
 #ifdef SDL_PLATFORM_MACOS
@@ -943,6 +946,9 @@ int main(int argc,char** argv) {
   std::string reading_override;double text_override=0;
   int max_frames=0;bool hidden=false,editor_events=false,report_checkpoints_only=false;uint32_t requested_seed=42;
   std::string requested_locale,preview_screen,preview_element,preview_state="normal";
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+  std::string sandbox_receipt_nonce;
+#endif
   fs::path preview_scene_file,preview_inspection_file,recording_file,editor_directory;Json preview_scene=nullptr;
   try {
   for(int i=1;i<argc;i++) {
@@ -956,6 +962,9 @@ int main(int argc,char** argv) {
     else if(arg=="--preview-element"&&i+1<argc)preview_element=argv[++i];
     else if(arg=="--preview-state"&&i+1<argc)preview_state=argv[++i];
     else if(arg=="--save"&&i+1<argc)save_file=fs::u8path(argv[++i]);
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+    else if(arg=="--sandbox-receipt"&&i+1<argc)sandbox_receipt_nonce=argv[++i];
+#endif
     else if(arg=="--automation"&&i+1<argc)automation_file=fs::u8path(argv[++i]);
     else if(arg=="--record-route"&&i+1<argc)recording_file=fs::u8path(argv[++i]);
     else if(arg=="--report"&&i+1<argc)report_file=fs::u8path(argv[++i]);
@@ -995,6 +1004,16 @@ int main(int argc,char** argv) {
 #endif
     if(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_GAMEPAD))throw std::runtime_error(SDL_GetError());
     if(save_file.empty()) {auto* pref=SDL_GetPrefPath("RaisingEngine",bundle.at("content").at("project").value("gameId","game").c_str());if(!pref)throw std::runtime_error(SDL_GetError());save_file=fs::u8path(pref)/"slot-1.json";SDL_free(pref);}
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+    if(!sandbox_receipt_nonce.empty()) {
+      if(!editor_events)throw std::runtime_error("Sandbox receipt requires editor events");
+      const char* home=std::getenv("HOME");
+      if(!home || !*home)throw std::runtime_error("Sandbox receipt requires HOME");
+      std::cout<<Json({{"event","sandbox-receipt"},{"nonce",sandbox_receipt_nonce},
+        {"pid",getpid()},{"home",home},{"saveFile",save_file.string()},
+        {"contentFingerprint",bundle.at("content").at("contentFingerprint")}}).dump()<<std::endl;
+    }
+#endif
     auto flags=SDL_WINDOW_RESIZABLE|SDL_WINDOW_HIGH_PIXEL_DENSITY|(hidden?SDL_WINDOW_HIDDEN:0);
     auto* window=SDL_CreateWindow(host_title.c_str(),1280,720,flags);
     if(!window)throw std::runtime_error(SDL_GetError());
