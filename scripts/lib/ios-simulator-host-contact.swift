@@ -250,21 +250,67 @@ func selectViewport(_ rows:[(String,CGRect)],_ outer:CGRect,_ guest:CGRect) thro
   try require(matches.count==1,"Owned display viewport is absent or ambiguous")
   return matches[0]
 }
+var viewportObservation=[String:Any]()
+func viewportBatchValue(_ value:Any,_ attribute:String) throws -> CFTypeRef? {
+  let raw=value as CFTypeRef
+  if CFGetTypeID(raw)==CFNullGetTypeID() {
+    viewportObservation[attribute+"Status"]="unsupported-null";return nil
+  }
+  if CFGetTypeID(raw)==AXValueGetTypeID(),AXValueGetType(raw as! AXValue) == .axError {
+    var error=AXError.failure
+    try require(AXValueGetValue(raw as! AXValue,.axError,&error),"Malformed AX error for "+attribute)
+    viewportObservation[attribute+"Status"]=error.rawValue
+    if error == .noValue || error == .attributeUnsupported {return nil}
+    throw ProbeError(description:"Viewport batch attribute \(attribute) failed: \(error.rawValue)")
+  }
+  viewportObservation[attribute+"Status"]=AXError.success.rawValue
+  return raw
+}
+func decodeViewportBatch(_ values:[Any]) throws -> (String,CGRect?,[AXUIElement]) {
+  try require(values.count==4,"Viewport batch attribute count differs")
+  guard let roleRaw=try viewportBatchValue(values[0],"role"),let role=roleRaw as? String,!role.isEmpty else {throw ProbeError(description:"Viewport node role unavailable/malformed")}
+  let position=try viewportBatchValue(values[1],"position"),size=try viewportBatchValue(values[2],"size")
+  var point=CGPoint.zero,extent=CGSize.zero,rect:CGRect?
+  if let position {
+    try require(CFGetTypeID(position)==AXValueGetTypeID() && AXValueGetType(position as! AXValue) == .cgPoint && AXValueGetValue(position as! AXValue,.cgPoint,&point),"Viewport node position malformed")
+  }
+  if let size {
+    try require(CFGetTypeID(size)==AXValueGetTypeID() && AXValueGetType(size as! AXValue) == .cgSize && AXValueGetValue(size as! AXValue,.cgSize,&extent),"Viewport node size malformed")
+  }
+  if position != nil && size != nil {
+    try require([point.x,point.y,extent.width,extent.height].allSatisfy{$0.isFinite} && extent.width>=0 && extent.height>=0,"Viewport node geometry invalid")
+    rect=CGRect(origin:point,size:extent)
+  }
+  try require(role != kAXGroupRole || rect != nil,"Candidate AXGroup geometry unavailable")
+  guard let childValue=try viewportBatchValue(values[3],"children") else {return (role,rect,[])}
+  guard let rawChildren=childValue as? [Any],rawChildren.allSatisfy({CFGetTypeID($0 as CFTypeRef)==AXUIElementGetTypeID()}) else {throw ProbeError(description:"Viewport children array malformed")}
+  return (role,rect,rawChildren.map{$0 as! AXUIElement})
+}
 func viewportCandidates(_ window:AXUIElement,_ guest:CGRect) throws -> [(AXUIElement,CGRect)] {
   var nodes=[AXUIElement](),rows=[(String,CGRect)](),visited=0
   guard let outer=frame(window) else {throw ProbeError(description:"Owned window frame unavailable")}
+  let started=ProcessInfo.processInfo.systemUptime
+  defer{viewportObservation["elapsed"]=ProcessInfo.processInfo.systemUptime-started;viewportObservation["visited"]=visited}
   func visit(_ node:AXUIElement,_ depth:Int) throws {
-    visited+=1;try require(visited<=128 && depth<=10,"Viewport AX tree exceeds bounded observation")
-    if let role=attribute(node,kAXRoleAttribute) as? String,let f=frame(node) {nodes.append(node);rows.append((role,f))}
-    let (value,status)=observedAttribute(node,kAXChildrenAttribute)
-    if status == .noValue || status == .attributeUnsupported {return}
-    guard status == .success,let children=value as? [AXUIElement] else {throw ProbeError(description:"Incomplete viewport AX descendants")}
+    visited+=1;viewportObservation=["visited":visited,"depth":depth,"operation":"AXUIElementCopyMultipleAttributeValues"]
+    try require(visited<=128 && depth<=10,"Viewport AX tree exceeds bounded observation")
+    try require(Date()<axObservationDeadline,"Viewport AX observation deadline reached before batch")
+    let names=[kAXRoleAttribute,kAXPositionAttribute,kAXSizeAttribute,kAXChildrenAttribute]
+    var result:CFArray?
+    let status=AXUIElementCopyMultipleAttributeValues(node,names as CFArray,[],&result)
+    viewportObservation["batchStatus"]=status.rawValue
+    try require(status == .success,"Viewport AX batch failed: \(status.rawValue)")
+    try require(Date()<axObservationDeadline,"Viewport AX observation deadline reached after batch")
+    guard let values=result as? [Any] else {throw ProbeError(description:"Viewport AX batch array missing")}
+    let (role,rect,children)=try decodeViewportBatch(values)
+    if let rect {nodes.append(node);rows.append((role,rect))}
     for child in children {try visit(child,depth+1)}
   }
-  tracePhase("viewport:AX-descendants")
+  tracePhase("viewport:AX-descendants-batched")
   try visit(window,0)
   try require(!axObservationIncomplete,"Viewport AX observation incomplete")
   let index=try selectViewport(rows,outer,guest)
+  viewportObservation["complete"]=true
   return [(nodes[index],rows[index].1)]
 }
 func validateRequestedView(_ launch:[String:Any],_ request:[String:Any]) throws {
@@ -583,6 +629,7 @@ if downPosted {
   if combined || hid {receipt["cleanupUnresolved"]=true;receipt["ok"]=false;code=1}
 }
 receipt["phases"]=phaseHistory
+receipt["viewportObservation"]=viewportObservation
 receipt["finishedAt"]=Date().timeIntervalSince1970*1000
 let data=(try? JSONSerialization.data(withJSONObject:receipt,options:[.prettyPrinted,.sortedKeys])) ?? Data()
 do {try require(destinationsValid,"Receipt destination was not validated");try publishExclusive(data,receiptURL);try publishExclusive(data,responseURL)} catch {fputs("Contact receipt write failed: \(error)\n",stderr);code=1}
