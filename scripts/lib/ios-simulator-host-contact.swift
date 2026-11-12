@@ -299,10 +299,32 @@ func exactRequest(_ url:URL) throws -> ([String:Any],Data) {
   try require(created<=now && expiry>now && expiry-created==45000,"Contact request expired or invalid lifetime")
   return (row,bytes)
 }
-func holdUntil(_ deadline:Double) {
-  var fired=false
-  DispatchQueue.main.asyncAfter(deadline:.now()+max(0,deadline-ProcessInfo.processInfo.systemUptime)){fired=true}
-  while !fired {RunLoop.current.run(until:Date().addingTimeInterval(0.001))}
+func holdUntil(_ deadline:Double) throws {
+  // This wait is the requested physical contact duration, never a readiness
+  // delay. Do not dispatch AppKit/main-queue callbacks while the button is held.
+  while true {
+    let remaining=deadline-ProcessInfo.processInfo.systemUptime
+    if remaining<=0 {return}
+    var interval=timespec(tv_sec:Int(remaining),tv_nsec:Int((remaining-floor(remaining))*1e9))
+    if nanosleep(&interval,nil) != 0 && errno != EINTR {throw ProbeError(description:"Monotonic contact hold interrupted unexpectedly")}
+  }
+}
+struct ContactTiming {
+  var downEnter=0.0,downReturn=0.0,deadline=0.0,holdEnter=0.0,holdReturn=0.0
+  var ownerEnter=0.0,ownerReturn=0.0,upEnter=0.0,upReturn=0.0
+  var json:[String:Double] {["downPostEnter":downEnter,"downPostReturn":downReturn,"releaseDeadline":deadline,"holdEnter":holdEnter,"holdReturn":holdReturn,"ownerCheckEnter":ownerEnter,"ownerCheckReturn":ownerReturn,"upPostEnter":upEnter,"upPostReturn":upReturn]}
+}
+func releaseRoute(alive:Bool,active:Bool) -> String {alive ? (active ? "global-hid" : "owned-pid-cleanup-only") : "no-live-owned-target"}
+func requireHostedEnvironment(_ environment:[String:String]) throws {
+  try require(environment["GITHUB_ACTIONS"]=="true" && environment["RUNNER_ENVIRONMENT"]=="github-hosted" && environment["RUNNER_OS"]=="macOS" && environment["CI"]=="true","Global host input is restricted to this isolated GitHub-hosted macOS diagnostic")
+}
+func observeFrame(_ element:AXUIElement) -> (CGRect?,[String:Any]) {
+  let (p,ps)=observedAttribute(element,kAXPositionAttribute), (s,ss)=observedAttribute(element,kAXSizeAttribute)
+  var details:[String:Any]=["positionStatus":ps.rawValue,"sizeStatus":ss.rawValue]
+  guard let p,let s,ps == .success,ss == .success,CFGetTypeID(p)==AXValueGetTypeID(),CFGetTypeID(s)==AXValueGetTypeID() else {return(nil,details)}
+  var point=CGPoint.zero,size=CGSize.zero
+  guard AXValueGetValue(p as! AXValue,.cgPoint,&point),AXValueGetValue(s as! AXValue,.cgSize,&size),point.x.isFinite,point.y.isFinite,size.width.isFinite,size.height.isFinite else {return(nil,details)}
+  let rect=CGRect(origin:point,size:size);details["frame"]=rectJSON(rect);return(rect,details)
 }
 struct PreparedGUI {
   let identity:[String:String],windowID:UInt32,windowFrame:CGRect
@@ -333,6 +355,7 @@ func prepare(_ args:[String]) -> Int32 {
   var record:[String:Any]=["version":1,"kind":"host-contact-preparation","ok":false,"noInputPosted":true,"deviceUDID":uuid,"appID":appID]
   var code:Int32=1
   do {
+    try requireHostedEnvironment(ProcessInfo.processInfo.environment)
     _=try ownedContactDirectory(args)
     phaseEnabled=true
     tracePhase("prepare:validate-launch")
@@ -393,18 +416,29 @@ var receipt:[String:Any]=["version":1,"kind":"owned-simulator-host-contact","ok"
 var destinationsValid=false
 var code:Int32=1,selected:NSRunningApplication?,downPosted=false,upPosted=false,hostPoint=CGPoint.zero
 var contactSource:CGEventSource?,releaseEvent:CGEvent?,ownedIdentity=[String:String](),ownedPID:pid_t=0
+var timing=ContactTiming(),actualReleaseRoute="not-attempted",mixedRoute=false
 func release() throws {
   guard downPosted && !upPosted else {return}
-  // NSRunningApplication properties are atomic run-loop snapshots; reuse the
-  // retained object, never look up a numeric PID again or query AX during hold.
-  guard let app=selected else {throw ProbeError(description:"Owned Simulator instance missing for release")}
-  try require(ownedPID>0 && app.processIdentifier==ownedPID && !app.isTerminated,"Owned Simulator instance terminated before release")
+  timing.ownerEnter=ProcessInfo.processInfo.systemUptime
+  let alive=selected.map{ownedPID>0 && $0.processIdentifier==ownedPID && !$0.isTerminated} ?? false
+  let active=selected?.isActive ?? false
+  timing.ownerReturn=ProcessInfo.processInfo.systemUptime
+  actualReleaseRoute=releaseRoute(alive:alive,active:active)
+  try require(alive,"Owned Simulator terminated; no release to a reused or foreign PID")
   guard let up=releaseEvent else {throw ProbeError(description:"Preallocated release event missing")}
-  let now=ProcessInfo.processInfo.systemUptime;receipt["upUptime"]=now
-  up.timestamp=CGEventTimestamp(now*1e9)
-  up.postToPid(ownedPID);upPosted=true;receipt["postedUp"]=true
+  timing.upEnter=ProcessInfo.processInfo.systemUptime
+  up.timestamp=CGEventTimestamp(timing.upEnter*1e9)
+  // A lost foreground never receives a global UP. Finish only the retained
+  // owned process's held interaction, explicitly fail, and report button state.
+  if active {up.post(tap:.cghidEventTap)}
+  else {mixedRoute=true;up.postToPid(ownedPID)}
+  timing.upReturn=ProcessInfo.processInfo.systemUptime
+  upPosted=true
+  try require(!mixedRoute,"Foreground changed; owned-PID release was cleanup only")
 }
+
 do {
+  try requireHostedEnvironment(ProcessInfo.processInfo.environment)
   let parent=try ownedContactDirectory(args)
   destinationsValid=true
   phaseEnabled=true;tracePhase("contact:validate-request")
@@ -429,7 +463,7 @@ do {
   receipt["launchEvidence"]=launch
   tracePhase("AXIsProcessTrusted");try require(AXIsProcessTrusted(),"Existing AX access unavailable")
   tracePhase("CGPreflightPostEventAccess");try require(CGPreflightPostEventAccess(),"Existing post-event access unavailable")
-  try require(!CGEventSource.buttonState(.combinedSessionState,button:.left) && CGEventSource.flagsState(.combinedSessionState).intersection([.maskShift,.maskControl,.maskAlternate,.maskCommand]).isEmpty,"Host input already held or modified")
+  try require([CGMouseButton.left,.right,.center].allSatisfy{!CGEventSource.buttonState(.combinedSessionState,button:$0)} && CGEventSource.flagsState(.combinedSessionState).intersection([.maskShift,.maskControl,.maskAlternate,.maskCommand,.maskSecondaryFn]).isEmpty,"Host input already held or modified")
   tracePhase("contact:read-prepared-identity")
   guard let prepared=try JSONSerialization.jsonObject(with:Data(contentsOf:parent.appendingPathComponent("prepared.json"))) as? [String:Any] else {throw ProbeError(description:"Prepared GUI receipt missing")}
   let preparation=try PreparedGUI(prepared,uuid:uuid,appID:appID,pid:pid,test:test!)
@@ -453,13 +487,18 @@ do {
   let candidates=try viewportCandidates(window,guest),viewport=candidates[0].0,viewportFrame=candidates[0].1
   hostPoint=try mappedPoint(viewportFrame,guest,guestPoint)
   receipt["viewportFrame"]=rectJSON(viewportFrame);receipt["hostPoint"]=["x":hostPoint.x,"y":hostPoint.y]
+  var geometryObservations=[[String:Any]]()
   func currentTarget() throws {
     try require(app.isActive && (try simulatorIdentity(app))==ownedIdentity,"Owned Simulator is no longer frontmost/stable")
     let visible=cgWindows(app.processIdentifier)
     try require(visible.count==1 && (visible[0][kCGWindowNumber as String] as? NSNumber)?.uint32Value==windowID,"Owned CG window changed")
     axObservationDeadline=Date().addingTimeInterval(0.03);axObservationIncomplete=false
     AXUIElementSetMessagingTimeout(window,0.01);AXUIElementSetMessagingTimeout(viewport,0.01)
-    try require(frame(window)==windowFrame && frame(viewport)==viewportFrame,"Owned viewport geometry changed")
+    let (observedWindow,windowDetails)=observeFrame(window),(observedViewport,viewportDetails)=observeFrame(viewport)
+    geometryObservations.append(["window":windowDetails,"viewport":viewportDetails])
+    receipt["geometryObservations"]=geometryObservations
+    try require(observedWindow != nil && observedViewport != nil,"Owned AX geometry unavailable; inspect recorded AX statuses")
+    try require(observedWindow==windowFrame && observedViewport==viewportFrame,"Owned AX geometry changed; inspect recorded frames")
     try hitBelongs(hostPoint,viewport,window,app.processIdentifier)
   }
   try currentTarget()
@@ -476,16 +515,29 @@ do {
   // Finish all potentially blocking ownership checks before DOWN. Release at
   // the absolute hold deadline to this same process, then revalidate geometry.
   try currentTarget()
+  tracePhase("contact:frontmost-mouse-window")
+  let appKitPoint=down.unflippedLocation
+  let mouseWindow=NSWindow.windowNumber(at:appKitPoint,belowWindowWithWindowNumber:0)
+  receipt["mouseDownWindowID"]=mouseWindow;receipt["appKitPoint"]=["x":appKitPoint.x,"y":appKitPoint.y]
+  try require(mouseWindow==Int(windowID),"Global mouse-down would target a different window")
+  axObservationDeadline=Date().addingTimeInterval(0.03)
+  let (focused,status)=observedAttribute(axApp,kAXFocusedWindowAttribute)
+  let focusedMatches=focused.map{CFGetTypeID($0)==AXUIElementGetTypeID() && CFEqual($0,window)}==true
+  receipt["focusedWindowStatus"]=status.rawValue;receipt["focusedWindowMatched"]=focusedMatches
+  try require(status == .success && focusedMatches && app.isActive,"Owned Simulator focused-window observation unavailable or differs")
+  try require([CGMouseButton.left,.right,.center].allSatisfy{!CGEventSource.buttonState(.combinedSessionState,button:$0)} && CGEventSource.flagsState(.combinedSessionState).intersection([.maskShift,.maskControl,.maskAlternate,.maskCommand,.maskSecondaryFn]).isEmpty,"Host input changed before DOWN")
   tracePhase("contact:posting-down")
   let (_,finalBytes)=try exactRequest(requestURL);try require(finalBytes==originalBytes,"Request revoked before DOWN")
   phaseWritesAllowed=false
-  let downTime=ProcessInfo.processInfo.systemUptime;receipt["downUptime"]=downTime;down.timestamp=CGEventTimestamp(downTime*1e9)
-  down.postToPid(ownedPID);downPosted=true;receipt["postedDown"]=true
-  holdUntil(downTime+duration)
+  timing.downEnter=ProcessInfo.processInfo.systemUptime;timing.deadline=timing.downEnter+duration;down.timestamp=CGEventTimestamp(timing.downEnter*1e9)
+  downPosted=true;down.post(tap:.cghidEventTap);timing.downReturn=ProcessInfo.processInfo.systemUptime
+  timing.holdEnter=ProcessInfo.processInfo.systemUptime
+  try holdUntil(timing.deadline)
+  timing.holdReturn=ProcessInfo.processInfo.systemUptime
   try release()
   phaseWritesAllowed=true;tracePhase("contact:posted-up")
   try currentTarget()
-  let elapsed=(receipt["upUptime"] as! Double)-(receipt["downUptime"] as! Double)
+  let elapsed=timing.upEnter-timing.downEnter
   try require(abs(elapsed-duration)<=0.025,"Host hold duration exceeded requested contact tolerance")
   try require(NSDictionary(dictionary:try validateLaunchEvidence(launchURL,pid,uuid,appID,root.url)).isEqual(to:launch),"Bound player identity changed after contact")
   receipt["ok"]=true;receipt["hostElapsed"]=elapsed;code=0
@@ -496,6 +548,16 @@ do {
   phaseWritesAllowed=true;tracePhase("contact:failed")
 }
 receipt["postedDown"]=downPosted;receipt["postedUp"]=upPosted
+receipt["downUptime"]=timing.downEnter;receipt["upUptime"]=timing.upEnter
+receipt["timing"]=timing.json;receipt["releaseRoute"]=actualReleaseRoute;receipt["mixedRouteCleanupOnly"]=mixedRoute
+receipt["inputRoute"]="CGEvent.post(cghidEventTap)"
+receipt["atomicWindowReservation"]=false
+if downPosted {
+  tracePhase("contact:observe-button-state")
+  let combined=CGEventSource.buttonState(.combinedSessionState,button:.left),hid=CGEventSource.buttonState(.hidSystemState,button:.left)
+  receipt["buttonStateAfter"]=["combinedSessionLeftDown":combined,"hidSystemLeftDown":hid]
+  if combined || hid {receipt["cleanupUnresolved"]=true;receipt["ok"]=false;code=1}
+}
 receipt["phases"]=phaseHistory
 receipt["finishedAt"]=Date().timeIntervalSince1970*1000
 let data=(try? JSONSerialization.data(withJSONObject:receipt,options:[.prettyPrinted,.sortedKeys])) ?? Data()
