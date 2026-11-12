@@ -321,6 +321,19 @@ func matchingOwnedWindow(actualID:UInt32,actualPID:pid_t,actualFrame:CGRect,expe
   actualID==expectedID && actualPID==expectedPID && abs(actualFrame.minX-expectedFrame.minX)<2 && abs(actualFrame.minY-expectedFrame.minY)<2 && abs(actualFrame.width-expectedFrame.width)<2 && abs(actualFrame.height-expectedFrame.height)<2
 }
 func exactlyOneMatch(_ records:[[String:Any]]) -> Bool {records.filter{$0["matches"] as? Bool==true}.count==1}
+func nativeWindowCaptureConfiguration(_ contentRect:CGRect,_ pointPixelScale:Double) throws -> SCStreamConfiguration {
+  let width=ceil(contentRect.width*pointPixelScale),height=ceil(contentRect.height*pointPixelScale)
+  try require(pointPixelScale.isFinite && pointPixelScale>0 && width.isFinite && height.isFinite && width>=1 && height>=1 && width<Double(Int.max) && height<Double(Int.max),"Invalid declared capture content scale/dimensions")
+  let configuration=SCStreamConfiguration()
+  configuration.width=Int(width);configuration.height=Int(height)
+  // Independent window capture does not upscale by default: a larger requested
+  // buffer can contain native-size content plus padding. Use the declared native
+  // pixel scale and explicitly fit the whole window into the output buffer.
+  configuration.scalesToFit=true;configuration.preservesAspectRatio=true
+  configuration.ignoreShadowsSingleWindow=true;configuration.includeChildWindows=false;configuration.showsCursor=false
+  configuration.pixelFormat=kCVPixelFormatType_32BGRA;configuration.colorSpaceName=CGColorSpace.sRGB
+  return configuration
+}
 func contentProof(_ app: NSRunningApplication, _ state: [String:Any], _ developer: String, _ uuid: String, _ receiptURL: URL) throws -> [String:Any] {
   try require(CGPreflightScreenCaptureAccess(),"Screen capture not already authorized")
   guard let rows=state["ownedWindows"] as? [[String:Any]],rows.count==1,
@@ -335,11 +348,9 @@ func contentProof(_ app: NSRunningApplication, _ state: [String:Any], _ develope
   try require(windows.count==1,"No unique ScreenCaptureKit window with exact owned CG ID/PID")
   let window=windows[0]
   try require(matchingOwnedWindow(actualID:window.windowID,actualPID:window.owningApplication?.processID ?? -1,actualFrame:window.frame,expectedID:id,expectedPID:app.processIdentifier,expectedFrame:expected),"ScreenCaptureKit and AX/CG identity/bounds differ")
-  let filter=SCContentFilter(desktopIndependentWindow:window),configuration=SCStreamConfiguration()
+  let filter=SCContentFilter(desktopIndependentWindow:window)
   try require(abs(filter.contentRect.width-expected.width)<2 && abs(filter.contentRect.height-expected.height)<2,"Capture filter does not contain full owned window bounds")
-  configuration.width=Int(ceil(window.frame.width*2));configuration.height=Int(ceil(window.frame.height*2))
-  configuration.ignoreShadowsSingleWindow=true;configuration.includeChildWindows=false;configuration.showsCursor=false
-  configuration.pixelFormat=kCVPixelFormatType_32BGRA;configuration.colorSpaceName=CGColorSpace.sRGB
+  let configuration=try nativeWindowCaptureConfiguration(filter.contentRect,Double(filter.pointPixelScale))
   var captured:CGImage?;complete=false;captureError=nil
   SCScreenshotManager.captureImage(contentFilter:filter,configuration:configuration){value,error in DispatchQueue.main.async {captured=value;captureError=error;complete=true}}
   try require(waitUntil(Date().addingTimeInterval(15)){complete},"Owned window capture timed out")
@@ -369,7 +380,7 @@ func contentProof(_ app: NSRunningApplication, _ state: [String:Any], _ develope
     record["matches"]=accepted;comparisons.append(record)
     if accepted {matches.append((canvas,record))}
   }
-  var proof:[String:Any]=["windowID":id,"simulatorPID":Int(app.processIdentifier),"SCWindowFrame":rectJSON(window.frame),"filterContentRect":rectJSON(filter.contentRect),"captureWidth":image.width,"captureHeight":image.height,"deviceWidth":device.width,"deviceHeight":device.height,"comparisons":comparisons,"matchingCandidates":matches.count,"verified":exactlyOneMatch(comparisons)]
+  var proof:[String:Any]=["windowID":id,"simulatorPID":Int(app.processIdentifier),"SCWindowFrame":rectJSON(window.frame),"filterContentRect":rectJSON(filter.contentRect),"filterPointPixelScale":Double(filter.pointPixelScale),"captureScalesToFit":configuration.scalesToFit,"capturePreservesAspectRatio":configuration.preservesAspectRatio,"captureWidth":image.width,"captureHeight":image.height,"deviceWidth":device.width,"deviceHeight":device.height,"comparisons":comparisons,"matchingCandidates":matches.count,"verified":exactlyOneMatch(comparisons)]
   if matches.count==1 {try writeImage(matches[0].0,URL(fileURLWithPath:prefix+"-canvas.png"));proof["selectedCandidate"]=matches[0].1}
   return proof
 }
