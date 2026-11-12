@@ -27,6 +27,7 @@
 #include "save-slots.hpp"
 #include "portable-save-files.hpp"
 #include "portable-save-input.hpp"
+#include "input-trace.hpp"
 
 #include "route-recording.hpp"
 #include "recollection.hpp"
@@ -210,6 +211,19 @@ public:
   }
   Json editor_command=Json::object();
   std::optional<SDL_FingerID> active_finger;
+  InputTrace input_trace;
+  uint32_t input_trace_flags() const {return (backgrounded?1:0)|(touch_dragged?2:0)|(context?4:0)|(dirty?8:0)|(!pending.empty()?16:0);}
+  void trace_input(const char* stage,const SDL_Event* event=nullptr,float x=0,float y=0,Rml::Element* target=nullptr) {
+    if(!input_trace.enabled())return;
+    const auto* hover=context?context->GetHoverElement():nullptr;
+    const auto* focus=context?context->GetFocusElement():nullptr;
+    input_trace.note(stage,event,document_generation,active_finger.value_or(0),input_trace_flags(),x,y,
+      target?target->GetId().c_str():nullptr,hover?hover->GetId().c_str():nullptr,focus?focus->GetId().c_str():nullptr);
+  }
+  static bool SDLCALL watch_input_trace(void* userdata,SDL_Event* event) {
+    if(InputTrace::relevant(event->type))static_cast<PlayerApplication*>(userdata)->input_trace.note("offered",event);
+    return true;
+  }
   Rml::Element* touch_scroll=nullptr;
   float touch_start_x=0,touch_start_y=0,touch_scroll_start=0,touch_scroll_start_x=0;
   bool touch_scroll_vertical=false,touch_scroll_horizontal=false;
@@ -252,8 +266,13 @@ public:
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
     SDL_AddEventWatch(watch_lifecycle,this);
 #endif
+    if(input_trace.enabled()) {
+      const bool installed=SDL_AddEventWatch(watch_input_trace,this);
+      input_trace.note(installed?"watch-installed":"watch-install-failed");
+    }
   }
   ~PlayerApplication(){
+    if(input_trace.enabled())SDL_RemoveEventWatch(watch_input_trace,this);
     if(portable_files)portable_files->shutdown();
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
     SDL_RemoveEventWatch(watch_lifecycle,this);
@@ -285,6 +304,7 @@ public:
   }
   void drain_actions(){while(!pending.empty()){const auto action=pending.front();pending.pop_front();execute(action);}}
   void lifecycle(bool paused) {
+    trace_input(paused?"lifecycle-pause":"lifecycle-resume");
     if(backgrounded==paused)return;
     if(paused) {
       if(portable_active())pending.clear();else drain_actions();
@@ -304,6 +324,11 @@ public:
     }
   }
   void ProcessEvent(Rml::Event& event) override {
+    if(input_trace.enabled()) {
+      const auto& type=event.GetType();
+      if(type=="mousedown"||type=="mouseup"||type=="click"||type=="focus"||type=="blur")
+        trace_input(type=="mousedown"?"rml-down":type=="mouseup"?"rml-up":type=="click"?"rml-click":type=="focus"?"rml-focus":"rml-blur",nullptr,0,0,event.GetTargetElement());
+    }
     // Scrolling changes geometry without a rebuild, including smooth scrolling
     // after the original input. Report the settled layout from the frame loop.
     if(event.GetType()=="scroll"){editor_input_dirty=true;return;}
@@ -380,7 +405,7 @@ public:
     }
     for(auto* element=event.GetTargetElement();element;element=element->GetParentNode()) {
       auto found=markup.actions.find(element->GetId());
-      if(found!=markup.actions.end()) {if(!element->HasAttribute("disabled"))pending.push_back(found->second);return;}
+      if(found!=markup.actions.end()) {if(!element->HasAttribute("disabled")){pending.push_back(found->second);trace_input("action-queued",nullptr,0,0,element);}return;}
     }
   }
   #include "activity-board-app.inc"
@@ -397,6 +422,7 @@ public:
     } catch(...) {markup.saved_preview={{"status","invalid"}};}
   }
   void rebuild() {
+    trace_input("rebuild-begin");
     finish_resume_context_restore();
     EditorKeyboardRebuildGuard input_rebuild;
     auto& markup=active_markup();auto& game=recalling()?recollection->game:this->game;
@@ -441,6 +467,7 @@ public:
     if(document)document->Close();
     document=replacement;
     document->AddEventListener("scroll",this,true);
+    if(input_trace.enabled()){document->AddEventListener("mousedown",this,true);document->AddEventListener("mouseup",this,true);}
     document->AddEventListener("mouseover",this);document->AddEventListener("mouseout",this);document->AddEventListener("focus",this,true);document->AddEventListener("blur",this,true);document->AddEventListener("keydown",this);document->AddEventListener("click",this);document->AddEventListener("change",this);document->AddEventListener("input",this);document->Show();
     for(const auto& owner:markup.render_elements)if(owner.value("kind","")=="schedule")for(int i=0;i<game.periods();i++)if(auto* select=document->GetElementById(widget_control_id(owner.value("id",""),"plan-"+std::to_string(i)))) {
       if(auto* box=select->QuerySelector("selectbox"))box->SetProperty("width",number(std::max(60.f,select->GetProperty<float>("width")))+"px");
@@ -509,9 +536,11 @@ public:
     entrance_keys=std::move(next_entrance_keys);dirty=false;
     try{if(!recalling())recording.publish(game);}catch(const std::exception& e){game.message=e.what();std::cerr<<"Route recording: "<<e.what()<<std::endl;}
     input_rebuild.finish();
+    trace_input("rebuild-end");
     if(editor_events){std::cout<<Json({{"event","editor-view"},{"command",editor_command},{"view",ui_state()}}).dump()<<std::endl;editor_command=Json::object();}
   }
   void execute(const Json& incoming) {
+    trace_input("execute");
     if(preview()||editor_paused)return;
     if(editor_live)markup.preview_screen.clear();
     editor_command=incoming;
@@ -702,6 +731,7 @@ public:
     dirty=true;
   }
   void event(SDL_Event& event) {
+    if(InputTrace::relevant(event.type))trace_input("consume",&event);
     if(event.type==SDL_EVENT_QUIT)running=false;
     if(event.type==SDL_EVENT_WILL_ENTER_BACKGROUND||event.type==SDL_EVENT_DID_ENTER_BACKGROUND||event.type==SDL_EVENT_DID_ENTER_FOREGROUND||event.type==SDL_EVENT_TERMINATING) {
 #if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
@@ -709,19 +739,20 @@ public:
 #endif
       return;
     }
-    if(backgrounded)return;
+    if(backgrounded){if(InputTrace::relevant(event.type))trace_input("reject-background",&event);return;}
     // UIKit already owns character edits and selection while its field is active.
     // Do not apply a second copy of hardware key or SDL text events to RmlUi.
     if(static_cast<EditorClockSystem*>(Rml::GetSystemInterface())->OwnsKeyboard()&&
        (event.type==SDL_EVENT_KEY_DOWN||event.type==SDL_EVENT_KEY_UP||event.type==SDL_EVENT_TEXT_INPUT||event.type==SDL_EVENT_TEXT_EDITING))return;
     if(editor_paused&&((event.type>=SDL_EVENT_KEY_DOWN&&event.type<=SDL_EVENT_KEYMAP_CHANGED)||(event.type>=SDL_EVENT_MOUSE_MOTION&&event.type<=SDL_EVENT_MOUSE_WHEEL)||(event.type>=SDL_EVENT_GAMEPAD_AXIS_MOTION&&event.type<=SDL_EVENT_GAMEPAD_TOUCHPAD_UP)))return;
     if(event.type==SDL_EVENT_FINGER_DOWN||event.type==SDL_EVENT_FINGER_MOTION||event.type==SDL_EVENT_FINGER_UP||event.type==SDL_EVENT_FINGER_CANCELED) {
-      if(!context)return;
+      if(!context){trace_input("reject-context",&event);return;}
       const auto& finger=event.tfinger;
       int width=0,height=0;SDL_GetWindowSize(window,&width,&height);float x=0,y=0;
-      if(!SDL_RenderCoordinatesFromWindow(renderer,finger.x*width,finger.y*height,&x,&y))return;
+      if(!SDL_RenderCoordinatesFromWindow(renderer,finger.x*width,finger.y*height,&x,&y)){trace_input("reject-conversion",&event);return;}
+      trace_input("mapped",&event,x,y);
       if(event.type==SDL_EVENT_FINGER_DOWN) {
-        if(active_finger||x<0||y<0||x>=markup.width||y>=markup.height)return;
+        if(active_finger||x<0||y<0||x>=markup.width||y>=markup.height){trace_input(active_finger?"reject-active":"reject-bounds",&event);return;}
         active_finger=finger.fingerID;touch_start_x=x;touch_start_y=y;touch_dragged=false;touch_scroll=nullptr;
         for(auto* e=context->GetElementAtPoint({x,y});e;e=e->GetParentNode()){
           const auto sy=e->GetProperty("overflow-y")->ToString(),sx=e->GetProperty("overflow-x")->ToString();
@@ -729,17 +760,17 @@ public:
           const bool horizontal=(sx=="auto"||sx=="scroll")&&e->GetScrollWidth()>e->GetClientWidth()+1;
           if(vertical||horizontal){touch_scroll=e;touch_scroll_vertical=vertical;touch_scroll_horizontal=horizontal;touch_scroll_start=e->GetScrollTop();touch_scroll_start_x=e->GetScrollLeft();break;}
         }
-        context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);context->ProcessMouseButtonDown(0,0);
+        context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);trace_input("dispatch-down",&event);context->ProcessMouseButtonDown(0,0);trace_input("dispatched-down",&event);
       } else if(active_finger&&*active_finger==finger.fingerID) {
-        if((active_markup().readable_active||touch_scroll)&&!touch_dragged&&std::hypot(x-touch_start_x,y-touch_start_y)>active_markup().minimum_control_extent(8)){touch_dragged=true;context->ProcessMouseMove(-1,-1,0);context->ProcessMouseButtonUp(0,0);}
+        if((active_markup().readable_active||touch_scroll)&&!touch_dragged&&std::hypot(x-touch_start_x,y-touch_start_y)>active_markup().minimum_control_extent(8)){touch_dragged=true;trace_input("drag-cancel",&event);context->ProcessMouseMove(-1,-1,0);context->ProcessMouseButtonUp(0,0);}
         if(touch_dragged&&touch_scroll){if(touch_scroll_vertical)touch_scroll->SetScrollTop(touch_scroll_start+touch_start_y-y);if(touch_scroll_horizontal)touch_scroll->SetScrollLeft(touch_scroll_start_x+touch_start_x-x);}
         else {
-          if(event.type==SDL_EVENT_FINGER_CANCELED)context->ProcessMouseMove(-1,-1,0);
+          if(event.type==SDL_EVENT_FINGER_CANCELED){trace_input("contact-cancel",&event);context->ProcessMouseMove(-1,-1,0);}
           else context->ProcessMouseMove(static_cast<int>(x),static_cast<int>(y),0);
-          if(event.type!=SDL_EVENT_FINGER_MOTION)context->ProcessMouseButtonUp(0,0);
+          if(event.type!=SDL_EVENT_FINGER_MOTION){trace_input("dispatch-up",&event);context->ProcessMouseButtonUp(0,0);trace_input("dispatched-up",&event);}
         }
         if(event.type!=SDL_EVENT_FINGER_MOTION){active_finger.reset();touch_scroll=nullptr;}
-      }
+      } else trace_input("reject-finger",&event);
       return;
     }
     // Keep physical dimensions out of the simulation. Responsive layouts rebuild
@@ -1069,6 +1100,7 @@ int main(int argc,char** argv) {
           if(type=="click"&&!editor.paused&&app.document)app.click(control.value("id",""));
         }
         SDL_Event event;while(SDL_PollEvent(&event))app.event(event);
+        app.input_trace.flush_if_due(app.document_generation,app.active_finger.value_or(0),app.input_trace_flags());
         if(app.backgrounded){SDL_Delay(50);continue;}
         app.poll_portable();
         app.drain_actions();

@@ -187,6 +187,8 @@ jobs:
           npx --no-install tsc -p tsconfig.json
           node scripts/copy-schemas.mjs
       - name: Test export and import through the actual Files picker
+        env:
+          SIMCTL_CHILD_RAISING_INPUT_TRACE: '1'
         run: |
           node scripts/test-ios-system-ui.mjs .cache/ios-simulator-ci/export \
             --project examples/my-first-raising-game --family iphone --test files-roundtrip --text-scale 2
