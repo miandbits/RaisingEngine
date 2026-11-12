@@ -7,6 +7,7 @@ import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
+import {idbExperimentConfiguration,readAcceptedContactProof,runIDBContact,startIDBCompanion,verifyIDBPreflight} from './lib/ios-idb-contact-test.mjs';
 import {analyzeInputIdleMemory} from './lib/ios-input-memory.mjs';
 import {cleanUpIOSSimulator,runBoundedAppleTool,selectIOSSimulator,ownedIOSSimulatorDataPath,readIOSPortableStaging,validateIOSSandboxReceipt,waitForIOSSandboxReceipt} from './lib/ios-simulator-test.mjs';
 
@@ -26,6 +27,9 @@ const selectedCases={
   'composition-probe':['testKoreanMidSyllableRotation']
 };
 const selection=option('--test')??'all';
+const contactExperiment=idbExperimentConfiguration();
+assert.ok(!contactExperiment||(['xctest','idb'].includes(contactExperiment.backend)&&selection==='files-roundtrip'&&!args.includes('--keep-failed-device')),
+  'Contact comparison requires the strict Files round trip and owned device cleanup');
 assert.ok(selection==='all'||Object.hasOwn(selectedCases,selection),'Unknown system UI test selection');
 const cases=selection==='all'?[
   ...selectedCases.files,...selectedCases.input,...selectedCases.selection,...selectedCases.composition,...selectedCases.japanese
@@ -73,11 +77,14 @@ await writeFile(path.join(app,'game/game.json'),JSON.stringify({...originalGame,
 await writeFile(path.join(out,'fixture-project.json'),JSON.stringify(authored,null,2));
 await writeFile(path.join(out,'fixture-content.json'),JSON.stringify(fixture.snapshot));
 assert.equal(hash(await readFile(path.join(app,executable))),nativeHash,'Probe must not modify the native executable');
-let device,exportedPID,passed=false;
-const results=[],receipt={ok:false,actualSystemPicker:false,actualFilesRoundTrip:false,sourceExport:source,sourceProject:project,sourceContentFingerprint:original.snapshot.contentFingerprint,fixtureContentFingerprint:fixture.snapshot.contentFingerprint,appExecutableSha256:nativeHash,appId,family,selection,textScale,results,diagnosticsTransport:'simulator-stdout',limits:['Simulator only; no physical device or external provider acceptance.','Cache-only authored fixture with unchanged native executable; not the caller game release.','Selected focused regressions, not the complete malformed-save or provider matrix.','XCTest performs all interactions and reads diagnostics from per-launch player stdout.']};
+let device,exportedPID,passed=false,companion,screen,firstLaunchTime;
+const results=[],receipt={ok:false,actualSystemPicker:false,actualFilesRoundTrip:false,sourceExport:source,sourceProject:project,sourceContentFingerprint:original.snapshot.contentFingerprint,fixtureContentFingerprint:fixture.snapshot.contentFingerprint,appExecutableSha256:nativeHash,appId,family,selection,textScale,results,diagnosticsTransport:'simulator-stdout',limits:['Simulator only; no physical device or external provider acceptance.','Cache-only authored fixture with unchanged native executable; not the caller game release.','Selected focused regressions, not the complete malformed-save or provider matrix.',contactExperiment?.backend==='idb'?'Only the first Start and fresh Load use idb; all other interactions use XCTest.':'XCTest performs all interactions and reads diagnostics from per-launch player stdout.']};
+if(contactExperiment)receipt.contactExperiment={backend:contactExperiment.backend,contacts:[],
+  noInputCompatibility:contactExperiment.backend==='idb'?'not-attempted':'not-applicable'};
 const exportCheckpoint=path.join(out,'files-export-checkpoint.json');
-const tool=(command,values,logName,timeout,env)=>runBoundedAppleTool(command,values,
-  {cwd:root,logFile:path.join(out,logName),timeout,env});
+const coordinator=path.join(root,'scripts/lib/ios-idb-contact.py');
+const tool=(command,values,logName,timeout,env,abortSignal)=>runBoundedAppleTool(command,values,
+  {cwd:root,logFile:path.join(out,logName),timeout,env,abortSignal});
 try {
   const {runtimes}=JSON.parse(sim('list','runtimes','--json'));
   const selected=selectIOSSimulator(runtimes,{family,runtimeId:process.env.RAISING_IOS_SIMULATOR_RUNTIME,
@@ -86,7 +93,9 @@ try {
   const harness=path.join(root,'tests/ios-system-ui'),copied=path.join(out,'harness');await cp(harness,copied,{recursive:true});
   const swift=path.join(copied,'SystemUITests.swift');
   const template=await readFile(swift,'utf8');receipt.harnessSourceSha256=hash(template);
-  await writeFile(swift,template.replaceAll('__APP_ID__',appId));
+  assert.equal(template.split('__FIRST_CONTACT_BACKEND__').length,2,'Swift harness must declare one expected contact backend');
+  await writeFile(swift,template.replaceAll('__APP_ID__',appId)
+    .replace('__FIRST_CONTACT_BACKEND__',contactExperiment?.backend??'normal'));
   const buildArgs=['-project',path.join(copied,'SystemUI.xcodeproj'),'-scheme','SystemUITests','-derivedDataPath',path.join(out,'DerivedData'),'CODE_SIGNING_ALLOWED=NO'];
   await tool('/usr/bin/xcodebuild',['build-for-testing',...buildArgs,'-destination','generic/platform=iOS Simulator'],'build.log');
   device=sim('create','RaisingEngine system UI '+path.basename(out),selected.type,selected.runtime);
@@ -95,6 +104,12 @@ try {
   await tool('/usr/bin/xcrun',['simctl','boot',device],'boot-start.log',60000);
   await tool('/usr/bin/xcrun',['simctl','bootstatus',device,'-b'],'boot.log',180000);
   await tool('/usr/bin/xcrun',['simctl','install',device,app],'install.log',120000);
+  if(contactExperiment?.backend==='idb') {
+    receipt.contactExperiment.noInputCompatibility='failed';
+    companion=await startIDBCompanion(contactExperiment.companion,device,out);
+    screen=await verifyIDBPreflight({companion,python:contactExperiment.python,coordinator,device,out,tool});
+    receipt.contactExperiment.noInputCompatibility='passed';
+  }
   let filesSaveDirectory;
   const filesRoundTrip=selection==='files-roundtrip';
   const testDestination='platform=iOS Simulator,id='+device;
@@ -102,7 +117,10 @@ try {
     const currentLog=path.join(out,name+'.stdout');
     await writeFile(currentLog,'',{flag:'wx',mode:0o600});
     const sandboxNonce=filesRoundTrip?randomBytes(32).toString('hex'):undefined;
+    const inputNonce=contactExperiment?randomBytes(32).toString('hex'):undefined;
     const saveArgs=filesRoundTrip?['--sandbox-receipt',sandboxNonce]:[];
+    if(inputNonce)saveArgs.push('--input-proof-nonce',inputNonce);
+    if(contactExperiment&&firstLaunchTime===undefined)firstLaunchTime=Math.floor(Date.now()/1000);
     const launchLog=name+'-launch.log';
     await tool('/usr/bin/xcrun',['simctl','launch','--stdout='+currentLog,
       '--stderr='+path.join(out,name+'.stderr'),device,appId,'--editor-events','--locale','en',
@@ -129,6 +147,24 @@ try {
       assert.notEqual(pid,exportedPID,'The simulator must start a different player process to import the backup');
     }
     const diagnostics={session:appId,test:name,pid,stdout:currentLog,device:String(dev),inode:String(ino),exportedPID};
+    let contact;
+    if(contactExperiment) {
+      const {backend}=contactExperiment;
+      const config={version:1,backend,nonce:inputNonce,pid,test:name};
+      contact={name,pid,nonce:inputNonce,backend};
+      receipt.contactExperiment.contacts.push(contact);
+      if(backend==='idb') {
+        const directory=await mkdtemp(path.join(out,'idb-'+name+'-'));
+        const context=path.join(directory,'context.json');
+        Object.assign(config,{requestPath:path.join(directory,'request.json'),responsePath:path.join(directory,'response.json')});
+        Object.assign(contact,{directory,context});
+        await writeFile(context,JSON.stringify({version:1,deviceUDID:device,appID:appId,pid,nonce:inputNonce,screen,
+          stdout:currentLog,stdoutDevice:String(dev),stdoutInode:String(ino)}),{flag:'wx',mode:0o600});
+      }
+      diagnostics.contactNonce=inputNonce;
+      diagnostics.contact=config;
+      contact.config=config;
+    }
     const testEnvironment={...process.env,TEST_RUNNER_RAISING_SYSTEM_UI_DIAGNOSTICS:JSON.stringify(diagnostics)};
     const idleProbe=name==='testOwnedTextInputIdle';let memoryTimer;
     const resultBundle=path.join(out,name+'.xcresult');
@@ -147,7 +183,36 @@ try {
     if(idleProbe){sample();memoryTimer=setInterval(sample,15000);}
     try {
       await delay(1000);
-      await tool('/usr/bin/xcodebuild',['test-without-building',...buildArgs,'-destination',testDestination,'-parallel-testing-enabled','NO','-resultBundlePath',resultBundle,...selectedTests],name+'.log',undefined,testEnvironment);
+      const xctest=tool('/usr/bin/xcodebuild',['test-without-building',...buildArgs,'-destination',testDestination,'-parallel-testing-enabled','NO','-resultBundlePath',resultBundle,...selectedTests],name+'.log',undefined,testEnvironment);
+      if(contact?.backend==='idb') {
+        const {requestPath,responsePath}=contact.config;
+        let ended=false;
+        const contactProcess=new AbortController();
+        const observeEnd=async()=>{
+          ended=true;
+          try {await rename(requestPath,path.join(contact.directory,'request-revoked.json'));}
+          catch(error) {if(error.code!=='ENOENT')throw error;}
+        };
+        const observed=xctest.then(observeEnd,()=>{contactProcess.abort();return observeEnd();});
+        const input=runIDBContact({requestPath,responsePath,
+          expected:{nonce:inputNonce,test:name,pid,deviceUDID:device,stdout:currentLog,stdoutDevice:String(dev),stdoutInode:String(ino)},
+          finished:()=>ended,invoke:()=>tool(contactExperiment.python,[coordinator,'contact','--socket',companion.socket,
+            '--context',contact.context,'--request',requestPath,'--response',responsePath],name+'-idb.log',45000,undefined,contactProcess.signal)});
+        const [testResult,inputResult,revocation]=await Promise.allSettled([xctest,input,observed]);
+        contact.rpc=inputResult.status==='fulfilled'?inputResult.value:{ok:false,error:String(inputResult.reason)};
+        if(revocation.status==='rejected')contact.revocationError=String(revocation.reason);
+        if(testResult.status==='rejected') {
+          contact.xctestError=String(testResult.reason);
+          throw testResult.reason;
+        }
+        if(inputResult.status==='rejected')throw inputResult.reason;
+        if(revocation.status==='rejected')throw revocation.reason;
+      } else await xctest;
+      if(contact) {
+        const transcript=await readFile(path.join(out,name+'.log'),'utf8');
+        contact.guest=await readAcceptedContactProof({transcript,stdout:currentLog,
+          pid,nonce:inputNonce,stdoutDevice:String(dev),stdoutInode:String(ino)});
+      }
     } finally {
       clearInterval(memoryTimer);
       if(idleProbe){sample();await writeFile(path.join(out,'input-memory-samples.json'),JSON.stringify(memory,null,2));}
@@ -193,6 +258,22 @@ try {
 finally {
   receipt.keptDevice=!!device&&!passed&&keepFailed;
   if(device&&!receipt.keptDevice) {
+    if(contactExperiment&&firstLaunchTime!==undefined) {
+      try {
+        await tool('/usr/bin/xcrun',['simctl','spawn',device,'log','show','--start','@'+firstLaunchTime,
+          '--timezone','UTC','--style','compact','--info','--debug','--predicate',
+          '(process == "RaisingPlayer" AND subsystem == "com.apple.UIKit" AND category == "EventDispatch") OR (process == "testmanagerd" AND (subsystem == "com.apple.dt.xctest" OR subsystem == "com.apple.recap")) OR (process == "backboardd" AND category == "TouchEvents")'],
+          'postcase-touch.log',30000);
+        receipt.contactExperiment.osObservation=(await stat(path.join(out,'postcase-touch.log'))).size>0?'captured':'empty';
+      } catch(error) {receipt.contactExperiment.osObservation=String(error);}
+    }
+    if(companion) {
+      try {
+        const cleanup=await companion.stop();
+        receipt.contactExperiment.companionCleanup=cleanup;
+        assert.ok(cleanup.exitCode===0&&cleanup.signal===null&&!cleanup.forced,'idb companion did not exit cleanly');
+      } catch(error) {receipt.contactExperiment.companionCleanupError=String(error);passed=false;receipt.ok=false;}
+    }
     receipt.cleanupErrors=await cleanUpIOSSimulator(device,(action,id)=>
       tool('/usr/bin/xcrun',['simctl',action,id],action+'.log',60000));
     receipt.deletedDevice=!receipt.cleanupErrors.delete;

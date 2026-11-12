@@ -1,0 +1,90 @@
+name: One ordered pair of iOS Files input routes
+on:
+  workflow_call:
+    inputs:
+      order:
+        type: string
+        required: true
+    outputs:
+      compatible:
+        description: The pair reached and passed its own no-input B compatibility gate
+        value: ${{ jobs.pair.outputs.compatible }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  pair:
+    name: Original XCTest and pinned Indigo (${{ inputs.order }})
+    runs-on: macos-26
+    timeout-minutes: 80
+    outputs:
+      compatible: ${{ steps.comparison.outputs.compatible }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      RAISING_IOS_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17e
+      RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.12'
+          architecture: arm64
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '13933842580'
+          merge-multiple: true
+          path: .cache/ios-simulator-ci/transfer
+          run-id: '43195821937'
+          github-token: ${{ github.token }}
+      - name: Verify audited observer transfer and exact unchanged build inputs
+        run: bash .github/diagnostics/ios-idb/verify-observer.sh
+      - name: Record the exact Files test toolchain
+        run: bash .github/diagnostics/ios-idb/record-toolchain.sh
+      - run: node --test tests/mobile/ios-simulator-test.test.mjs tests/mobile/ios-idb-contact-test.test.mjs
+      - run: npm ci
+      - name: Build the project service used by the public Files fixture
+        run: |
+          node scripts/generate-types.mjs
+          npx --no-install tsc -p tsconfig.json
+          node scripts/copy-schemas.mjs
+      - name: Prepare exact disposable companion dependencies
+        run: bash .github/diagnostics/ios-idb/setup.sh
+      - name: Run the fixed comparison in the predeclared order
+        id: comparison
+        env:
+          RAISING_IDB_ORDER: ${{ inputs.order }}
+        run: bash .github/diagnostics/ios-idb/run-pair.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: idb-files-pair-${{ inputs.order }}
+          path: |
+            .cache/ios-simulator-ci/*environment.txt
+            .cache/ios-simulator-ci/idb-dependencies.txt
+            .cache/ios-simulator-ci/source-diff.txt
+            .cache/ios-simulator-ci/observer-members.txt
+            .cache/ios-simulator-ci/sources.sha256
+            .cache/ios-simulator-ci/transfer/*.txt
+            .cache/ios-simulator-ci/transfer/*.sha256
+            .cache/ios-system-ui/latest.json
+            .cache/ios-system-ui/arm-*.json
+            .cache/ios-system-ui/run-*/result.json
+            .cache/ios-system-ui/run-*/files-export-checkpoint.json
+            .cache/ios-system-ui/run-*/idb-*.json
+            .cache/ios-system-ui/run-*/idb-*/*.json
+            .cache/ios-system-ui/run-*/*-staging.json
+            .cache/ios-system-ui/run-*/*.log
+            .cache/ios-system-ui/run-*/*.stdout
+            .cache/ios-system-ui/run-*/*.stderr
+            .cache/ios-system-ui/run-*/*.xcresult
+          include-hidden-files: true
+          retention-days: 14

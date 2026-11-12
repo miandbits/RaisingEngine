@@ -18,23 +18,28 @@ export function selectIOSSimulator(runtimes,{family='iphone',minimumMajor=16,run
   throw Error(`No available iOS ${minimumMajor}+ Simulator supports ${target}`);
 }
 
-export async function runBoundedAppleTool(command,args,{cwd,logFile,timeout=600000,env}) {
+export async function runBoundedAppleTool(command,args,{cwd,logFile,timeout=600000,env,abortSignal}) {
   const fd=await open(logFile,'w');
-  let timer,forceTimer;
+  let timer,forceTimer,cancel;
   try {
+    if(abortSignal?.aborted)throw Error(`${command} ${args[0]}: tool canceled before launch; inspect ${logFile}`);
     const child=spawn(command,args,{cwd,env,stdio:['ignore',fd.fd,fd.fd]});
-    let expired=false;
-    timer=setTimeout(()=>{
-      expired=true;
+    let expired=false,aborted=false;
+    const terminate=()=>{
       child.kill('SIGTERM');
-      forceTimer=setTimeout(()=>child.kill('SIGKILL'),10000);
-    },timeout);
+      forceTimer??=setTimeout(()=>child.kill('SIGKILL'),10000);
+    };
+    cancel=()=>{aborted=true;terminate();};
+    timer=setTimeout(()=>{expired=true;terminate();},timeout);
+    if(abortSignal?.aborted)cancel();
+    else abortSignal?.addEventListener('abort',cancel,{once:true});
     const {status,signal}=await new Promise((resolve,reject)=>{
       child.once('error',reject);
       child.once('close',(status,signal)=>resolve({status,signal}));
     });
-    if(status!==0||expired)throw Error(`${command} ${args[0]}: ${expired?'tool timeout':`exit ${status}, signal ${signal??'none'}`}; inspect ${logFile}`);
+    if(status!==0||expired||aborted)throw Error(`${command} ${args[0]}: ${aborted?'tool canceled':expired?'tool timeout':`exit ${status}, signal ${signal??'none'}`}; inspect ${logFile}`);
   } finally {
+    if(cancel)abortSignal?.removeEventListener('abort',cancel);
     clearTimeout(timer);
     clearTimeout(forceTimer);
     await fd.close();

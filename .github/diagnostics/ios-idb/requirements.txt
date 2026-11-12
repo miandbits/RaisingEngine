@@ -1,0 +1,10 @@
+# Only the diagnostic runner installs these exact binary artifacts.
+fb-idb @ https://github.com/meta/idb/releases/download/v1.7.8/fb_idb-1.7.8-py3-none-any.whl \
+    --hash=sha256:ed8557a4c54ffee53006c1fe63f070cda567949312ab24be56faf987c5a3d04b
+aiofiles==25.1.0 --hash=sha256:abe311e527c862958650f9438e859c1fa7568a141b22abcd015e120e86a85695
+grpclib==0.4.8 --hash=sha256:a5047733a7acc1c1cee6abf3c841c7c6fab67d2844a45a853b113fa2e6cd2654
+h2==4.3.0 --hash=sha256:c438f029a25f7945c69e0ccf0fb951dc3f73a5f6412981daee861431b70e2bdd
+hpack==4.1.0 --hash=sha256:157ac792668d995c657d93111f46b4535ed114f0c9c8d672271bbec7eae1b496
+hyperframe==6.1.0 --hash=sha256:b03380493a519fce58ea5af42e4a42317bf9bd425596f7a0835ffce80f1a42e5
+multidict==6.7.1 --hash=sha256:b0fa96985700739c4c7853a43c0b3e169360d6855780021bfc6d0f1ce7c123e7
+protobuf==7.35.1 --hash=sha256:24f857477359a85c0c235261b8ba905fd51b2562f4a64ca1df5473f29850cbf6
