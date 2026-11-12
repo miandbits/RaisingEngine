@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
-import {createHash} from 'node:crypto';
-import {cp, mkdir, mkdtemp, readFile, readdir, rename, stat, writeFile} from 'node:fs/promises';
+import {createHash,randomBytes} from 'node:crypto';
+import {cp, mkdir, mkdtemp, readFile, rename, stat, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
 import {analyzeInputIdleMemory} from './lib/ios-input-memory.mjs';
-import {cleanUpIOSSimulator,runBoundedAppleTool,selectIOSSimulator} from './lib/ios-simulator-test.mjs';
+import {cleanUpIOSSimulator,runBoundedAppleTool,selectIOSSimulator,ownedIOSSimulatorDataPath,readIOSPortableStaging,validateIOSSandboxReceipt,waitForIOSSandboxReceipt} from './lib/ios-simulator-test.mjs';
 
 const args=process.argv.slice(2), root=process.cwd();
 const option=name=>{const i=args.indexOf(name);return i<0?undefined:args[i+1];};
@@ -91,20 +91,18 @@ try {
   await tool('/usr/bin/xcodebuild',['build-for-testing',...buildArgs,'-destination','generic/platform=iOS Simulator'],'build.log');
   device=sim('create','RaisingEngine system UI '+path.basename(out),selected.type,selected.runtime);
   receipt.device={id:device,...selected};await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
+  const deviceDataPath=selection==='files-roundtrip'?ownedIOSSimulatorDataPath(JSON.parse(sim('list','devices','--json')),device):undefined;
   await tool('/usr/bin/xcrun',['simctl','boot',device],'boot-start.log',60000);
   await tool('/usr/bin/xcrun',['simctl','bootstatus',device,'-b'],'boot.log',180000);
   await tool('/usr/bin/xcrun',['simctl','install',device,app],'install.log',120000);
   let filesSaveDirectory;
-  if(selection==='files-roundtrip') {
-    const appData=sim('get_app_container',device,appId,'data');
-    filesSaveDirectory=path.join(appData,'Documents','files-roundtrip');
-    await mkdir(filesSaveDirectory,{recursive:true});
-  }
+  const filesRoundTrip=selection==='files-roundtrip';
   const testDestination='platform=iOS Simulator,id='+device;
   for(const name of cases) {
     const currentLog=path.join(out,name+'.stdout');
     await writeFile(currentLog,'',{flag:'wx',mode:0o600});
-    const saveArgs=filesSaveDirectory?['--save',path.join(filesSaveDirectory,'save.json')]:[];
+    const sandboxNonce=filesRoundTrip?randomBytes(32).toString('hex'):undefined;
+    const saveArgs=filesRoundTrip?['--sandbox-receipt',sandboxNonce]:[];
     const launchLog=name+'-launch.log';
     await tool('/usr/bin/xcrun',['simctl','launch','--stdout='+currentLog,
       '--stderr='+path.join(out,name+'.stderr'),device,appId,'--editor-events','--locale','en',
@@ -114,11 +112,22 @@ try {
     const memory=[],pid=Number(pidLine?.slice(appId.length+1).trim());
     assert.ok(Number.isInteger(pid)&&pid>0,'Simulator launch must report its app PID');
     process.kill(pid,0);
+    const {dev,ino}=await stat(currentLog,{bigint:true});
+    if(filesRoundTrip) {
+      const sandboxReceipt=await waitForIOSSandboxReceipt(currentLog,{alive:()=>process.kill(pid,0)});
+      const receiptIdentity=await stat(currentLog,{bigint:true});
+      assert.ok(receiptIdentity.dev===dev&&receiptIdentity.ino===ino,'Player stdout was replaced');
+      const sandbox=await validateIOSSandboxReceipt(sandboxReceipt,
+        {nonce:sandboxNonce,pid,contentFingerprint:fixture.snapshot.contentFingerprint,gameId:authored.gameId,deviceDataPath});
+      if(filesSaveDirectory)assert.equal(sandbox.directory,filesSaveDirectory,'Relaunch must use the same app sandbox');
+      filesSaveDirectory=sandbox.directory;
+      receipt.sandbox={home:sandbox.home,saveFile:sandbox.saveFile};
+      await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
+    }
     if(name==='testFilesImportBackupAfterRelaunch') {
       assert.ok(exportedPID,'The import requires a successful export process');
       assert.notEqual(pid,exportedPID,'The simulator must start a different player process to import the backup');
     }
-    const {dev,ino}=await stat(currentLog,{bigint:true});
     const diagnostics={session:appId,test:name,pid,stdout:currentLog,device:String(dev),inode:String(ino),exportedPID};
     const testEnvironment={...process.env,TEST_RUNNER_RAISING_SYSTEM_UI_DIAGNOSTICS:JSON.stringify(diagnostics)};
     const idleProbe=name==='testOwnedTextInputIdle';let memoryTimer;
@@ -153,7 +162,7 @@ try {
     const result={name,ok:true,actualUI:true,pid,xcresult:resultBundle};
     if(filesSaveDirectory) {
       process.kill(pid,0);
-      const stagingEntries=await readdir(path.join(filesSaveDirectory,'portable-staging'));
+      const stagingEntries=await readIOSPortableStaging(filesSaveDirectory);
       await writeFile(path.join(out,name+'-staging.json'),JSON.stringify({pid,stagingEntries},null,2));
       assert.deepEqual(stagingEntries,[],'Files must release owned staging files before restarting the player');
       result.portableStagingEntries=stagingEntries.length;
