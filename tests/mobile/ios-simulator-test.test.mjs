@@ -48,3 +48,49 @@ test('owned simulator deletion is attempted after shutdown failure and both erro
   assert.deepEqual(attempts,[['shutdown','owned-device'],['delete','owned-device']]);
   assert.deepEqual(errors,{shutdown:'Error: shutdown failed',delete:'Error: delete failed'});
 });
+
+test('sandbox receipt binds launch identity and rejects path escapes',async()=>{
+  const {mkdtemp,mkdir,realpath,symlink,rm}=await import('node:fs/promises');
+  const os=await import('node:os'), path=await import('node:path');
+  const {validateIOSSandboxReceipt,readIOSPortableStaging}=await import('../../scripts/lib/ios-simulator-test.mjs');
+  const temp=await mkdtemp(path.join(os.tmpdir(),'ios-receipt-'));
+  try {
+    const deviceDataPath=await realpath(temp),home=path.join(deviceDataPath,'Containers','Data','Application','12345678-1234-1234-1234-123456789abc');
+    const dir=path.join(home,'Library','Application Support','RaisingEngine','probe');
+    await mkdir(path.join(dir,'portable-staging'),{recursive:true});
+    const expected={nonce:'nonce',pid:42,contentFingerprint:'sha256:fixture',gameId:'probe',deviceDataPath};
+    const receipt={event:'sandbox-receipt',nonce:expected.nonce,pid:expected.pid,contentFingerprint:expected.contentFingerprint,home,saveFile:path.join(dir,'slot-1.json')};
+    assert.equal((await validateIOSSandboxReceipt(receipt,expected)).directory,dir);
+    assert.deepEqual(await readIOSPortableStaging(dir),[]);
+    for(const changed of [{nonce:'other'},{pid:43},{contentFingerprint:'other'},{saveFile:'/tmp/outside/save.json'},{home:'relative'},{home:home+'/../'+path.basename(home)},{saveFile:dir+'//slot-1.json'}])
+      await assert.rejects(validateIOSSandboxReceipt({...receipt,...changed},expected));
+    await rm(path.join(dir,'portable-staging'),{recursive:true});
+    await symlink(home,path.join(dir,'portable-staging'));
+    await assert.rejects(readIOSPortableStaging(dir),/owned directory/);
+    const outside=path.join(home,'outside');await mkdir(outside);
+    await assert.rejects(validateIOSSandboxReceipt(receipt,{...expected,deviceDataPath:outside}),/escapes owned simulator/);
+    await rm(path.join(home,'Library'),{recursive:true});
+    await symlink(outside,path.join(home,'Library'));
+    await assert.rejects(validateIOSSandboxReceipt(receipt,expected));
+  } finally {await rm(temp,{recursive:true,force:true});}
+});
+
+test('sandbox receipt wait is bounded and rejects duplicate receipts',async()=>{
+  const {waitForIOSSandboxReceipt}=await import('../../scripts/lib/ios-simulator-test.mjs');
+  const value={event:'sandbox-receipt',nonce:'n'};
+  assert.deepEqual(await waitForIOSSandboxReceipt('unused',{read:async()=>JSON.stringify(value)+'\n'}),value);
+  let reads=0;
+  assert.deepEqual(await waitForIOSSandboxReceipt('unused',{interval:1,read:async()=>++reads===1?JSON.stringify(value):JSON.stringify(value)+'\n'}),value);
+  assert.equal(reads,2);
+  await assert.rejects(waitForIOSSandboxReceipt('unused',{timeout:1,interval:1,read:async()=>''}),/Timed out/);
+  await assert.rejects(waitForIOSSandboxReceipt('unused',{read:async()=>JSON.stringify(value)+'\n'+JSON.stringify(value)+'\n'}),/Multiple/);
+});
+
+test('owned simulator data path comes from its unique inventory entry',async()=>{
+  const {ownedIOSSimulatorDataPath}=await import('../../scripts/lib/ios-simulator-test.mjs');
+  const entry={udid:'owned',dataPath:'/simulator/owned/data'};
+  assert.equal(ownedIOSSimulatorDataPath({devices:{runtime:[entry]}},'owned'),entry.dataPath);
+  assert.throws(()=>ownedIOSSimulatorDataPath({devices:{runtime:[entry]}},'other'));
+  assert.throws(()=>ownedIOSSimulatorDataPath({devices:{runtime:[entry,entry]}},'owned'));
+  assert.throws(()=>ownedIOSSimulatorDataPath({devices:{runtime:[{...entry,dataPath:'relative'}]}},'owned'));
+});

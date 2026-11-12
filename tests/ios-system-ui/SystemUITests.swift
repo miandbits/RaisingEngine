@@ -20,6 +20,7 @@ final class SystemUITests: XCTestCase {
   }
   private var diagnostics: DiagnosticsSource!
   private var lastRecord: (range: Range<Int>, bytes: Data)?
+  private var firstContactReadinessDeadline:TimeInterval = 0
   override func setUpWithError() throws {
     continueAfterFailure = false
     let environment = ProcessInfo.processInfo.environment
@@ -131,8 +132,26 @@ final class SystemUITests: XCTestCase {
     XCTAssertGreaterThanOrEqual(x,0);XCTAssertGreaterThanOrEqual(y,0)
     XCTAssertLessThanOrEqual(x+width,app.frame.width+1);XCTAssertLessThanOrEqual(y+height,app.frame.height+1)
     let target=app.coordinate(withNormalizedOffset:CGVector(dx:0,dy:0)).withOffset(CGVector(dx:x+width/2,dy:y+height/2))
-    if let contactDuration {target.press(forDuration:contactDuration)}
-    else {target.tap()}
+    if let contactDuration {
+      // Keep the same physical point, but bind this first contact to its actual
+      // accessible control so XCTest resolves the control's display and window.
+      let matches = app.buttons.matching(identifier:id)
+      let native = matches.element
+      let ready = NSPredicate { _, _ in matches.count == 1 && native.exists && native.isEnabled && native.isHittable }
+      let remaining = firstContactReadinessDeadline-ProcessInfo.processInfo.systemUptime
+      guard remaining > 0 else {throw DiagnosticsError(message:"First-contact readiness exceeded its foreground budget")}
+      XCTAssertEqual(XCTWaiter.wait(for:[XCTNSPredicateExpectation(predicate:ready,object:native)],timeout:remaining),.completed,
+                     "The first contact requires its actual hittable native accessibility element")
+      let frame = native.frame
+      let expected = target.screenPoint
+      XCTAssertTrue(frame.contains(expected),"The native control must contain the authored hit point")
+      let bound = native.coordinate(withNormalizedOffset:CGVector(dx:0,dy:0))
+        .withOffset(CGVector(dx:expected.x-frame.minX,dy:expected.y-frame.minY))
+      let actual = bound.screenPoint
+      XCTAssertEqual(actual.x,expected.x,accuracy:0.5)
+      XCTAssertEqual(actual.y,expected.y,accuracy:0.5)
+      bound.press(forDuration:contactDuration)
+    } else {target.tap()}
     RunLoop.current.run(until:Date().addingTimeInterval(0.4))
   }
   func geometry(_ landscape:Bool) throws {
@@ -255,6 +274,7 @@ final class SystemUITests: XCTestCase {
   }
   func filesPlayer() -> XCUIApplication {
     let app=XCUIApplication(bundleIdentifier:appID);app.activate()
+    firstContactReadinessDeadline = ProcessInfo.processInfo.systemUptime + 15
     XCTAssertTrue(app.wait(for:.runningForeground,timeout:15))
     XCUIDevice.shared.orientation = .portrait
     RunLoop.current.run(until:Date().addingTimeInterval(1))
