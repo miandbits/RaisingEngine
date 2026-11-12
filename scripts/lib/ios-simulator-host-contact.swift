@@ -139,10 +139,33 @@ func simulatorIdentity(_ app:NSRunningApplication) throws -> [String:String] {
   guard !app.isTerminated,let bundle=app.bundleURL,let executable=app.executableURL,let launch=app.launchDate else {throw ProbeError(description:"Selected Simulator public process identity unavailable/terminated")}
   return ["pid":String(app.processIdentifier),"bundleURL":canonical(bundle.path).path,"executableURL":canonical(executable.path).path,"launchDate":String(launch.timeIntervalSince1970)]
 }
+var lastOnScreenWindows: [[String:Any]]?
 func cgWindows(_ pid: pid_t) -> [[String:Any]] {
   tracePhase("CGWindowListCopyWindowInfo")
-  let all = CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements],kCGNullWindowID) as? [[String:Any]] ?? []
-  return all.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(pid) && ($0[kCGWindowLayer as String] as? Int) == 0 }
+  let all = CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements],kCGNullWindowID) as? [[String:Any]]
+  lastOnScreenWindows=all
+  return (all ?? []).filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(pid) && ($0[kCGWindowLayer as String] as? Int) == 0 }
+}
+// This is routing geometry, not a claim that AppKit accepts a mouse event.
+// The public on-screen list is front-to-back. Include every layer/alpha so
+// ignored/transparent owned content cannot expose a foreign window below it.
+func safeRoutingGeometry(_ rows:[[String:Any]]?,_ point:CGPoint,_ windowID:UInt32,_ pid:pid_t) throws -> [String:Any] {
+  guard let rows,!rows.isEmpty,point.x.isFinite,point.y.isFinite else {throw ProbeError(description:"On-screen routing geometry unavailable")}
+  var containing=[[String:Any]]()
+  for row in rows {
+    guard let id=row[kCGWindowNumber as String] as? NSNumber,id.uint32Value>0,id.doubleValue==Double(id.uint32Value),
+          let owner=row[kCGWindowOwnerPID as String] as? NSNumber,owner.int32Value>0,owner.doubleValue==Double(owner.int32Value),
+          let layer=row[kCGWindowLayer as String] as? NSNumber,layer.doubleValue.isFinite,layer.doubleValue==Double(layer.intValue),
+          let alpha=row[kCGWindowAlpha as String] as? NSNumber,alpha.doubleValue.isFinite,(0...1).contains(alpha.doubleValue),
+          let rawBounds=row[kCGWindowBounds as String] as? [String:Any],let bounds=CGRect(dictionaryRepresentation:rawBounds as CFDictionary),
+          [bounds.origin.x,bounds.origin.y,bounds.size.width,bounds.size.height].allSatisfy({$0.isFinite}),bounds.size.width>=0,bounds.size.height>=0
+    else {throw ProbeError(description:"On-screen window routing metadata incomplete")}
+    if bounds.contains(point) {containing.append(["windowID":id.uint32Value,"pid":owner.int32Value,"layer":layer.intValue,"alpha":alpha.doubleValue,"frame":rectJSON(bounds)])}
+  }
+  guard let first=containing.first else {throw ProbeError(description:"No on-screen window contains the contact point")}
+  try require(first["windowID"] as? UInt32==windowID && first["pid"] as? Int32==pid,"Top containing window is not the owned Simulator window")
+  try require(containing.allSatisfy{($0["pid"] as? Int32)==pid},"A foreign window lies beneath the owned contact point")
+  return ["proof":"front-to-back-bounds-and-no-foreign-overlap","containingWindows":containing,"appKitMouseAcceptanceVerified":false,"atomicWindowReservation":false]
 }
 func nodeMetadata(_ node: AXUIElement) -> [String:Any] {
   guard Date()<axObservationDeadline else {axObservationIncomplete=true;return [:]}
@@ -487,11 +510,13 @@ do {
   let candidates=try viewportCandidates(window,guest),viewport=candidates[0].0,viewportFrame=candidates[0].1
   hostPoint=try mappedPoint(viewportFrame,guest,guestPoint)
   receipt["viewportFrame"]=rectJSON(viewportFrame);receipt["hostPoint"]=["x":hostPoint.x,"y":hostPoint.y]
-  var geometryObservations=[[String:Any]]()
+  var geometryObservations=[[String:Any]](),routingGeometryObservations=[[String:Any]]()
   func currentTarget() throws {
     try require(app.isActive && (try simulatorIdentity(app))==ownedIdentity,"Owned Simulator is no longer frontmost/stable")
     let visible=cgWindows(app.processIdentifier)
     try require(visible.count==1 && (visible[0][kCGWindowNumber as String] as? NSNumber)?.uint32Value==windowID,"Owned CG window changed")
+    routingGeometryObservations.append(try safeRoutingGeometry(lastOnScreenWindows,hostPoint,windowID,app.processIdentifier))
+    receipt["routingGeometryObservations"]=routingGeometryObservations
     axObservationDeadline=Date().addingTimeInterval(0.03);axObservationIncomplete=false
     AXUIElementSetMessagingTimeout(window,0.01);AXUIElementSetMessagingTimeout(viewport,0.01)
     let (observedWindow,windowDetails)=observeFrame(window),(observedViewport,viewportDetails)=observeFrame(viewport)
@@ -513,13 +538,12 @@ do {
   tracePhase("contact:validate-current-view")
   try validateRequestedView(rawLaunch,request)
   // Finish all potentially blocking ownership checks before DOWN. Release at
-  // the absolute hold deadline to this same process, then revalidate geometry.
+  // the absolute hold deadline at this same point, then revalidate geometry.
   try currentTarget()
-  tracePhase("contact:frontmost-mouse-window")
-  let appKitPoint=down.unflippedLocation
-  let mouseWindow=NSWindow.windowNumber(at:appKitPoint,belowWindowWithWindowNumber:0)
-  receipt["mouseDownWindowID"]=mouseWindow;receipt["appKitPoint"]=["x":appKitPoint.x,"y":appKitPoint.y]
-  try require(mouseWindow==Int(windowID),"Global mouse-down would target a different window")
+  // currentTarget just proved the exact point is geometrically isolated using
+  // its existing CG snapshot and system-wide AX ancestry. Only a real guest
+  // DIRECT receipt can establish that Simulator accepted the posted contact.
+  receipt["appKitMouseAcceptanceVerified"]=false
   axObservationDeadline=Date().addingTimeInterval(0.03)
   let (focused,status)=observedAttribute(axApp,kAXFocusedWindowAttribute)
   let focusedMatches=focused.map{CFGetTypeID($0)==AXUIElementGetTypeID() && CFEqual($0,window)}==true
