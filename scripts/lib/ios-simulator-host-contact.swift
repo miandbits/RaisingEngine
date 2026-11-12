@@ -149,10 +149,15 @@ func cgWindows(_ pid: pid_t) -> [[String:Any]] {
 // This is routing geometry, not a claim that AppKit accepts a mouse event.
 // The public on-screen list is front-to-back. Include every layer/alpha so
 // ignored/transparent owned content cannot expose a foreign window below it.
+var routingAttempts=[[String:Any]]()
 func safeRoutingGeometry(_ rows:[[String:Any]]?,_ point:CGPoint,_ windowID:UInt32,_ pid:pid_t) throws -> [String:Any] {
+  var observation:[String:Any]=["point":["x":point.x,"y":point.y],"expectedWindowID":windowID,"expectedPID":pid,"admitted":false]
+  defer{routingAttempts.append(observation)}
+  do {
   guard let rows,!rows.isEmpty,point.x.isFinite,point.y.isFinite else {throw ProbeError(description:"On-screen routing geometry unavailable")}
   var containing=[[String:Any]]()
-  for row in rows {
+  for (index,row) in rows.enumerated() {
+    observation["lastRowIndex"]=index
     guard let id=row[kCGWindowNumber as String] as? NSNumber,id.uint32Value>0,id.doubleValue==Double(id.uint32Value),
           let owner=row[kCGWindowOwnerPID as String] as? NSNumber,owner.int32Value>0,owner.doubleValue==Double(owner.int32Value),
           let layer=row[kCGWindowLayer as String] as? NSNumber,layer.doubleValue.isFinite,layer.doubleValue==Double(layer.intValue),
@@ -160,12 +165,17 @@ func safeRoutingGeometry(_ rows:[[String:Any]]?,_ point:CGPoint,_ windowID:UInt3
           let rawBounds=row[kCGWindowBounds as String] as? [String:Any],let bounds=CGRect(dictionaryRepresentation:rawBounds as CFDictionary),
           [bounds.origin.x,bounds.origin.y,bounds.size.width,bounds.size.height].allSatisfy({$0.isFinite}),bounds.size.width>=0,bounds.size.height>=0
     else {throw ProbeError(description:"On-screen window routing metadata incomplete")}
-    if bounds.contains(point) {containing.append(["windowID":id.uint32Value,"pid":owner.int32Value,"layer":layer.intValue,"alpha":alpha.doubleValue,"frame":rectJSON(bounds)])}
+    if bounds.contains(point) {
+      containing.append(["listIndex":index,"windowID":id.uint32Value,"pid":owner.int32Value,"ownerName":String((row[kCGWindowOwnerName as String] as? String ?? "").prefix(128)),"layer":layer.intValue,"alpha":alpha.doubleValue,"frame":rectJSON(bounds)])
+      observation["containingWindows"]=containing
+    }
   }
   guard let first=containing.first else {throw ProbeError(description:"No on-screen window contains the contact point")}
   try require(first["windowID"] as? UInt32==windowID && first["pid"] as? Int32==pid,"Top containing window is not the owned Simulator window")
   try require(containing.allSatisfy{($0["pid"] as? Int32)==pid},"A foreign window lies beneath the owned contact point")
+  observation["admitted"]=true
   return ["proof":"front-to-back-bounds-and-no-foreign-overlap","containingWindows":containing,"appKitMouseAcceptanceVerified":false,"atomicWindowReservation":false]
+  } catch {observation["error"]=String(describing:error);throw error}
 }
 func nodeMetadata(_ node: AXUIElement) -> [String:Any] {
   guard Date()<axObservationDeadline else {axObservationIncomplete=true;return [:]}
@@ -630,6 +640,7 @@ if downPosted {
 }
 receipt["phases"]=phaseHistory
 receipt["viewportObservation"]=viewportObservation
+receipt["routingAttempts"]=routingAttempts
 receipt["finishedAt"]=Date().timeIntervalSince1970*1000
 let data=(try? JSONSerialization.data(withJSONObject:receipt,options:[.prettyPrinted,.sortedKeys])) ?? Data()
 do {try require(destinationsValid,"Receipt destination was not validated");try publishExclusive(data,receiptURL);try publishExclusive(data,responseURL)} catch {fputs("Contact receipt write failed: \(error)\n",stderr);code=1}
