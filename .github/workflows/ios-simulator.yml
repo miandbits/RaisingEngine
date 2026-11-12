@@ -26,7 +26,7 @@ jobs:
           node-version: '22.14.0'
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12.12'
+          python-version: '3.12.10'
           architecture: arm64
       - name: Prepare exact disposable companion dependencies
         run: bash .github/diagnostics/ios-idb/setup.sh
