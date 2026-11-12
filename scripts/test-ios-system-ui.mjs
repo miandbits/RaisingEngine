@@ -92,7 +92,13 @@ try {
   const deviceName='RaisingEngine system UI '+path.basename(out);
   device=sim('create',deviceName,selected.type,selected.runtime);
   receipt.device={id:device,...selected};await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
-  const deviceDataPath=selection==='files-roundtrip'?ownedIOSSimulatorDataPath(JSON.parse(sim('list','devices','--json')),device):undefined;
+  const prebootInventory=selection==='files-roundtrip'?sim('list','devices','--json'):undefined;
+  const deviceDataPath=prebootInventory?ownedIOSSimulatorDataPath(JSON.parse(prebootInventory),device):undefined;
+  let guiPrebootInventory;
+  if(prebootInventory&&process.env.RAISING_IOS_GUI_ATTACHMENT_TOOL) {
+    guiPrebootInventory=path.join(out,'simulator-gui-attachment-preboot-inventory.json');
+    await writeFile(guiPrebootInventory,prebootInventory+'\n',{flag:'wx',mode:0o600});
+  }
   await tool('/usr/bin/xcrun',['simctl','boot',device],'boot-start.log',60000);
   await tool('/usr/bin/xcrun',['simctl','bootstatus',device,'-b'],'boot.log',180000);
   await tool('/usr/bin/xcrun',['simctl','install',device,app],'install.log',120000);
@@ -128,10 +134,11 @@ try {
       await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
     }
     if(name==='testFilesExportBackup'&&process.env.RAISING_IOS_GUI_ATTACHMENT_TOOL) {
+      assert.ok(guiPrebootInventory,'GUI attachment requires the saved preboot ownership inventory');
       const simulatorApp=path.join(process.env.DEVELOPER_DIR,'Applications','Simulator.app');
       const guiReceipt=path.join(out,'simulator-gui-attachment.json');
       await tool(process.env.RAISING_IOS_GUI_ATTACHMENT_TOOL,
-        [simulatorApp,device,deviceName,selected.runtime,appId,String(pid),guiReceipt],
+        [simulatorApp,device,deviceName,selected.runtime,appId,String(pid),guiReceipt,guiPrebootInventory],
         'simulator-gui-attachment.log',120000);
       const attachment=JSON.parse(await readFile(guiReceipt,'utf8'));
       assert.equal(attachment.deviceUDID,device,'GUI attachment must belong to the owned Simulator');

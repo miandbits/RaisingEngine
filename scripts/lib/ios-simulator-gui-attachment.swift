@@ -48,19 +48,117 @@ func waitUntil(_ requestedDeadline: Date, _ predicate: () -> Bool) -> Bool {
   } while Date() < deadline
   return predicate()
 }
-func runInventory(_ developer: String, _ destination: URL) throws -> [String:Any] {
-  FileManager.default.createFile(atPath:destination.path,contents:nil)
-  let output = try FileHandle(forWritingTo:destination)
-  defer { try? output.close() }
-  let process = Process(); process.executableURL = URL(fileURLWithPath:"/usr/bin/xcrun")
-  process.arguments = ["simctl","list","devices","--json"]
-  process.environment = ProcessInfo.processInfo.environment.merging(["DEVELOPER_DIR":developer]) { _,new in new }
-  process.standardOutput = output; process.standardError = FileHandle.nullDevice
-  try process.run()
-  let finished = waitUntil(Date().addingTimeInterval(20)) { !process.isRunning }
-  if !finished { process.terminate(); throw ProbeError(description:"Owned-device inventory timed out") }
-  try require(process.terminationStatus == 0,"Owned-device inventory failed")
-  return try JSONSerialization.jsonObject(with:Data(contentsOf:destination)) as? [String:Any] ?? [:]
+struct ProcessIdentity: Equatable {
+  let pid:pid_t,ppid:pid_t,start:String,state:String,name:String
+  var json:[String:Any] {["pid":Int(pid),"ppid":Int(ppid),"start":start,"state":state,"accountingName":name]}
+  func sameLifetime(_ other:Self)->Bool {pid==other.pid && ppid==other.ppid && start==other.start && name==other.name}
+}
+func psText(_ arguments:[String]) throws -> String {
+  // Documented host command; no CoreSimulator service or environment inspection.
+  let file=FileManager.default.temporaryDirectory.appendingPathComponent("raising-owned-process-"+UUID().uuidString)
+  FileManager.default.createFile(atPath:file.path,contents:nil,attributes:[.posixPermissions:0o600])
+  defer {try? FileManager.default.removeItem(at:file)}
+  let output=try FileHandle(forWritingTo:file);defer {try? output.close()}
+  let task=Process();task.executableURL=URL(fileURLWithPath:"/bin/ps");task.arguments=arguments
+  task.environment=ProcessInfo.processInfo.environment.merging(["LC_ALL":"C","TZ":"UTC"]){_,new in new}
+  task.standardOutput=output;task.standardError=FileHandle.standardError
+  try task.run()
+  if !waitUntil(Date().addingTimeInterval(5),{!task.isRunning}) {task.terminate();throw ProbeError(description:"Host process observation timed out")}
+  try require(task.terminationStatus==0,"Host process observation failed")
+  return try String(contentsOf:file,encoding:.utf8)
+}
+func parseProcesses(_ text:String) throws -> [pid_t:ProcessIdentity] {
+  let regex=try NSRegularExpression(pattern:#"^\s*(\d+)\s+(\d+)\s+([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(\S+)\s+(.+?)\s*$"#)
+  var records=[pid_t:ProcessIdentity]()
+  for line in text.split(separator:"\n") {
+    let string=String(line),range=NSRange(string.startIndex..<string.endIndex,in:string)
+    guard let match=regex.firstMatch(in:string,range:range) else {throw ProbeError(description:"Malformed host process row")}
+    func field(_ index:Int)->String {String(string[Range(match.range(at:index),in:string)!])}
+    guard let pid=pid_t(field(1)),let ppid=pid_t(field(2)),pid>=0,ppid>=0,records[pid]==nil else {throw ProbeError(description:"Invalid or duplicate host PID")}
+    records[pid]=ProcessIdentity(pid:pid,ppid:ppid,start:field(3).split(whereSeparator:{$0.isWhitespace}).joined(separator:" "),state:field(4),name:field(5))
+  }
+  try require(!records.isEmpty,"Empty host process observation")
+  return records
+}
+func ownedAncestry(_ records:[pid_t:ProcessIdentity],_ pid:pid_t) throws -> [ProcessIdentity] {
+  let leaders=records.values.filter{$0.name=="launchd_sim"}
+  try require(leaders.count==1,"Expected exactly one live Simulator launchd leader")
+  var current=pid,seen=Set<pid_t>(),chain=[ProcessIdentity]()
+  for _ in 0..<32 {
+    guard current>1,seen.insert(current).inserted,let item=records[current],!item.state.contains("Z"),!item.state.contains("E") else {throw ProbeError(description:"Missing, exited or cyclic owned process ancestry")}
+    chain.append(item)
+    if item.name=="launchd_sim" {try require(item.pid==leaders[0].pid,"Owned app has another Simulator ancestor");return chain}
+    current=item.ppid
+  }
+  throw ProbeError(description:"Owned Simulator ancestor not found")
+}
+func canonical(_ path:String)->URL {URL(fileURLWithPath:path).resolvingSymlinksInPath().standardizedFileURL}
+func isWithin(_ path:URL,_ root:URL)->Bool {let a=path.pathComponents,b=root.pathComponents;return a.count>b.count && Array(a.prefix(b.count))==b}
+struct SavedDeviceRoot {
+  let originalPath:String,url:URL,device:UInt64,inode:UInt64
+  func validate() throws {
+    let current=try savedRoot(originalPath)
+    try require(current.url==url && current.device==device && current.inode==inode,"Saved owned data root changed")
+  }
+}
+func savedRoot(_ path:String) throws -> SavedDeviceRoot {
+  try require(path.hasPrefix("/"),"Saved owned data root is not absolute")
+  let root=canonical(path),attributes=try FileManager.default.attributesOfItem(atPath:root.path)
+  guard attributes[.type] as? FileAttributeType == .typeDirectory,let device=attributes[.systemNumber] as? NSNumber,let inode=attributes[.systemFileNumber] as? NSNumber else {throw ProbeError(description:"Saved owned data root identity unavailable")}
+  return SavedDeviceRoot(originalPath:path,url:root,device:device.uint64Value,inode:inode.uint64Value)
+}
+func prebootRoot(_ url:URL,_ uuid:String,_ name:String,_ runtime:String) throws -> SavedDeviceRoot {
+  let json=try JSONSerialization.jsonObject(with:Data(contentsOf:url)) as? [String:Any]
+  guard let devices=json?["devices"] as? [String:[[String:Any]]] else {throw ProbeError(description:"Missing saved preboot inventory")}
+  let all=devices.flatMap{key,items in items.map{(key,$0)}}
+  try require(all.allSatisfy{$0.1["state"] as? String=="Shutdown"},"Saved preboot inventory contains another active or unknown-state device")
+  let owned=all.filter{$0.1["udid"] as? String==uuid}
+  try require(owned.count==1 && owned[0].0==runtime && owned[0].1["name"] as? String==name,"Saved preboot owned device is not unique/exact")
+  guard let path=owned[0].1["dataPath"] as? String,!path.isEmpty else {throw ProbeError(description:"Saved owned device has no data root")}
+  let record=try savedRoot(path),root=record.url
+  try require(root.lastPathComponent=="data" && root.deletingLastPathComponent().lastPathComponent==uuid,"Saved data root does not identify owned UUID")
+  return record
+}
+func observedExecutable(_ pid:pid_t,_ root:URL,_ appID:String) throws -> URL {
+  let lines=try psText(["-ww","-p",String(pid),"-o","comm="]).split(separator:"\n")
+  try require(lines.count==1,"Bound app executable observation ambiguous")
+  let path=lines[0].trimmingCharacters(in:.whitespaces)
+  try require(path.hasPrefix("/"),"Bound app executable path unavailable")
+  let executable=canonical(path),applicationRoot=root.appendingPathComponent("Containers/Bundle/Application")
+  try require(isWithin(executable,applicationRoot),"Bound app executable is outside the saved owned data root")
+  let bundle=executable.deletingLastPathComponent()
+  let info=try PropertyListSerialization.propertyList(from:Data(contentsOf:bundle.appendingPathComponent("Info.plist")),format:nil) as? [String:Any] ?? [:]
+  try require(info["CFBundleIdentifier"] as? String==appID && info["CFBundleExecutable"] as? String==executable.lastPathComponent,"Bound app bundle/executable identifier does not match")
+  return executable
+}
+final class ProcessLifetimeGuard {
+  let descriptor:Int32
+  init(_ pids:[pid_t]) throws {
+    let fd=kqueue();try require(fd>=0,"Cannot create public process event observation")
+    do {
+      for pid in pids {
+        var change=kevent64_s(ident:UInt64(pid),filter:Int16(EVFILT_PROC),flags:UInt16(EV_ADD|EV_ENABLE|EV_RECEIPT),fflags:UInt32(NOTE_EXIT)|UInt32(NOTE_EXEC),data:0,udata:0,ext:(0,0)),receipt=kevent64_s(),zero=timespec()
+        let result=kevent64(fd,&change,1,&receipt,1,0,&zero)
+        try require(result==1 && receipt.flags & UInt16(EV_ERROR) != 0 && receipt.data==0,"Cannot register exact process lifetime observation")
+      }
+    } catch {close(fd);throw error}
+    descriptor=fd
+  }
+  func validate() throws {
+    var event=kevent64_s(),zero=timespec()
+    try require(kevent64(descriptor,nil,0,&event,1,0,&zero)==0,"Observed process exit/exec/error; ownership changed")
+  }
+  deinit {close(descriptor)}
+}
+func observeOwnedProcesses(_ pid:pid_t,_ root:URL,_ appID:String) throws -> ([ProcessIdentity],URL) {
+  let records=try parseProcesses(psText(["-ww","-axo","pid=,ppid=,lstart=,state=,ucomm="]))
+  let chain=try ownedAncestry(records,pid),executable=try observedExecutable(pid,root,appID)
+  let leader=try psText(["-ww","-p",String(chain.last!.pid),"-o","comm="]).trimmingCharacters(in:.whitespacesAndNewlines)
+  try require(URL(fileURLWithPath:leader).lastPathComponent=="launchd_sim","Simulator ancestor command differs from accounting identity")
+  return (chain,executable)
+}
+func sameProcessProof(_ original:([ProcessIdentity],URL),_ current:([ProcessIdentity],URL)) -> Bool {
+  original.1==current.1 && original.0.count==current.0.count && zip(original.0,current.0).allSatisfy{$0.sameLifetime($1)}
 }
 func cgWindows(_ pid: pid_t) -> [[String:Any]] {
   let all = CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements],kCGNullWindowID) as? [[String:Any]] ?? []
@@ -253,7 +351,7 @@ func contentProof(_ app: NSRunningApplication, _ state: [String:Any], _ develope
 }
 
 let args=CommandLine.arguments
-if args.count != 8 { fputs("Expected Simulator.app UUID deviceName runtimeID appID playerPID receiptPath\n",stderr);exit(2) }
+if args.count != 9 { fputs("Expected Simulator.app UUID deviceName runtimeID appID playerPID receiptPath prebootInventoryPath\n",stderr);exit(2) }
 let simulatorURL=URL(fileURLWithPath:args[1]).resolvingSymlinksInPath().standardizedFileURL
 let uuid=args[2],deviceName=args[3],runtime=args[4],appID=args[5]
 let receiptURL=URL(fileURLWithPath:args[7]),started=Date()
@@ -266,23 +364,22 @@ do {
   guard let pid=pid_t(args[6]),pid>0 else {throw ProbeError(description:"Invalid bound player PID")}
   receipt["playerPID"]=Int(pid)
   try require(kill(pid,0)==0,"Bound player process is not alive")
-  var bytes=[CChar](repeating:0,count:4*Int(MAXPATHLEN))
-  try require(proc_pidpath(pid,&bytes,UInt32(bytes.count))>0,"Cannot identify bound player executable")
-  let playerPath=String(cString:bytes),bundle=URL(fileURLWithPath:playerPath).deletingLastPathComponent()
-  receipt["playerExecutablePath"]=playerPath
-  try require(playerPath.contains("/Devices/\(uuid)/"),"Player is not in the owned Simulator")
-  let info=try PropertyListSerialization.propertyList(from:Data(contentsOf:bundle.appendingPathComponent("Info.plist")),format:nil) as? [String:Any] ?? [:]
-  try require((info["CFBundleIdentifier"] as? String) == appID,"Player app identifier does not match")
+  let rootIdentity=try prebootRoot(URL(fileURLWithPath:args[8]),uuid,deviceName,runtime),dataRoot=rootIdentity.url
+  receipt["prebootDataRoot"]=dataRoot.path
+  receipt["prebootDataRootIdentity"]=["device":rootIdentity.device,"inode":rootIdentity.inode]
+  let processProof=try observeOwnedProcesses(pid,dataRoot,appID)
+  let lifetime=try ProcessLifetimeGuard(processProof.0.map{$0.pid})
+  let registeredProof=try observeOwnedProcesses(pid,dataRoot,appID)
+  try lifetime.validate()
+  try require(sameProcessProof(processProof,registeredProof),"Owned process identity changed during guard registration")
+  receipt["playerExecutablePath"]=processProof.1.path
+  receipt["beforeProcessAncestry"]=processProof.0.map{$0.json}
+  receipt["uniqueSimulatorLeaderCount"]=1
   try require(simulatorURL.path.hasSuffix("/Contents/Developer/Applications/Simulator.app"),"Unexpected Simulator.app path")
   let simulatorInfo=try PropertyListSerialization.propertyList(from:Data(contentsOf:simulatorURL.appendingPathComponent("Contents/Info.plist")),format:nil) as? [String:Any] ?? [:]
   try require((simulatorInfo["CFBundleIdentifier"] as? String) == "com.apple.iphonesimulator","Selected application is not Simulator")
   let developer=simulatorURL.deletingLastPathComponent().deletingLastPathComponent().path
-  let inventory=try runInventory(developer,receiptURL.deletingPathExtension().appendingPathExtension("inventory.json"))
-  let devices=inventory["devices"] as? [String:[[String:Any]]] ?? [:]
-  let booted=devices.flatMap{key,items in items.filter{$0["state"] as? String=="Booted"}.map{(key,$0)}}
-  try require(booted.count==1 && booted[0].0==runtime && booted[0].1["udid"] as? String==uuid && booted[0].1["name"] as? String==deviceName,
-              "Expected exactly the owned named runtime/device to be booted")
-  receipt["ownedInventoryVerified"]=true
+  receipt["savedPrebootInventoryVerified"]=true
   receipt["postEventAccess"]=CGPreflightPostEventAccess()
   receipt["screenCaptureAccess"]=CGPreflightScreenCaptureAccess()
   receipt["accessibilityTrusted"]=AXIsProcessTrusted()
@@ -321,12 +418,11 @@ do {
   try require(proof["verified"] as? Bool==true,"No unique AX display candidate matched owned-device pixels")
   let provenWindow=(after["ownedWindows"] as? [[String:Any]])!.first!
   let provenWindowID=provenWindow["windowID"] as? UInt32
-  let postInventory=try runInventory(developer,receiptURL.deletingPathExtension().appendingPathExtension("post-inventory.json"))
-  let postDevices=postInventory["devices"] as? [String:[[String:Any]]] ?? [:]
-  let postBooted=postDevices.flatMap{key,items in items.filter{$0["state"] as? String=="Booted"}.map{(key,$0)}}
-  try require(postBooted.count==1 && postBooted[0].0==runtime && postBooted[0].1["udid"] as? String==uuid && postBooted[0].1["name"] as? String==deviceName,
-              "GUI launch changed the set of booted devices; no contact allowed")
-  receipt["postOwnedInventoryVerified"]=true
+  let finalProcessProof=try observeOwnedProcesses(pid,dataRoot,appID)
+  try lifetime.validate()
+  try require(sameProcessProof(processProof,finalProcessProof),"Owned process identity or executable changed after GUI attachment")
+  receipt["afterProcessAncestry"]=finalProcessProof.0.map{$0.json}
+  receipt["postProcessOwnershipVerified"]=true
   after=snapshot(app,deviceName);receipt["after"]=after
   try require(verified(after) && (after["ownedWindows"] as? [[String:Any]])?.first?["windowID"] as? UInt32 == provenWindowID,"Owned visible window changed during final inventory observation")
   let finalWindow=(after["ownedWindows"] as? [[String:Any]])!.first!
@@ -334,6 +430,8 @@ do {
   guard let selected=proof["selectedCandidate"] as? [String:Any],let original=selected["AXCandidate"] as? [String:Any],let originalFrame=original["frame"] as? [String:Double] else {throw ProbeError(description:"Proven candidate metadata missing")}
   let finalCandidates=finalWindow["displayCandidates"] as? [[String:Any]] ?? []
   try require(finalCandidates.filter{NSDictionary(dictionary:$0["frame"] as? [String:Double] ?? [:]).isEqual(to:originalFrame)}.count==1,"Proven display geometry changed after capture")
+  try rootIdentity.validate()
+  try lifetime.validate()
   try require(kill(pid,0)==0,"Bound player exited during GUI attachment")
   receipt["interventionPerformed"]=true;receipt["ready"]=true
   receipt["canvasEvidence"]="Exact owned CG/SC window ID, PID and bounds; unique AX candidate matches owned UDID screenshot pixels"
