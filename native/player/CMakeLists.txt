@@ -161,3 +161,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
       "-DAPP_BUNDLE=$<TARGET_BUNDLE_DIR:raising-player>" -P "${RAISING_IOS_RELEASE_NAME_SCRIPT}" VERBATIM)
   endif()
 endif()
+
+# Isolated vendor reproduction only; never included in ordinary player builds.
+option(RAISING_VENDOR_CONTACT_REFERENCE "Build the diagnostic SDL contact reference" OFF)
+if(RAISING_VENDOR_CONTACT_REFERENCE AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_executable(raising-sdl-contact-reference EXCLUDE_FROM_ALL diagnostics/vendor-contact.cpp)
+  target_include_directories(raising-sdl-contact-reference PRIVATE . ../vendor)
+  target_link_libraries(raising-sdl-contact-reference PRIVATE SDL3::SDL3)
+  set_target_properties(raising-sdl-contact-reference PROPERTIES
+    OUTPUT_NAME RaisingSDLContact MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_GUI_IDENTIFIER org.raisingengine.vendor.sdl
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0.0" MACOSX_BUNDLE_BUNDLE_VERSION "1"
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/diagnostics/vendor-contact-Info.plist.in"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER org.raisingengine.vendor.sdl
+    XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2" XCODE_GENERATE_SCHEME TRUE)
+endif()

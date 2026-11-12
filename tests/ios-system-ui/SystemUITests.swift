@@ -5,6 +5,10 @@ import XCTest
 // Every action below uses genuine XCTest input against UIKit or the SDL window.
 final class SystemUITests: XCTestCase {
   let appID = "__APP_ID__"
+  let vendorObservation = "__VENDOR_OBSERVATION__"
+  private var vendorObserved=false
+  private var vendorObservationError:String?
+  private var vendorExpected:(nonce:String,frame:CGRect,point:CGPoint,duration:Double?)?
   private struct DiagnosticsSource: Decodable {
     let session: String
     let test: String
@@ -13,6 +17,7 @@ final class SystemUITests: XCTestCase {
     let device: String
     let inode: String
     let exportedPID: pid_t?
+    let vendorInputNonce:String?
   }
   private struct DiagnosticsError: LocalizedError {
     let message: String
@@ -25,6 +30,37 @@ final class SystemUITests: XCTestCase {
     let environment = ProcessInfo.processInfo.environment
     let source = try XCTUnwrap(environment["RAISING_SYSTEM_UI_DIAGNOSTICS"],"Missing Simulator launch diagnostics")
     try configureDiagnostics(source)
+    guard ["normal","required"].contains(vendorObservation),
+      vendorObservation=="normal" ? diagnostics.vendorInputNonce==nil : diagnostics.vendorInputNonce?.range(of:#"^[a-f0-9]{64}$"#,options:.regularExpression) != nil else {
+      throw DiagnosticsError(message:"Missing or unexpected vendor observation binding")
+    }
+  }
+  override func tearDownWithError() throws {
+    // Diagnostic qualification is independent of the original functional case.
+    // Never rescue its failure, or prevent the original fresh import from running.
+    guard diagnostics?.vendorInputNonce != nil else {return}
+    do {
+      if let message=vendorObservationError {throw DiagnosticsError(message:message)}
+      guard let expected=vendorExpected else {throw DiagnosticsError(message:"First action was not reached; observation incomplete")}
+      let expectation:[String:Any]=["nonce":expected.nonce,"pid":diagnostics.pid,"test":diagnostics.test,
+        "x":expected.point.x,"y":expected.point.y,"durationSeconds":expected.duration.map{$0 as Any} ?? NSNull()]
+      print("FIRST_CONTACT_EXPECTATION "+String(decoding:try canonical(expectation),as:UTF8.self))
+      if let current=try latestCompleteView(){print("FIRST_CONTACT_VIEW "+String(decoding:try canonical(current),as:UTF8.self))}
+      let records=try vendorReadRecords(diagnostics.stdout,diagnostics.device,diagnostics.inode).filter{$0["event"] as? String=="input-proof"}
+      guard records.count==1 else {throw DiagnosticsError(message:"Missing or multiple first-contact proofs; observation incomplete")}
+      let actual=records[0]
+      print("FIRST_CONTACT_INPUT_PROOF "+String(decoding:try canonical(actual),as:UTF8.self))
+      if diagnostics.test=="testFilesExportBackup" {
+        guard abs(expected.point.x-191)<=0.0001,abs(expected.point.y-572.5000305)<=0.0001 else {
+          throw DiagnosticsError(message:"Authored Start point differs from the common U/S point")
+        }
+      }
+      try validateVendorInputProof(actual,nonce:expected.nonce,pid:diagnostics.pid,frame:expected.frame,point:expected.point,duration:expected.duration)
+      print("FIRST_CONTACT_PROOF_ACCEPTED \(expected.nonce) \(diagnostics.pid)")
+    } catch {
+      let failure:[String:Any]=["nonce":diagnostics.vendorInputNonce ?? "","pid":diagnostics.pid,"test":diagnostics.test,"reason":String(describing:error)]
+      if let data=try? canonical(failure) {print("FIRST_CONTACT_PROOF_INCOMPLETE "+String(decoding:data,as:UTF8.self))}
+    }
   }
   fileprivate func configureDiagnostics(_ source:String) throws {
     let launch = try JSONDecoder().decode(DiagnosticsSource.self,from:Data(source.utf8))
@@ -129,11 +165,19 @@ final class SystemUITests: XCTestCase {
     let width=try XCTUnwrap(c["width"] as? Double),height=try XCTUnwrap(c["height"] as? Double)
     XCTAssertGreaterThanOrEqual(width,44);XCTAssertGreaterThanOrEqual(height,44)
     XCTAssertGreaterThanOrEqual(x,0);XCTAssertGreaterThanOrEqual(y,0)
-    XCTAssertLessThanOrEqual(x+width,app.frame.width+1);XCTAssertLessThanOrEqual(y+height,app.frame.height+1)
+    let vendorFrame=app.frame
+    XCTAssertLessThanOrEqual(x+width,vendorFrame.width+1);XCTAssertLessThanOrEqual(y+height,app.frame.height+1)
     let target=app.coordinate(withNormalizedOffset:CGVector(dx:0,dy:0)).withOffset(CGVector(dx:x+width/2,dy:y+height/2))
+    if let nonce=diagnostics.vendorInputNonce,!vendorObserved {
+      vendorObserved=true
+      let expected=diagnostics.test=="testFilesExportBackup" ? "start":"load"
+      if id != expected {vendorObservationError="Unexpected first observed action"}
+      vendorExpected=(nonce,vendorFrame,CGPoint(x:vendorFrame.minX+x+width/2,y:vendorFrame.minY+y+height/2),contactDuration)
+    }
     if let contactDuration {target.press(forDuration:contactDuration)}
     else {target.tap()}
     RunLoop.current.run(until:Date().addingTimeInterval(0.4))
+
   }
   func geometry(_ landscape:Bool) throws {
     let layout=try XCTUnwrap(view()["readingLayout"] as? [String:Any])
@@ -679,4 +723,47 @@ final class SystemUIDiagnosticsTests: XCTestCase {
     try writeCheckpoint(checkpoint,session:reader.appID,pid:getpid())
     XCTAssertThrowsError(try reader.exportedState())
   }
+}
+
+// Shared verbatim by S and E diagnostic harnesses; ordinary XCTest input is unchanged.
+private struct VendorProofError:Error {let message:String}
+func vendorReadRecords(_ path:String,_ device:String,_ inode:String) throws -> [[String:Any]] {
+  let fd=open(path,O_RDONLY|O_NOFOLLOW|O_NONBLOCK)
+  guard fd>=0 else {throw VendorProofError(message:"Cannot open bound stdout")}
+  let file=FileHandle(fileDescriptor:fd,closeOnDealloc:true);defer{try? file.close()}
+  var actual=stat(),current=stat()
+  guard fstat(fd,&actual)==0,(actual.st_mode&S_IFMT)==S_IFREG,String(actual.st_dev)==device,String(actual.st_ino)==inode else {throw VendorProofError(message:"Bound stdout identity changed")}
+  let bytes=try file.read(upToCount:8*1024*1024+1) ?? Data()
+  guard bytes.count<=8*1024*1024,lstat(path,&current)==0,current.st_dev==actual.st_dev,current.st_ino==actual.st_ino,(current.st_mode&S_IFMT)==S_IFREG else {throw VendorProofError(message:"Bound stdout replaced or oversized")}
+  return bytes.split(separator:0x0A,omittingEmptySubsequences:false).dropLast().compactMap {try? JSONSerialization.jsonObject(with:Data($0)) as? [String:Any]}
+}
+func validateVendorInputProof(_ proof:[String:Any],nonce:String,pid:pid_t,frame:CGRect,point:CGPoint,duration:Double?) throws {
+  guard proof["version"] as? Int==1,proof["nonce"] as? String==nonce,proof["pid"] as? Int==Int(pid),proof["source"] as? String=="SDL_PollEvent",
+    proof["overflow"] as? Bool==false,proof["terminal"] as? Bool==true,
+    let samples=proof["samples"] as? [[String:Any]],samples.count>=2,samples.count<=64,
+    samples.first?["phase"] as? String=="down",samples.last?["phase"] as? String=="up",
+    samples.dropFirst().dropLast().allSatisfy({$0["phase"] as? String=="motion"}),
+    let window=proof["windowID"] as? Int,window>0,
+    let touch=samples[0]["touchID"] as? String,let touchValue=UInt64(touch),touchValue>0,
+    let finger=samples[0]["fingerID"] as? String,let fingerValue=UInt64(finger),fingerValue>0 else {throw VendorProofError(message:"Missing, canceled or invalid actual SDL pair")}
+  var previous:UInt64=0
+  for sample in samples {
+    guard sample["direct"] as? Bool==true,sample["mouseTouch"] as? Bool==false,sample["windowID"] as? Int==window,
+      sample["touchID"] as? String==touch,sample["fingerID"] as? String==finger,sample["converted"] as? Bool==true,
+      let timestamp=UInt64(sample["timestampNS"] as? String ?? ""),timestamp>=previous,
+      let x=sample["x"] as? Double,let y=sample["y"] as? Double,let width=sample["windowWidth"] as? Double,let height=sample["windowHeight"] as? Double,
+      x.isFinite,y.isFinite,abs(width-frame.width)<0.5,abs(height-frame.height)<0.5,
+      abs(x*width-(point.x-frame.minX))<=0.5,abs(y*height-(point.y-frame.minY))<=0.5 else {throw VendorProofError(message:"Actual SDL identity/point/geometry differs")}
+    previous=timestamp
+  }
+  let first=UInt64(samples[0]["timestampNS"] as? String ?? "")!,last=UInt64(samples.last?["timestampNS"] as? String ?? "")!
+  guard last>first else {throw VendorProofError(message:"Actual SDL timestamps are not increasing")}
+  if let duration {guard abs(Double(last-first)/1e9-duration)<=0.02 else {throw VendorProofError(message:"Actual SDL duration differs")}}
+  guard let geometry=proof["geometryObservation"] as? [String:Any],geometry["overflow"] as? Bool==false,
+    let count=geometry["eventCount"] as? Int,count>0,count<=512,
+    let events=geometry["events"] as? [[String:Any]],events.count==count,
+    (geometry["initial"] as? [String:Any])?["valid"] as? Bool==true,
+    (geometry["final"] as? [String:Any])?["valid"] as? Bool==true else {throw VendorProofError(message:"Geometry observation incomplete")}
+  // Successful input does not require geometry to be unchanged; retain changes
+  // for causal comparison rather than turning the observer into a readiness gate.
 }

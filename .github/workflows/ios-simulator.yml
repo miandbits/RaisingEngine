@@ -1,39 +1,17 @@
-name: iOS export and Simulator Files
+name: Original XCTest UIKit SDL engine isolation
 on:
   push:
-    paths: &ios-paths
-      - '.github/workflows/ios-simulator.yml'
-      - 'apps/qt-studio/**'
-      - 'assets/**'
-      - 'config/native-dependencies.json'
-      - 'examples/my-first-raising-game/**'
-      - 'native/**'
-      - 'package*.json'
-      - 'packages/**'
-      - 'scripts/**'
-      - 'tests/ios-system-ui/**'
-      - 'tests/mobile/ios-simulator-test.test.mjs'
-  pull_request:
-    paths: *ios-paths
-  workflow_dispatch:
-    inputs:
-      run_voiceover:
-        description: Run the actual VoiceOver test on the Xcode 27 hosted Simulator
-        type: boolean
-        default: false
+    branches: ['codex/ios-vendor-isolation']
 
 permissions:
   contents: read
 
-concurrency:
-  group: ios-simulator-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  build-public-starter:
-    name: Build the public iOS export and VoiceOver harness
+  build-fixtures:
+    if: ${{ github.repository == 'miandbits/RaisingEngine' && github.run_attempt == 1 }}
+    name: Build exact UIKit SDL and engine comparison apps
     runs-on: xcode-27
-    timeout-minutes: 50
+    timeout-minutes: 55
     env:
       BUILD_JOBS: '3'
       DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
@@ -47,17 +25,17 @@ jobs:
         with:
           node-version: '22.14.0'
           cache: npm
-      - name: Record source and Simulator toolchain
-        shell: bash
+      - name: Record exact producer source and toolchain
         run: |
           test -x "$DEVELOPER_DIR/usr/bin/xcodebuild"
-          mkdir -p .cache/ios-simulator-ci
+          mkdir -p .cache/ios-vendor-ci
           {
-            echo "source=$(git rev-parse HEAD)"
+            git rev-parse HEAD 'HEAD^{tree}'
             xcodebuild -version
-            xcrun simctl list runtimes available
-          } | tee .cache/ios-simulator-ci/environment.txt
-      - run: node --test tests/mobile/ios-simulator-test.test.mjs
+            xcodebuild -version -sdk iphonesimulator
+          } | tee .cache/ios-vendor-ci/producer-environment.txt
+          grep -Fx 'Xcode 27.2' .cache/ios-vendor-ci/producer-environment.txt
+          grep -Fx 'Build version 27B52' .cache/ios-vendor-ci/producer-environment.txt
       - run: npm ci
       - run: npm run build:headless
       - run: npm run build:player
@@ -68,8 +46,8 @@ jobs:
           import {cp} from 'node:fs/promises';
           import {QtStudioService} from './apps/qt-studio/service.mjs';
 
-          const root = path.resolve('.cache/ios-simulator-ci/starter');
-          const destination = path.resolve('.cache/ios-simulator-ci/export');
+          const root = path.resolve('.cache/ios-vendor-ci/starter');
+          const destination = path.resolve('.cache/ios-vendor-ci/export');
           await cp('examples/my-first-raising-game', root, {recursive:true});
           const service = new QtStudioService();
           try {
@@ -82,66 +60,40 @@ jobs:
             await service.editor.close();
           }
           JS
-      - name: Build the exported iOS application
-        run: npm run build:ios -- --project .cache/ios-simulator-ci/export
-      - name: Compile the VoiceOver XCTest harness without starting a Simulator
+      - name: Build and bind all three fixtures to the same source
         run: |
-          node scripts/test-ios-voiceover.mjs \
-            .cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator/RaisingPlayer.app \
-            --build-only
-      - name: Archive the exact public Simulator app for Files testing
-        shell: bash
-        run: |
-          transfer=.cache/ios-simulator-ci/transfer
-          bundle=.cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator
-          app="$bundle/RaisingPlayer.app"
-          mkdir -p "$transfer"
-          test "$(plutil -extract MinimumOSVersion raw "$app/Info.plist")" = 16.0
-          git rev-parse HEAD > "$transfer/source.txt"
-          shasum -a 256 "$app/RaisingPlayer" "$app/game/game.json" > "$transfer/bundle.sha256"
-          tar -cf "$transfer/starter-app.tar" -C "$bundle" RaisingPlayer.app
-          (cd "$transfer" && shasum -a 256 source.txt bundle.sha256 starter-app.tar > transfer.sha256)
+          npm run build:ios -- --project .cache/ios-vendor-ci/export
+          bash .github/diagnostics/ios-vendor-ci/build-reference-apps.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: public-starter-ios-simulator-app
-          path: |
-            .cache/ios-simulator-ci/transfer/source.txt
-            .cache/ios-simulator-ci/transfer/bundle.sha256
-            .cache/ios-simulator-ci/transfer/starter-app.tar
-            .cache/ios-simulator-ci/transfer/transfer.sha256
+          name: exact-vendor-fixture-apps
+          path: .cache/ios-vendor-ci/transfer/
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
-      - name: Run actual VoiceOver focus and speech on iPhone Simulator
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_voiceover }}
-        env:
-          RAISING_IOS_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17e
-          RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-0
-        run: |
-          node scripts/test-ios-voiceover.mjs \
-            .cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator/RaisingPlayer.app \
-            .cache/ios-voiceover-execution
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: public-starter-ios-build-and-voiceover-evidence
+          name: vendor-producer-evidence
           path: |
-            .cache/ios-simulator-ci/environment.txt
-            .cache/ios-simulator-ci/export/ios-build.json
-            .cache/ios-simulator-ci/export/xcode-*.log
-            .cache/ios-voiceover/run-*/result.json
-            .cache/ios-voiceover/run-*/*.log
-            .cache/ios-voiceover-execution/run-*/result.json
-            .cache/ios-voiceover-execution/run-*/*.log
-            .cache/ios-voiceover-execution/run-*/*.xcresult
+            .cache/ios-vendor-ci/producer-*.txt
+            .cache/ios-vendor-ci/sdl-build-options.txt
+            .cache/ios-vendor-ci/reference-*.log
+            .cache/ios-vendor-ci/export/ios-build.json
+            .cache/ios-vendor-ci/export/xcode-*.log
           include-hidden-files: true
           retention-days: 14
 
-  public-starter-files:
-    name: Test the actual Files picker on iOS 26 Simulator
-    needs: build-public-starter
+  fixed-triplets:
+    needs: build-fixtures
+    if: ${{ github.repository == 'miandbits/RaisingEngine' && github.run_attempt == 1 }}
+    name: Original XCTest contacts ${{ matrix.order }}
     runs-on: macos-26
-    timeout-minutes: 35
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        order: [U-S-E, E-S-U]
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
@@ -157,54 +109,52 @@ jobs:
           cache: npm
       - uses: actions/download-artifact@v4
         with:
-          name: public-starter-ios-simulator-app
-          path: .cache/ios-simulator-ci/transfer
-      - name: Verify source and unpack the exact exported app
-        shell: bash
+          name: exact-vendor-fixture-apps
+          path: .cache/ios-vendor-ci/transfer
+      - name: Verify every app from the same producer source
         run: |
-          transfer=.cache/ios-simulator-ci/transfer
-          bundle=.cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator
+          base=.cache/ios-vendor-ci
+          transfer="$base/transfer"
           (cd "$transfer" && shasum -a 256 -c transfer.sha256)
           test "$(git rev-parse HEAD)" = "$(cat "$transfer/source.txt")"
-          mkdir -p "$bundle"
-          tar -xf "$transfer/starter-app.tar" -C "$bundle"
-          shasum -a 256 -c "$transfer/bundle.sha256"
-      - name: Record the Files test toolchain
-        shell: bash
-        run: |
-          test -x "$DEVELOPER_DIR/usr/bin/xcodebuild"
-          {
-            echo "source=$(git rev-parse HEAD)"
-            echo "testRuntime=$RAISING_IOS_SIMULATOR_RUNTIME"
-            echo "testDeviceType=$RAISING_IOS_SIMULATOR_DEVICE_TYPE"
-            xcodebuild -version
-            xcrun simctl list runtimes available
-          } | tee .cache/ios-simulator-ci/files-environment.txt
+          test "$(git rev-parse 'HEAD^{tree}')" = "$(cat "$transfer/tree.txt")"
+          shasum -a 256 -c "$transfer/sources.sha256"
+          tar -tvf "$transfer/apps.tar" > "$base/app-archive-members.txt"
+          tar -xf "$transfer/apps.tar" -C "$base"
+          (cd "$base" && shasum -a 256 -c transfer/apps.sha256)
+      - name: Record exact consumer toolchain
+        run: bash .github/diagnostics/ios-vendor-ci/record-toolchain.sh
+      - run: node --test tests/mobile/ios-simulator-test.test.mjs tests/mobile/ios-vendor-observation.test.mjs
       - run: npm ci
       - name: Build the project service used by the public Files fixture
         run: |
           node scripts/generate-types.mjs
           npx --no-install tsc -p tsconfig.json
           node scripts/copy-schemas.mjs
-      - name: Test export and import through the actual Files picker
+      - name: Run each predeclared arm once on a fresh owned device
+        env:
+          VENDOR_ORDER: ${{ matrix.order }}
         run: |
-          node scripts/test-ios-system-ui.mjs .cache/ios-simulator-ci/export \
-            --project examples/my-first-raising-game --family iphone --test files-roundtrip --text-scale 2
+          test -z "${SDL_EVENT_LOGGING+x}${SIMCTL_CHILD_SDL_EVENT_LOGGING+x}"
+          test -z "${RAISING_INPUT_TRACE+x}${SIMCTL_CHILD_RAISING_INPUT_TRACE+x}"
+          test -z "${RAISING_IOS_HOST_CONTACT_TOOL+x}${RAISING_IOS_CONTACT_ROUTE+x}"
+          node scripts/test-ios-vendor-pair.mjs "$VENDOR_ORDER"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: public-starter-ios-files-evidence
+          name: vendor-contact-evidence-${{ matrix.order }}
           path: |
-            .cache/ios-simulator-ci/files-environment.txt
-            .cache/ios-simulator-ci/transfer/*.txt
-            .cache/ios-simulator-ci/transfer/*.sha256
-            .cache/ios-system-ui/latest.json
-            .cache/ios-system-ui/run-*/result.json
-            .cache/ios-system-ui/run-*/files-export-checkpoint.json
-            .cache/ios-system-ui/run-*/*-staging.json
-            .cache/ios-system-ui/run-*/*.log
-            .cache/ios-system-ui/run-*/*.stdout
-            .cache/ios-system-ui/run-*/*.stderr
-            .cache/ios-system-ui/run-*/*.xcresult
+            .cache/ios-vendor-ci/files-environment.txt
+            .cache/ios-vendor-ci/app-archive-members.txt
+            .cache/ios-vendor-ci/transfer/*.txt
+            .cache/ios-vendor-ci/transfer/*.sha256
+            .cache/ios-vendor-ci/runs/*/triplet.json
+            .cache/ios-vendor-ci/runs/*/arm-*/*/result.json
+            .cache/ios-vendor-ci/runs/*/arm-*/*/files-export-checkpoint.json
+            .cache/ios-vendor-ci/runs/*/arm-*/*/*-staging.json
+            .cache/ios-vendor-ci/runs/*/arm-*/*/*.log
+            .cache/ios-vendor-ci/runs/*/arm-*/*/*.stdout
+            .cache/ios-vendor-ci/runs/*/arm-*/*/*.stderr
+            .cache/ios-vendor-ci/runs/*/arm-*/*/*.xcresult
           include-hidden-files: true
           retention-days: 14

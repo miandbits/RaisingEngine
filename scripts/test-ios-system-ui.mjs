@@ -7,6 +7,7 @@ import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
+import {captureVendorTouchLog,describeVendorContactProof,vendorIsolationConfiguration} from './lib/ios-vendor-observation.mjs';
 import {analyzeInputIdleMemory} from './lib/ios-input-memory.mjs';
 import {cleanUpIOSSimulator,runBoundedAppleTool,selectIOSSimulator,ownedIOSSimulatorDataPath,readIOSPortableStaging,validateIOSSandboxReceipt,waitForIOSSandboxReceipt} from './lib/ios-simulator-test.mjs';
 
@@ -26,6 +27,9 @@ const selectedCases={
   'composition-probe':['testKoreanMidSyllableRotation']
 };
 const selection=option('--test')??'all';
+const vendorIsolation=vendorIsolationConfiguration();
+assert.ok(!vendorIsolation||(vendorIsolation.arm==='E'&&selection==='files-roundtrip'&&!args.includes('--keep-failed-device')),
+  'Vendor isolation must retain the full Files regression and owned-device cleanup');
 assert.ok(selection==='all'||Object.hasOwn(selectedCases,selection),'Unknown system UI test selection');
 const cases=selection==='all'?[
   ...selectedCases.files,...selectedCases.input,...selectedCases.selection,...selectedCases.composition,...selectedCases.japanese
@@ -62,8 +66,9 @@ if(selection==='files-roundtrip')for(const screen of authored.visual.screens) {
   };
 }
 const fixture=await buildSnapshot(loaded);assert.ok(fixture.ok,JSON.stringify(fixture.diagnostics));
-await mkdir(path.join(root,'.cache/ios-system-ui'),{recursive:true});
-const out=await mkdtemp(path.join(root,'.cache/ios-system-ui/run-')),app=path.join(out,'SystemUI.app');
+const evidenceRoot=vendorIsolation?.output??path.join(root,'.cache/ios-system-ui');
+await mkdir(evidenceRoot,{recursive:true});
+const out=await mkdtemp(path.join(evidenceRoot,'run-')),app=path.join(out,'SystemUI.app');
 await cp(originalApp,app,{recursive:true});
 const plist=JSON.parse(execFileSync('/usr/bin/plutil',['-convert','json','-o','-',path.join(app,'Info.plist')],{encoding:'utf8'}));
 const executable=plist.CFBundleExecutable, nativeHash=hash(await readFile(path.join(app,executable)));
@@ -73,8 +78,10 @@ await writeFile(path.join(app,'game/game.json'),JSON.stringify({...originalGame,
 await writeFile(path.join(out,'fixture-project.json'),JSON.stringify(authored,null,2));
 await writeFile(path.join(out,'fixture-content.json'),JSON.stringify(fixture.snapshot));
 assert.equal(hash(await readFile(path.join(app,executable))),nativeHash,'Probe must not modify the native executable');
-let device,exportedPID,passed=false;
+let device,exportedPID,passed=false,firstLaunchTime;
 const results=[],receipt={ok:false,actualSystemPicker:false,actualFilesRoundTrip:false,sourceExport:source,sourceProject:project,sourceContentFingerprint:original.snapshot.contentFingerprint,fixtureContentFingerprint:fixture.snapshot.contentFingerprint,appExecutableSha256:nativeHash,appId,family,selection,textScale,results,diagnosticsTransport:'simulator-stdout',limits:['Simulator only; no physical device or external provider acceptance.','Cache-only authored fixture with unchanged native executable; not the caller game release.','Selected focused regressions, not the complete malformed-save or provider matrix.','XCTest performs all interactions and reads diagnostics from per-launch player stdout.']};
+if(vendorIsolation)receipt.vendorIsolation={arm:'E',commonStartCase:'testFilesExportBackup',
+  freshLoadCase:'testFilesImportBackupAfterRelaunch',contacts:[]};
 const exportCheckpoint=path.join(out,'files-export-checkpoint.json');
 const tool=(command,values,logName,timeout,env)=>runBoundedAppleTool(command,values,
   {cwd:root,logFile:path.join(out,logName),timeout,env});
@@ -86,10 +93,15 @@ try {
   const harness=path.join(root,'tests/ios-system-ui'),copied=path.join(out,'harness');await cp(harness,copied,{recursive:true});
   const swift=path.join(copied,'SystemUITests.swift');
   const template=await readFile(swift,'utf8');receipt.harnessSourceSha256=hash(template);
-  await writeFile(swift,template.replaceAll('__APP_ID__',appId));
+  assert.equal(template.split('__VENDOR_OBSERVATION__').length,2,'Expected one Swift vendor observation mode marker');
+  await writeFile(swift,template.replaceAll('__APP_ID__',appId)
+    .replace('__VENDOR_OBSERVATION__',vendorIsolation?'required':'normal'));
   const buildArgs=['-project',path.join(copied,'SystemUI.xcodeproj'),'-scheme','SystemUITests','-derivedDataPath',path.join(out,'DerivedData'),'CODE_SIGNING_ALLOWED=NO'];
   await tool('/usr/bin/xcodebuild',['build-for-testing',...buildArgs,'-destination','generic/platform=iOS Simulator'],'build.log');
-  device=sim('create','RaisingEngine system UI '+path.basename(out),selected.type,selected.runtime);
+  if(vendorIsolation)receipt.vendorIsolation.createAttempted=true;
+  const created=sim('create','RaisingEngine system UI '+path.basename(out),selected.type,selected.runtime);
+  if(vendorIsolation)assert.match(created,/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i,'Simulator create must return one owned UUID');
+  device=created;
   receipt.device={id:device,...selected};await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
   const deviceDataPath=selection==='files-roundtrip'?ownedIOSSimulatorDataPath(JSON.parse(sim('list','devices','--json')),device):undefined;
   await tool('/usr/bin/xcrun',['simctl','boot',device],'boot-start.log',60000);
@@ -102,7 +114,10 @@ try {
     const currentLog=path.join(out,name+'.stdout');
     await writeFile(currentLog,'',{flag:'wx',mode:0o600});
     const sandboxNonce=filesRoundTrip?randomBytes(32).toString('hex'):undefined;
+    const inputNonce=vendorIsolation?randomBytes(32).toString('hex'):undefined;
     const saveArgs=filesRoundTrip?['--sandbox-receipt',sandboxNonce]:[];
+    if(inputNonce)saveArgs.push('--input-proof-nonce',inputNonce);
+    if(vendorIsolation&&firstLaunchTime===undefined)firstLaunchTime=Math.floor(Date.now()/1000);
     const launchLog=name+'-launch.log';
     await tool('/usr/bin/xcrun',['simctl','launch','--stdout='+currentLog,
       '--stderr='+path.join(out,name+'.stderr'),device,appId,'--editor-events','--locale','en',
@@ -129,6 +144,12 @@ try {
       assert.notEqual(pid,exportedPID,'The simulator must start a different player process to import the backup');
     }
     const diagnostics={session:appId,test:name,pid,stdout:currentLog,device:String(dev),inode:String(ino),exportedPID};
+    let contact;
+    if(vendorIsolation) {
+      diagnostics.vendorInputNonce=inputNonce;
+      contact={test:name,pid,nonce:inputNonce,stdout:path.basename(currentLog),stdoutDevice:String(dev),stdoutInode:String(ino)};
+      receipt.vendorIsolation.contacts.push(contact);
+    }
     const testEnvironment={...process.env,TEST_RUNNER_RAISING_SYSTEM_UI_DIAGNOSTICS:JSON.stringify(diagnostics)};
     const idleProbe=name==='testOwnedTextInputIdle';let memoryTimer;
     const resultBundle=path.join(out,name+'.xcresult');
@@ -151,6 +172,10 @@ try {
     } finally {
       clearInterval(memoryTimer);
       if(idleProbe){sample();await writeFile(path.join(out,'input-memory-samples.json'),JSON.stringify(memory,null,2));}
+      if(contact) {
+        try {Object.assign(contact,describeVendorContactProof(await readFile(path.join(out,name+'.log'),'utf8'),contact));}
+        catch(error) {contact.proofStatus='unavailable';contact.proofError=String(error);}
+      }
     }
     if(idleProbe) {
       const transcript=await readFile(path.join(out,name+'.log'),'utf8');
@@ -193,6 +218,9 @@ try {
 finally {
   receipt.keptDevice=!!device&&!passed&&keepFailed;
   if(device&&!receipt.keptDevice) {
+    if(vendorIsolation&&firstLaunchTime!==undefined)receipt.vendorIsolation.osObservation=await captureVendorTouchLog({
+      device,start:firstLaunchTime,executable,out,tool
+    });
     receipt.cleanupErrors=await cleanUpIOSSimulator(device,(action,id)=>
       tool('/usr/bin/xcrun',['simctl',action,id],action+'.log',60000));
     receipt.deletedDevice=!receipt.cleanupErrors.delete;
@@ -200,7 +228,7 @@ finally {
   }
   receipt.finishedAt=new Date().toISOString();
   await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
-  await writeFile(path.join(root,'.cache/ios-system-ui/latest.json'),JSON.stringify({ok:passed,out},null,2));
+  await writeFile(path.join(evidenceRoot,'latest.json'),JSON.stringify({ok:passed,out},null,2));
   console.log(`iOS system UI evidence: ${out}`);
   if(!receipt.error&&!passed)throw Error(`Simulator cleanup failed; inspect ${out}`);
 }

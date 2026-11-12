@@ -35,6 +35,9 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <TargetConditionals.h>
+#if TARGET_OS_SIMULATOR
+#include "simulator-input-proof.hpp"
+#endif
 #endif
 #include "editor-preview.hpp"
 #ifdef SDL_PLATFORM_MACOS
@@ -43,6 +46,9 @@ void configure_macos_player();
 
 class PlayerApplication : public Rml::EventListener {
 public:
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+  SimulatorInputProof* input_proof=nullptr;
+#endif
   ExtensionHost extensions;
   GameSession game;
   ScreenMarkup markup;
@@ -723,6 +729,9 @@ public:
       const auto& finger=event.tfinger;
       int width=0,height=0;SDL_GetWindowSize(window,&width,&height);float x=0,y=0;
       if(!SDL_RenderCoordinatesFromWindow(renderer,finger.x*width,finger.y*height,&x,&y))return;
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+      if(input_proof)input_proof->converted(event,width,height,x,y);
+#endif
       if(event.type==SDL_EVENT_FINGER_DOWN) {
         if(active_finger||x<0||y<0||x>=markup.width||y>=markup.height)return;
         active_finger=finger.fingerID;touch_start_x=x;touch_start_y=y;touch_dragged=false;touch_scroll=nullptr;
@@ -947,7 +956,8 @@ int main(int argc,char** argv) {
   int max_frames=0;bool hidden=false,editor_events=false,report_checkpoints_only=false;uint32_t requested_seed=42;
   std::string requested_locale,preview_screen,preview_element,preview_state="normal";
 #if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
-  std::string sandbox_receipt_nonce;
+  std::string sandbox_receipt_nonce,input_proof_nonce;
+  SimulatorInputProof input_proof;
 #endif
   fs::path preview_scene_file,preview_inspection_file,recording_file,editor_directory;Json preview_scene=nullptr;
   try {
@@ -964,6 +974,7 @@ int main(int argc,char** argv) {
     else if(arg=="--save"&&i+1<argc)save_file=fs::u8path(argv[++i]);
 #if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
     else if(arg=="--sandbox-receipt"&&i+1<argc)sandbox_receipt_nonce=argv[++i];
+    else if(arg=="--input-proof-nonce"&&i+1<argc){input_proof_nonce=argv[++i];if(input_proof_nonce.size()!=64||input_proof_nonce.find_first_not_of("0123456789abcdef")!=std::string::npos)throw std::runtime_error("Invalid input proof nonce");input_proof.enabled=true;}
 #endif
     else if(arg=="--automation"&&i+1<argc)automation_file=fs::u8path(argv[++i]);
     else if(arg=="--record-route"&&i+1<argc)recording_file=fs::u8path(argv[++i]);
@@ -1005,6 +1016,7 @@ int main(int argc,char** argv) {
     if(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_GAMEPAD))throw std::runtime_error(SDL_GetError());
     if(save_file.empty()) {auto* pref=SDL_GetPrefPath("RaisingEngine",bundle.at("content").at("project").value("gameId","game").c_str());if(!pref)throw std::runtime_error(SDL_GetError());save_file=fs::u8path(pref)/"slot-1.json";SDL_free(pref);}
 #if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+    if(input_proof.enabled&&!editor_events)throw std::runtime_error("Input proof requires editor events");
     if(!sandbox_receipt_nonce.empty()) {
       if(!editor_events)throw std::runtime_error("Sandbox receipt requires editor events");
       const char* home=std::getenv("HOME");
@@ -1042,6 +1054,9 @@ int main(int argc,char** argv) {
         system.RegisterKeyboardFont("engine-"+id,file.generic_u8string());
       }
       PlayerApplication app(bundle,bundle_root,window,renderer,save_file);
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+      if(input_proof.enabled)app.input_proof=&input_proof;
+#endif
       EditorPreviewControl editor;editor.directory=editor_directory;app.editor_live=!editor_directory.empty();app.editor_paused=app.editor_live;
       // Live preview clears its screen override once play starts. Keep onboarding
       // suppression independent of that mutable routing state.
@@ -1087,12 +1102,31 @@ int main(int argc,char** argv) {
           }
           if(type=="click"&&!editor.paused&&app.document)app.click(control.value("id",""));
         }
-        SDL_Event event;while(SDL_PollEvent(&event))app.event(event);
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+        const auto proof_generation_before=app.document_generation;
+#endif
+        SDL_Event event;while(SDL_PollEvent(&event)){
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+          input_proof.observe(event);
+#endif
+          app.event(event);
+        }
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+        if(input_proof.due()){
+          auto proof=input_proof.report(window,renderer,input_proof_nonce,getpid());
+          proof["engineSupplement"]={{"generationBeforeBatch",proof_generation_before},{"generationAfterBatch",app.document_generation},
+            {"dirtyAfterBatch",app.dirty},{"backgroundedAfterBatch",app.backgrounded}};
+          std::cout<<proof.dump()<<std::endl;
+        }
+#endif
         if(app.backgrounded){SDL_Delay(50);continue;}
         app.poll_portable();
         app.drain_actions();
         if(!app.timeline_manual_clock&&!app.editor_paused){app.advance_recollection_clock(std::min(250.0,timeline_delta));app.advance_timeline_clock(timeline_delta);app.advance_schedule_clock(timeline_delta);app.advance_dialogue_clock(std::min(250.0,timeline_delta));app.extension_dt+=timeline_delta;if(app.editor_live)editor.elapsed+=timeline_delta;}
         if(app.dirty)app.rebuild();
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+        input_proof.ready(window,renderer);
+#endif
         SDL_FRect display_rect{};SDL_GetRenderLogicalPresentationRect(renderer,&display_rect);
         fonts.set_output_scale(display_rect.h/std::max(1,app.active_markup().height));
         app.apply_preview();app.update_timeline_visual();app.update_extensions();app.update_dialogue_visual();app.context->Update();app.update_tooltip();app.context->Update();system.UpdateKeyboard();
