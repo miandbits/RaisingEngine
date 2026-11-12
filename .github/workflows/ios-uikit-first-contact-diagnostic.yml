@@ -1,0 +1,53 @@
+name: iOS UIKit first-contact diagnostic
+
+on:
+  push:
+    branches: [codex/ios-files-uikit-contact]
+
+permissions:
+  contents: read
+
+jobs:
+  first-contact:
+    name: Observe one contact in the UIKit reference app
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Record source and simulator toolchain
+        shell: bash
+        run: |
+          mkdir -p .cache/uikit-contact-reference
+          cp -R .github/diagnostics/ios-uikit-first-contact .cache/uikit-contact-reference/fixture-inputs
+          {
+            git rev-parse HEAD
+            xcodebuild -version
+            xcodebuild -version -sdk iphonesimulator
+            xcrun simctl list runtimes available
+          } > .cache/uikit-contact-reference/environment.txt
+      - name: Send one physical XCTest contact
+        run: |
+          python3 .github/diagnostics/ios-uikit-first-contact/run.py \
+            --out .cache/uikit-contact-reference \
+            --runtime com.apple.CoreSimulator.SimRuntime.iOS-26-5 \
+            --device-type com.apple.CoreSimulator.SimDeviceType.iPhone-17e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-uikit-first-contact-evidence
+          path: |
+            .cache/uikit-contact-reference/environment.txt
+            .cache/uikit-contact-reference/fixture-inputs/
+            .cache/uikit-contact-reference/run-*/result.json
+            .cache/uikit-contact-reference/run-*/*.log
+            .cache/uikit-contact-reference/run-*/*.stdout
+            .cache/uikit-contact-reference/run-*/*.stderr
+            .cache/uikit-contact-reference/run-*/*.xcresult
+            .cache/uikit-contact-reference/run-*/fixture-source/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
