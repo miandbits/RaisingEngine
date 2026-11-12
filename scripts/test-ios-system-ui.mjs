@@ -73,7 +73,7 @@ await writeFile(path.join(app,'game/game.json'),JSON.stringify({...originalGame,
 await writeFile(path.join(out,'fixture-project.json'),JSON.stringify(authored,null,2));
 await writeFile(path.join(out,'fixture-content.json'),JSON.stringify(fixture.snapshot));
 assert.equal(hash(await readFile(path.join(app,executable))),nativeHash,'Probe must not modify the native executable');
-let device,exportedPID,passed=false;
+let device,exportedPID,firstLaunchTimestamp,passed=false;
 const results=[],receipt={ok:false,actualSystemPicker:false,actualFilesRoundTrip:false,sourceExport:source,sourceProject:project,sourceContentFingerprint:original.snapshot.contentFingerprint,fixtureContentFingerprint:fixture.snapshot.contentFingerprint,appExecutableSha256:nativeHash,appId,family,selection,textScale,results,diagnosticsTransport:'simulator-stdout',limits:['Simulator only; no physical device or external provider acceptance.','Cache-only authored fixture with unchanged native executable; not the caller game release.','Selected focused regressions, not the complete malformed-save or provider matrix.','XCTest performs all interactions and reads diagnostics from per-launch player stdout.']};
 const exportCheckpoint=path.join(out,'files-export-checkpoint.json');
 const tool=(command,values,logName,timeout,env)=>runBoundedAppleTool(command,values,
@@ -106,6 +106,8 @@ try {
     await writeFile(currentLog,'',{flag:'wx',mode:0o600});
     const saveArgs=filesSaveDirectory?['--save',path.join(filesSaveDirectory,'save.json')]:[];
     const launchLog=name+'-launch.log';
+    if(process.env.RAISING_IOS_CAPTURE_TOUCH_LOG==='1'&&firstLaunchTimestamp===undefined)
+      firstLaunchTimestamp=Math.floor(Date.now()/1000);
     await tool('/usr/bin/xcrun',['simctl','launch','--stdout='+currentLog,
       '--stderr='+path.join(out,name+'.stderr'),device,appId,'--editor-events','--locale','en',
       '--reading-layout','on','--text-scale',textScale,...saveArgs],launchLog,90000);
@@ -182,6 +184,18 @@ try {
   passed=true;receipt.ok=true;
 } catch(error) {receipt.error=String(error);throw error;}
 finally {
+  if(device&&firstLaunchTimestamp!==undefined) {
+    const predicate='(process == "backboardd" AND category == "TouchEvents") OR '+
+      '(process == "testmanagerd" AND (subsystem == "com.apple.dt.xctest" OR subsystem == "com.apple.recap")) OR '+
+      '(process == "RaisingPlayer" AND subsystem == "com.apple.UIKit" AND category == "EventDispatch")';
+    try {
+      await tool('/usr/bin/xcrun',['simctl','spawn',device,'log','show','--start','@'+firstLaunchTimestamp,
+        '--timezone','UTC','--style','compact','--info','--debug','--predicate',predicate],'simulator-touch.log',30000);
+      receipt.touchLog={captured:true,file:'simulator-touch.log',firstLaunchTimestamp};
+    } catch(error) {
+      receipt.touchLog={captured:false,error:String(error),firstLaunchTimestamp};
+    }
+  }
   receipt.keptDevice=!!device&&!passed&&keepFailed;
   if(device&&!receipt.keptDevice) {
     receipt.cleanupErrors=await cleanUpIOSSimulator(device,(action,id)=>

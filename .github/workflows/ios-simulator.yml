@@ -146,7 +146,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       RAISING_IOS_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17e
-      RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-5
+      RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-4
     steps:
       - uses: actions/checkout@v4
         with:
@@ -178,6 +178,7 @@ jobs:
             echo "testRuntime=$RAISING_IOS_SIMULATOR_RUNTIME"
             echo "testDeviceType=$RAISING_IOS_SIMULATOR_DEVICE_TYPE"
             xcodebuild -version
+            xcodebuild -version -sdk iphonesimulator
             xcrun simctl list runtimes available
           } | tee .cache/ios-simulator-ci/files-environment.txt
       - run: npm ci
@@ -187,6 +188,8 @@ jobs:
           npx --no-install tsc -p tsconfig.json
           node scripts/copy-schemas.mjs
       - name: Test export and import through the actual Files picker
+        env:
+          RAISING_IOS_CAPTURE_TOUCH_LOG: '1'
         run: |
           node scripts/test-ios-system-ui.mjs .cache/ios-simulator-ci/export \
             --project examples/my-first-raising-game --family iphone --test files-roundtrip --text-scale 2
