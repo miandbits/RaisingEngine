@@ -8,7 +8,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
 import {analyzeInputIdleMemory} from './lib/ios-input-memory.mjs';
-import {cleanUpIOSSimulator,runBoundedAppleTool,selectIOSSimulator,ownedIOSSimulatorDataPath,readIOSPortableStaging,validateIOSSandboxReceipt,waitForIOSSandboxReceipt} from './lib/ios-simulator-test.mjs';
+import {cleanUpIOSSimulator,runIOSSimulatorCases,runBoundedAppleTool,selectIOSSimulator,ownedIOSSimulatorDataPath,readIOSPortableStaging,validateIOSSandboxReceipt,waitForIOSSandboxReceipt} from './lib/ios-simulator-test.mjs';
 
 const args=process.argv.slice(2), root=process.cwd();
 const option=name=>{const i=args.indexOf(name);return i<0?undefined:args[i+1];};
@@ -98,7 +98,7 @@ try {
   let filesSaveDirectory;
   const filesRoundTrip=selection==='files-roundtrip';
   const testDestination='platform=iOS Simulator,id='+device;
-  for(const name of cases) {
+  await runIOSSimulatorCases(cases,{terminatePrevious:()=>sim('terminate',device,appId),runCase:async name=>{
     const currentLog=path.join(out,name+'.stdout');
     await writeFile(currentLog,'',{flag:'wx',mode:0o600});
     const sandboxNonce=filesRoundTrip?randomBytes(32).toString('hex'):undefined;
@@ -186,8 +186,7 @@ try {
     receipt.actualSystemPicker=results.some(r=>r.name==='testFilesKeyboardBackgroundRotationCancel'||r.name==='testFilesExportBackup');
     receipt.actualFilesRoundTrip=selectedCases['files-roundtrip'].every(name=>results.some(r=>r.name===name));
     await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
-    sim('terminate',device,appId);
-  }
+  }});
   passed=true;receipt.ok=true;
 } catch(error) {receipt.error=String(error);throw error;}
 finally {

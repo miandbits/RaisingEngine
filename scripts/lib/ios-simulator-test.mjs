@@ -41,6 +41,13 @@ export async function runBoundedAppleTool(command,args,{cwd,logFile,timeout=6000
   }
 }
 
+export async function runIOSSimulatorCases(cases,{runCase,terminatePrevious}) {
+  for(const [index,name] of cases.entries()) {
+    if(index>0)await terminatePrevious();
+    await runCase(name);
+  }
+}
+
 export async function cleanUpIOSSimulator(device,run) {
   const errors={};
   for(const action of ['shutdown','delete']) {

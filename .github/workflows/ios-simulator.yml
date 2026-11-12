@@ -13,6 +13,8 @@ on:
       - 'scripts/**'
       - 'tests/ios-system-ui/**'
       - 'tests/mobile/ios-simulator-test.test.mjs'
+      - 'tests/mobile/ios-keyboard-patch.test.mjs'
+      - 'tests/mobile/fixtures/ios-sdl-view-frame.mm'
   pull_request:
     paths: *ios-paths
   workflow_dispatch:
@@ -84,6 +86,17 @@ jobs:
           JS
       - name: Build the exported iOS application
         run: npm run build:ios -- --project .cache/ios-simulator-ci/export
+      - name: Execute the actual SDL view-frame transform used by the built app
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence=.cache/ios-simulator-ci
+          export_root="$PWD/$evidence/export"
+          scene="$export_root/engine/native/player/vendor/SDL-ios/src/video/uikit/SDL_uikitvideo.m"
+          app="$export_root/build-iphonesimulator/native-player/Release-iphonesimulator/RaisingPlayer.app"
+          grep '^CompileC ' "$export_root/xcode-build.log" | grep -F " $scene " > "$evidence/sdl-view-frame-compile.txt"
+          shasum -a 256 "$scene" "$app/RaisingPlayer" > "$evidence/sdl-view-frame-sources.sha256"
+          RAISING_IOS_BUILT_SDL_SCENE_SOURCE="$scene" node --test tests/mobile/ios-keyboard-patch.test.mjs | tee "$evidence/sdl-view-frame-test.log"
       - name: Compile the VoiceOver XCTest harness without starting a Simulator
         run: |
           node scripts/test-ios-voiceover.mjs \
@@ -129,6 +142,10 @@ jobs:
             .cache/ios-simulator-ci/environment.txt
             .cache/ios-simulator-ci/export/ios-build.json
             .cache/ios-simulator-ci/export/xcode-*.log
+            .cache/ios-simulator-ci/sdl-view-frame-compile.txt
+            .cache/ios-simulator-ci/sdl-view-frame-sources.sha256
+            .cache/ios-simulator-ci/sdl-view-frame-test.log
+            .cache/ios-keyboard-patch/run-*/*-bounds.log
             .cache/ios-voiceover/run-*/result.json
             .cache/ios-voiceover/run-*/*.log
             .cache/ios-voiceover-execution/run-*/result.json

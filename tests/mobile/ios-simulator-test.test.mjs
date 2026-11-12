@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {cleanUpIOSSimulator,selectIOSSimulator} from '../../scripts/lib/ios-simulator-test.mjs';
+import {cleanUpIOSSimulator,runIOSSimulatorCases,selectIOSSimulator} from '../../scripts/lib/ios-simulator-test.mjs';
 
 const runtimeId=version=>'com.apple.CoreSimulator.SimRuntime.iOS-'+version.replaceAll('.','-');
 const deviceId=name=>'com.apple.CoreSimulator.SimDeviceType.'+name;
@@ -37,6 +37,36 @@ test('explicit simulator overrides require an available, supported pair',()=>{
   assert.deepEqual(selectIOSSimulator(inventory,{runtimeId:runtimeId('27.1'),deviceType:deviceId('iPhone-Duo')}),
     {runtime:runtimeId('27.1'),type:deviceId('iPhone-Duo')});
   assert.throws(()=>selectIOSSimulator(inventory,{runtimeId:runtimeId('28.0')}),/28-0/);
+});
+
+test('Simulator cases terminate only to admit the next launch',async()=>{
+  const actions=[];
+  try {
+    await runIOSSimulatorCases(['export','import'],{
+      runCase:async name=>actions.push(name),
+      terminatePrevious:async()=>actions.push('terminate'),
+    });
+  } finally {
+    assert.deepEqual(await cleanUpIOSSimulator('owned-device',async(action,id)=>{
+      assert.equal(id,'owned-device');
+      actions.push(action);
+    }),{});
+  }
+  assert.deepEqual(actions,['export','terminate','import','shutdown','delete']);
+});
+
+test('Simulator case or between-case termination errors stop the next launch',async()=>{
+  for(const [phase,expected] of [['export',['export']],['terminate',['export','terminate']]]) {
+    const actions=[],failure=Error(phase+' failed');
+    const record=async action=>{
+      actions.push(action);
+      if(action===phase)throw failure;
+    };
+    await assert.rejects(runIOSSimulatorCases(['export','import'],{
+      runCase:record,terminatePrevious:()=>record('terminate'),
+    }),error=>error===failure);
+    assert.deepEqual(actions,expected);
+  }
 });
 
 test('owned simulator deletion is attempted after shutdown failure and both errors are retained',async()=>{

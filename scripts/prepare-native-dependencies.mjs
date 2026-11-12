@@ -28,7 +28,7 @@ export async function prepareNativeDependencies(root=repository, {ios=process.pl
     const keyboardPatch=dependency.path==='SDL-ios'?await inspectIOSKeyboardPatch(target):null;
     const reviewedPatch=keyboardPatch&&!git(['-C',target,'diff','HEAD','--summary']).trim()&&dirty.split('\n').every(line=>keyboardPatch.files.some(file=>file.patched&&line.trim()===`M ${file.source}`));
     if(dirty&&!reviewedPatch)throw Error(`Dependency has local changes: ${dependency.path}; existing files were preserved.`);
-    if(keyboardPatch)console.log(`SDL-ios keyboard isolation patch: ${JSON.stringify(await applyIOSKeyboardPatch(target))}`);
+    if(keyboardPatch)console.log(`SDL-ios keyboard isolation patch: ${JSON.stringify(await applyIOSKeyboardPatch(target,keyboardPatch))}`);
     console.log(`${dependency.path}: ${head}`);
   }
 }

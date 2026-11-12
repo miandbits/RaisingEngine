@@ -4,6 +4,16 @@ import {readFile,mkdir,mkdtemp,writeFile} from 'node:fs/promises';
 import {build} from 'esbuild';
 import {chromium} from 'playwright';
 
+// Both the ordinary keyboard test and the scheduler regression use the same
+// strict outcome and final-clause visibility checks.
+const waitForDetailsEnd=page=>page.waitForFunction(()=>{window.__scheduleScrollProbe.polls++;const e=document.querySelector('.schedule-detail-pane');return e&&e.scrollTop>0&&Math.abs(e.scrollHeight-e.clientHeight-e.scrollTop)<=1;},null,{timeout:5000,polling:50});
+const finalClauseVisible=e=>{
+  const text=e.querySelector('.activity-description').firstChild,clause='FINAL REQUIREMENT CLAUSE.',start=text.textContent.indexOf(clause);
+  if(start<0)return false;const range=document.createRange();range.setStart(text,start);range.setEnd(text,start+clause.length);
+  const box=e.getBoundingClientRect(),top=box.top+e.clientTop,left=box.left+e.clientLeft,rects=[...range.getClientRects()];
+  return rects.length>0&&rects.every(r=>r.width>0&&r.height>0&&r.top>=top-1&&r.bottom<=top+e.clientHeight+1&&r.left>=left-1&&r.right<=left+e.clientWidth+1);
+};
+
 test('detailed canvas schedules share complete prose and only explicit progression submits a command',async t=>{
   const bundle=await build({stdin:{contents:`
     import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {ScheduleWidget,useSchedulePlanner} from './apps/player/renderer/ScheduleWidget.tsx';
@@ -47,14 +57,9 @@ test('detailed canvas schedules share complete prose and only explicit progressi
   try {
   await details.focus();assert.equal(await details.evaluate(e=>e===document.activeElement),true,'Details receive keyboard focus');
   await page.keyboard.press('End');
-  // Browser keyboard scrolling animates; wait for its outcome instead of a frame budget.
-  await page.waitForFunction(()=>{window.__scheduleScrollProbe.polls++;const e=document.querySelector('.schedule-detail-pane');return e&&e.scrollTop>0&&Math.abs(e.scrollHeight-e.clientHeight-e.scrollTop)<=1;},null,{timeout:5000});
-  assert.equal(await details.evaluate(e=>{
-    const text=e.querySelector('.activity-description').firstChild,clause='FINAL REQUIREMENT CLAUSE.',start=text.textContent.indexOf(clause);
-    if(start<0)return false;const range=document.createRange();range.setStart(text,start);range.setEnd(text,start+clause.length);
-    const box=e.getBoundingClientRect(),top=box.top+e.clientTop,left=box.left+e.clientLeft,rects=[...range.getClientRects()];
-    return rects.length>0&&rects.every(r=>r.width>0&&r.height>0&&r.top>=top-1&&r.bottom<=top+e.clientHeight+1&&r.left>=left-1&&r.right<=left+e.clientWidth+1);
-  }),true,'Real End-key scrolling makes the final requirement visible inside the details pane');
+  // Timer polling observes the scroll even if animation-frame callbacks stall.
+  await waitForDetailsEnd(page);
+  assert.equal(await details.evaluate(finalClauseVisible),true,'Real End-key scrolling makes the final requirement visible inside the details pane');
   } catch(originalError) {
     // Diagnostics are best-effort and separately bounded; always rethrow the
     // original assertion so a blocked/lost End never becomes a passing test.
@@ -95,4 +100,35 @@ test('detailed canvas schedules share complete prose and only explicit progressi
   }
   await mkdir('.cache/schedule-details-web',{recursive:true});await page.screenshot({path:'.cache/schedule-details-web/schedule-details.png'});
   await page.evaluate(()=>window.setFlags(false));await page.locator('.schedule-detail-pane').waitFor({state:'detached'});assert.equal(await page.locator('.schedule-detail-pane').count(),0);assert.equal(await page.locator('.schedule-columns').count(),1,'Unopted schedules retain ordinary columns');
+});
+
+
+test('End scroll remains observable when animation-frame callbacks stall',{timeout:30000},async t=>{
+  const bundle=await build({stdin:{contents:`
+    import React from 'react';import {createRoot} from 'react-dom/client';import {ScheduleWidget,useSchedulePlanner} from './apps/player/renderer/ScheduleWidget.tsx';
+    const activities=[{id:'study',label:'Study',description:'Requirements: Bring money for tuition and leave time for recovery. '.repeat(35)+'FINAL REQUIREMENT CLAUSE.'}];
+    function App(){const context={activities,plan:['study','study','study','study'],period:0,phase:'planning',periodsPerMonth:4,locale:'en',stats:[]};const planning=useSchedulePlanner(context);return <div className="visual-element visual-schedule" style={{width:880,height:480}}><ScheduleWidget element={{id:'schedule',kind:'schedule',x:0,y:0,width:880,height:480,showActivityDescription:true}} context={context} planning={planning} groups={[]} assetUrl={()=>''} disabled={false}/></div>;}createRoot(document.getElementById('root')).render(<App/>);
+  `,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',loader:{'.css':'empty'},logLevel:'silent'});
+  const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL??'chrome'});t.after(()=>browser.close());
+  for(const mode of ['complete','prevented','capped']){
+    const page=await browser.newPage({viewport:{width:1000,height:720}});
+    try{
+      // Install before Playwright captures its builtins, then stall only after
+      // rendering, so the browser's real keyboard scroll can still proceed.
+      await page.addInitScript(()=>{const real=requestAnimationFrame.bind(window);window.requestAnimationFrame=callback=>window.__stallFrames?1:real(callback);});
+      await page.goto('data:text/html,<div id="root"></div>');await page.addStyleTag({content:await readFile('apps/player/renderer/visual.css','utf8')});await page.addScriptTag({content:bundle.outputFiles[0].text});
+      const details=page.getByRole('region',{name:'Selected period details'});await details.waitFor();
+      await page.evaluate(mode=>{const pane=document.querySelector('.schedule-detail-pane');window.__scheduleScrollProbe={polls:0};window.__keyEvents=[];document.addEventListener('keydown',e=>{if(e.key==='End'){window.__keyEvents.push(e);if(mode==='prevented')e.preventDefault();}},true);if(mode==='capped')pane.addEventListener('scroll',()=>{if(pane.scrollTop>100)pane.scrollTop=100;});window.__stallFrames=true;},mode);
+      await details.focus();assert.equal(await details.evaluate(e=>e===document.activeElement),true);await page.keyboard.press('End');
+      if(mode==='complete'){
+        await waitForDetailsEnd(page);assert.equal(await details.evaluate(finalClauseVisible),true);
+      }else{
+        await assert.rejects(waitForDetailsEnd(page),/Timeout 5000ms exceeded/);
+        const state=await details.evaluate(e=>({top:e.scrollTop,remaining:e.scrollHeight-e.clientHeight-e.scrollTop}));
+        assert.ok(state.remaining>1,JSON.stringify(state));assert.equal(state.top,mode==='prevented'?0:100);
+      }
+      const observed=await page.evaluate(()=>({keys:window.__keyEvents.map(e=>({trusted:e.isTrusted,prevented:e.defaultPrevented,target:e.target.className})),polls:window.__scheduleScrollProbe.polls}));
+      assert.deepEqual(observed.keys,[{trusted:true,prevented:mode==='prevented',target:'schedule-detail-pane'}]);assert.ok(observed.polls>0);
+    }finally{await page.close();}
+  }
 });
