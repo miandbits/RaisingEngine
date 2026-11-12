@@ -106,6 +106,8 @@ try {
   const filesRoundTrip=selection==='files-roundtrip';
   const testDestination='platform=iOS Simulator,id='+device;
   for(const name of cases) {
+    const guiAttachmentTool=name==='testFilesExportBackup'?process.env.RAISING_IOS_GUI_ATTACHMENT_TOOL:undefined;
+    let guiLaunchEvidence;
     const currentLog=path.join(out,name+'.stdout');
     await writeFile(currentLog,'',{flag:'wx',mode:0o600});
     const sandboxNonce=filesRoundTrip?randomBytes(32).toString('hex'):undefined;
@@ -126,28 +128,38 @@ try {
       const sandboxReceipt=await waitForIOSSandboxReceipt(currentLog,{alive:()=>process.kill(pid,0)});
       const receiptIdentity=await stat(currentLog,{bigint:true});
       assert.ok(receiptIdentity.dev===dev&&receiptIdentity.ino===ino,'Player stdout was replaced');
-      const sandbox=await validateIOSSandboxReceipt(sandboxReceipt,
-        {nonce:sandboxNonce,pid,contentFingerprint:fixture.snapshot.contentFingerprint,gameId:authored.gameId,deviceDataPath});
+      const expected={nonce:sandboxNonce,pid,contentFingerprint:fixture.snapshot.contentFingerprint,gameId:authored.gameId,deviceDataPath};
+      const sandbox=await validateIOSSandboxReceipt(sandboxReceipt,expected);
+      if(guiAttachmentTool)guiLaunchEvidence={appID:appId,deviceUDID:device,stdout:currentLog,
+        stdoutDevice:String(dev),stdoutInode:String(ino),executableSha256:nativeHash,expected,sandboxReceipt,sandbox};
       if(filesSaveDirectory)assert.equal(sandbox.directory,filesSaveDirectory,'Relaunch must use the same app sandbox');
       filesSaveDirectory=sandbox.directory;
       receipt.sandbox={home:sandbox.home,saveFile:sandbox.saveFile};
       await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
     }
-    if(name==='testFilesExportBackup'&&process.env.RAISING_IOS_GUI_ATTACHMENT_TOOL) {
-      assert.ok(guiPrebootInventory,'GUI attachment requires the saved preboot ownership inventory');
+    if(guiAttachmentTool) {
+      assert.ok(guiPrebootInventory&&guiLaunchEvidence,'GUI attachment requires the saved ownership and launch evidence');
       const simulatorApp=path.join(process.env.DEVELOPER_DIR,'Applications','Simulator.app');
       const guiReceipt=path.join(out,'simulator-gui-attachment.json');
-      await tool(process.env.RAISING_IOS_GUI_ATTACHMENT_TOOL,
-        [simulatorApp,device,deviceName,selected.runtime,appId,String(pid),guiReceipt,guiPrebootInventory],
+      const guiLaunchFile=path.join(out,'simulator-gui-attachment-launch.json');
+      await writeFile(guiLaunchFile,JSON.stringify(guiLaunchEvidence,null,2)+'\n',{flag:'wx',mode:0o600});
+      await tool(guiAttachmentTool,
+        [simulatorApp,device,deviceName,selected.runtime,appId,String(pid),guiReceipt,guiPrebootInventory,guiLaunchFile],
         'simulator-gui-attachment.log',120000);
       const attachment=JSON.parse(await readFile(guiReceipt,'utf8'));
       assert.equal(attachment.deviceUDID,device,'GUI attachment must belong to the owned Simulator');
       assert.equal(attachment.playerPID,pid,'GUI attachment must retain the live player');
       assert.ok(attachment.interventionPerformed===true&&attachment.ready===true&&attachment.noInputPosted===true,
         'The GUI attachment intervention must complete without posting input');
-      receipt.guiAttachment={file:path.basename(guiReceipt),device,playerPID:pid};
-      await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
+      const afterIdentity=await stat(currentLog,{bigint:true});
+      assert.ok(afterIdentity.dev===dev&&afterIdentity.ino===ino,'Player stdout changed during GUI attachment');
       process.kill(pid,0);
+      const afterReceipt=await waitForIOSSandboxReceipt(currentLog,{timeout:0});
+      assert.deepEqual(afterReceipt,guiLaunchEvidence.sandboxReceipt,'Bound launch receipt changed during GUI attachment');
+      assert.deepEqual(await validateIOSSandboxReceipt(afterReceipt,guiLaunchEvidence.expected),guiLaunchEvidence.sandbox,
+        'Owned player sandbox changed during GUI attachment');
+      receipt.guiAttachment={file:path.basename(guiReceipt),launchEvidence:path.basename(guiLaunchFile),device,playerPID:pid};
+      await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
     }
     if(name==='testFilesImportBackupAfterRelaunch') {
       assert.ok(exportedPID,'The import requires a successful export process');
