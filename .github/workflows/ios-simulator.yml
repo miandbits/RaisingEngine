@@ -1,32 +1,13 @@
-name: iOS export and Simulator Files
+name: iOS Files host contact diagnostic
 on:
   push:
-    paths: &ios-paths
-      - '.github/workflows/ios-simulator.yml'
-      - 'apps/qt-studio/**'
-      - 'assets/**'
-      - 'config/native-dependencies.json'
-      - 'examples/my-first-raising-game/**'
-      - 'native/**'
-      - 'package*.json'
-      - 'packages/**'
-      - 'scripts/**'
-      - 'tests/ios-system-ui/**'
-      - 'tests/mobile/ios-simulator-test.test.mjs'
-  pull_request:
-    paths: *ios-paths
-  workflow_dispatch:
-    inputs:
-      run_voiceover:
-        description: Run the actual VoiceOver test on the Xcode 27 hosted Simulator
-        type: boolean
-        default: false
+    branches: ['codex/ios-files-host-contact']
 
 permissions:
   contents: read
 
 concurrency:
-  group: ios-simulator-${{ github.event.pull_request.number || github.ref }}
+  group: ios-host-contact-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -57,7 +38,7 @@ jobs:
             xcodebuild -version
             xcrun simctl list runtimes available
           } | tee .cache/ios-simulator-ci/environment.txt
-      - run: node --test tests/mobile/ios-simulator-test.test.mjs
+      - run: node --test tests/mobile/ios-simulator-test.test.mjs tests/mobile/ios-host-contact-test.test.mjs
       - run: npm ci
       - run: npm run build:headless
       - run: npm run build:player
@@ -112,15 +93,6 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
-      - name: Run actual VoiceOver focus and speech on iPhone Simulator
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_voiceover }}
-        env:
-          RAISING_IOS_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17e
-          RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-0
-        run: |
-          node scripts/test-ios-voiceover.mjs \
-            .cache/ios-simulator-ci/export/build-iphonesimulator/native-player/Release-iphonesimulator/RaisingPlayer.app \
-            .cache/ios-voiceover-execution
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -131,9 +103,6 @@ jobs:
             .cache/ios-simulator-ci/export/xcode-*.log
             .cache/ios-voiceover/run-*/result.json
             .cache/ios-voiceover/run-*/*.log
-            .cache/ios-voiceover-execution/run-*/result.json
-            .cache/ios-voiceover-execution/run-*/*.log
-            .cache/ios-voiceover-execution/run-*/*.xcresult
           include-hidden-files: true
           retention-days: 14
 
@@ -186,8 +155,22 @@ jobs:
           node scripts/generate-types.mjs
           npx --no-install tsc -p tsconfig.json
           node scripts/copy-schemas.mjs
-      - name: Test export and import through the actual Files picker
+      - name: Compile the host contact diagnostic
         run: |
+          base=.cache/ios-simulator-ci
+          xcrun --sdk macosx swiftc -module-cache-path "$base/swift-module-cache" \
+            scripts/lib/ios-simulator-host-contact.swift -o "$base/host-contact"
+          shasum -a 256 native/player/main.cpp native/player/simulator-input-proof.hpp \
+            scripts/lib/ios-simulator-host-contact.swift scripts/lib/ios-host-contact-test.mjs \
+            scripts/test-ios-system-ui.mjs tests/ios-system-ui/SystemUITests.swift \
+            "$base/host-contact" > "$base/host-contact-sources.sha256"
+      - name: Test export and import through the actual Files picker
+        env:
+          RAISING_IOS_CAPTURE_TOUCH_LOG: '1'
+        run: |
+          test -z "${SDL_EVENT_LOGGING+x}${SIMCTL_CHILD_SDL_EVENT_LOGGING+x}"
+          test -z "${RAISING_INPUT_TRACE+x}${SIMCTL_CHILD_RAISING_INPUT_TRACE+x}"
+          export RAISING_IOS_HOST_CONTACT_TOOL="$PWD/.cache/ios-simulator-ci/host-contact"
           node scripts/test-ios-system-ui.mjs .cache/ios-simulator-ci/export \
             --project examples/my-first-raising-game --family iphone --test files-roundtrip --text-scale 2
       - uses: actions/upload-artifact@v4
@@ -196,11 +179,14 @@ jobs:
           name: public-starter-ios-files-evidence
           path: |
             .cache/ios-simulator-ci/files-environment.txt
+            .cache/ios-simulator-ci/host-contact-sources.sha256
             .cache/ios-simulator-ci/transfer/*.txt
             .cache/ios-simulator-ci/transfer/*.sha256
             .cache/ios-system-ui/latest.json
             .cache/ios-system-ui/run-*/result.json
             .cache/ios-system-ui/run-*/files-export-checkpoint.json
+            .cache/ios-system-ui/run-*/host-contact-preboot-inventory.json
+            .cache/ios-system-ui/run-*/host-contact-*/*.json
             .cache/ios-system-ui/run-*/*-staging.json
             .cache/ios-system-ui/run-*/*.log
             .cache/ios-system-ui/run-*/*.stdout

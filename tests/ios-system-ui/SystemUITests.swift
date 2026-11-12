@@ -2,7 +2,8 @@ import Darwin
 import XCTest
 
 // Only the Simulator-launched player writes its editor-view diagnostics.
-// Every action below uses genuine XCTest input against UIKit or the SDL window.
+// Actions use XCTest input, or an explicitly selected Simulator host pointer
+// transport whose real direct SDL finger events are independently required.
 final class SystemUITests: XCTestCase {
   let appID = "__APP_ID__"
   private struct DiagnosticsSource: Decodable {
@@ -19,6 +20,7 @@ final class SystemUITests: XCTestCase {
     var errorDescription: String? { message }
   }
   private var diagnostics: DiagnosticsSource!
+  private var hostContactUsed=false
   private var lastRecord: (range: Range<Int>, bytes: Data)?
   override func setUpWithError() throws {
     continueAfterFailure = false
@@ -120,6 +122,101 @@ final class SystemUITests: XCTestCase {
     } while Date()<deadline
     XCTFail("Portable operation did not reach "+expected)
   }
+  fileprivate func validateHostInputProof(_ proof:[String:Any],nonce:String,pid:pid_t,frame:CGRect,point:CGPoint,duration:Double) throws {
+    let samples=try XCTUnwrap(proof["samples"] as? [[String:Any]])
+    guard proof["nonce"] as? String==nonce,proof["pid"] as? Int==Int(pid),proof["source"] as? String=="SDL_PollEvent",
+          proof["version"] as? Int==1,proof["overflow"] as? Bool==false,samples.count>=2,samples.count<=64,
+          samples[0]["phase"] as? String=="down",samples.last?["phase"] as? String=="up",
+          samples.dropFirst().dropLast().allSatisfy({$0["phase"] as? String=="motion"}) else {
+      throw DiagnosticsError(message:"Host input did not produce exactly one direct finger pair: \(proof)")
+    }
+    let down=samples[0],up=samples.last!
+    guard let windowID=proof["windowID"] as? Int,windowID>0,
+          let touchID=down["touchID"] as? String,let touch=UInt64(touchID),touch>0,
+          let fingerID=down["fingerID"] as? String,let finger=UInt64(fingerID),finger>0 else {
+      throw DiagnosticsError(message:"Input proof identity missing or invalid")
+    }
+    for sample in samples {
+      guard sample["direct"] as? Bool==true,sample["mouseTouch"] as? Bool==false,
+            sample["windowID"] as? Int==windowID,
+            sample["touchID"] as? String==touchID,sample["fingerID"] as? String==fingerID,
+            let x=sample["x"] as? Double,let y=sample["y"] as? Double,
+            let width=sample["windowWidth"] as? Double,let height=sample["windowHeight"] as? Double,
+            abs(width-frame.width)<0.5,abs(height-frame.height)<0.5,
+            abs(x*width-(point.x-frame.minX))<=0.5,abs(y*height-(point.y-frame.minY))<=0.5 else {
+        throw DiagnosticsError(message:"Actual direct touch identity or original point differs: \(sample)")
+      }
+    }
+    let downTime=try XCTUnwrap(UInt64(try XCTUnwrap(down["timestampNS"] as? String)))
+    let upTime=try XCTUnwrap(UInt64(try XCTUnwrap(up["timestampNS"] as? String)))
+    guard upTime>downTime,abs(Double(upTime-downTime)/1e9-duration)<=0.02 else {
+      throw DiagnosticsError(message:"Actual direct contact duration differs")
+    }
+  }
+  private func hostContact(_ app:XCUIApplication,_ id:String,_ point:CGPoint,_ duration:TimeInterval) throws -> Bool {
+    guard let configuration=ProcessInfo.processInfo.environment["RAISING_SYSTEM_UI_HOST_CONTACT"] else {return false}
+    if hostContactUsed {return false}
+    let expectedID=diagnostics.test=="testFilesExportBackup" ? "start" : "load"
+    guard ["testFilesExportBackup","testFilesImportBackupAfterRelaunch"].contains(diagnostics.test),id==expectedID else {
+      throw DiagnosticsError(message:"Host contact must be the original first Files action")
+    }
+    let config=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(configuration.utf8)) as? [String:Any])
+    let nonce=try XCTUnwrap(config["nonce"] as? String)
+    let requestURL=URL(fileURLWithPath:try XCTUnwrap(config["requestPath"] as? String))
+    let responseURL=URL(fileURLWithPath:try XCTUnwrap(config["responsePath"] as? String))
+    guard nonce.range(of:#"^[a-f0-9]{64}$"#,options:.regularExpression) != nil,
+          requestURL.deletingLastPathComponent()==responseURL.deletingLastPathComponent(),
+          requestURL.lastPathComponent=="request.json",responseURL.lastPathComponent=="response.json",
+          !FileManager.default.fileExists(atPath:requestURL.path),!FileManager.default.fileExists(atPath:responseURL.path) else {
+      throw DiagnosticsError(message:"Invalid or previously used host contact capability")
+    }
+    let current=try view(),frame=app.frame,requestID=UUID().uuidString
+    let generation=try XCTUnwrap(current["documentGeneration"] as? Int)
+    let now=Date().timeIntervalSince1970*1000
+    let request:[String:Any] = ["version":1,"nonce":nonce,"requestID":requestID,"test":diagnostics.test,"pid":Int(diagnostics.pid),
+      "stdout":diagnostics.stdout,"stdoutDevice":diagnostics.device,"stdoutInode":diagnostics.inode,
+      "generation":generation,"controlID":id,"point":["x":point.x,"y":point.y],
+      "appFrame":["x":frame.minX,"y":frame.minY,"width":frame.width,"height":frame.height],
+      "duration":duration,"createdAt":now,"expiresAt":now+45000]
+    hostContactUsed=true // Failure is terminal; never issue a fallback touch.
+    let temporary=requestURL.deletingLastPathComponent().appendingPathComponent("request-"+requestID+".tmp")
+    try JSONSerialization.data(withJSONObject:request,options:.sortedKeys).write(to:temporary,options:.withoutOverwriting)
+    defer {try? FileManager.default.removeItem(at:temporary)}
+    guard link(temporary.path,requestURL.path)==0 else {throw DiagnosticsError(message:"Cannot exclusively publish host contact request")}
+    let deadline=ProcessInfo.processInfo.systemUptime+45
+    while !FileManager.default.fileExists(atPath:responseURL.path),ProcessInfo.processInfo.systemUptime<deadline {
+      RunLoop.current.run(until:Date().addingTimeInterval(0.02))
+    }
+    let response=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:responseURL)) as? [String:Any])
+    guard response["ok"] as? Bool==true,response["nonce"] as? String==nonce,response["requestID"] as? String==requestID,
+          response["pid"] as? Int==Int(diagnostics.pid),response["postedDown"] as? Bool==true,response["postedUp"] as? Bool==true,
+          response["duration"] as? Double==duration,
+          NSDictionary(dictionary:response["point"] as? [String:Any] ?? [:]).isEqual(to:request["point"] as! [String:Any]) else {
+      throw DiagnosticsError(message:"Host contact failed or response identity changed: \(response)")
+    }
+    // The host result is not proof of a game touch. Read the real SDL event
+    // receipt from the same PID/inode-bound append-only diagnostics transport.
+    let proofDeadline=ProcessInfo.processInfo.systemUptime+3
+    var proofs=[[String:Any]]()
+    repeat {
+      _=try latestCompleteView()
+      let handle=try FileHandle(forReadingFrom:URL(fileURLWithPath:diagnostics.stdout));defer {try? handle.close()}
+      var info=stat()
+      guard fstat(handle.fileDescriptor,&info)==0,String(info.st_dev)==diagnostics.device,String(info.st_ino)==diagnostics.inode else {
+        throw DiagnosticsError(message:"Input proof stdout identity changed")
+      }
+      let bytes=try handle.readToEnd() ?? Data()
+      proofs=bytes.split(separator:0x0A,omittingEmptySubsequences:false).dropLast().compactMap {line in
+        guard let row=try? JSONSerialization.jsonObject(with:Data(line)) as? [String:Any],row["event"] as? String=="input-proof" else {return nil}
+        return row
+      }
+      if !proofs.isEmpty {break}
+      RunLoop.current.run(until:Date().addingTimeInterval(0.02))
+    } while ProcessInfo.processInfo.systemUptime<proofDeadline
+    guard proofs.count==1 else {throw DiagnosticsError(message:"Expected one actual SDL input proof")}
+    try validateHostInputProof(proofs[0],nonce:nonce,pid:diagnostics.pid,frame:frame,point:point,duration:duration)
+    return true
+  }
   func tap(_ app:XCUIApplication,_ id:String, contactDuration:TimeInterval?=nil) throws {
     let layout=try XCTUnwrap(view()["readingLayout"] as? [String:Any])
     let controls=try XCTUnwrap(layout["controls"] as? [[String:Any]])
@@ -131,7 +228,8 @@ final class SystemUITests: XCTestCase {
     XCTAssertGreaterThanOrEqual(x,0);XCTAssertGreaterThanOrEqual(y,0)
     XCTAssertLessThanOrEqual(x+width,app.frame.width+1);XCTAssertLessThanOrEqual(y+height,app.frame.height+1)
     let target=app.coordinate(withNormalizedOffset:CGVector(dx:0,dy:0)).withOffset(CGVector(dx:x+width/2,dy:y+height/2))
-    if let contactDuration {target.press(forDuration:contactDuration)}
+    if try hostContact(app,id,target.screenPoint,contactDuration ?? 0.05) { /* observed direct host contact */ }
+    else if let contactDuration {target.press(forDuration:contactDuration)}
     else {target.tap()}
     RunLoop.current.run(until:Date().addingTimeInterval(0.4))
   }

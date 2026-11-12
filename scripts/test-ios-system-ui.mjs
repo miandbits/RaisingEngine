@@ -8,6 +8,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {loadProject} from '../dist/packages/project-service/loader.js';
 import {buildSnapshot} from '../dist/packages/project-service/snapshot.js';
 import {analyzeInputIdleMemory} from './lib/ios-input-memory.mjs';
+import {runHostContact} from './lib/ios-host-contact-test.mjs';
 import {cleanUpIOSSimulator,runBoundedAppleTool,selectIOSSimulator,ownedIOSSimulatorDataPath,readIOSPortableStaging,validateIOSSandboxReceipt,waitForIOSSandboxReceipt} from './lib/ios-simulator-test.mjs';
 
 const args=process.argv.slice(2), root=process.cwd();
@@ -30,6 +31,10 @@ assert.ok(selection==='all'||Object.hasOwn(selectedCases,selection),'Unknown sys
 const cases=selection==='all'?[
   ...selectedCases.files,...selectedCases.input,...selectedCases.selection,...selectedCases.composition,...selectedCases.japanese
 ]:selectedCases[selection];
+const filesRoundTrip=selection==='files-roundtrip';
+const hostContactTool=filesRoundTrip?process.env.RAISING_IOS_HOST_CONTACT_TOOL:undefined;
+if(hostContactTool)assert.ok(path.isAbsolute(hostContactTool)&&path.isAbsolute(process.env.DEVELOPER_DIR??''),
+  'Host contact requires absolute helper and Xcode paths');
 const textScale=option('--text-scale')??'1';assert.ok(['1','2'].includes(textScale),'Use --text-scale 1 or 2');
 const family=option('--family')??'iphone';assert.ok(['iphone','ipad'].includes(family));
 const keepFailed=args.includes('--keep-failed-device'), source=path.resolve(args[0]), project=path.resolve(option('--project'));
@@ -73,8 +78,8 @@ await writeFile(path.join(app,'game/game.json'),JSON.stringify({...originalGame,
 await writeFile(path.join(out,'fixture-project.json'),JSON.stringify(authored,null,2));
 await writeFile(path.join(out,'fixture-content.json'),JSON.stringify(fixture.snapshot));
 assert.equal(hash(await readFile(path.join(app,executable))),nativeHash,'Probe must not modify the native executable');
-let device,exportedPID,passed=false;
-const results=[],receipt={ok:false,actualSystemPicker:false,actualFilesRoundTrip:false,sourceExport:source,sourceProject:project,sourceContentFingerprint:original.snapshot.contentFingerprint,fixtureContentFingerprint:fixture.snapshot.contentFingerprint,appExecutableSha256:nativeHash,appId,family,selection,textScale,results,diagnosticsTransport:'simulator-stdout',limits:['Simulator only; no physical device or external provider acceptance.','Cache-only authored fixture with unchanged native executable; not the caller game release.','Selected focused regressions, not the complete malformed-save or provider matrix.','XCTest performs all interactions and reads diagnostics from per-launch player stdout.']};
+let device,exportedPID,firstLaunchTimestamp,passed=false;
+const results=[],receipt={ok:false,actualSystemPicker:false,actualFilesRoundTrip:false,sourceExport:source,sourceProject:project,sourceContentFingerprint:original.snapshot.contentFingerprint,fixtureContentFingerprint:fixture.snapshot.contentFingerprint,appExecutableSha256:nativeHash,appId,family,selection,textScale,results,diagnosticsTransport:'simulator-stdout',limits:['Simulator only; no physical device or external provider acceptance.','Cache-only authored fixture with unchanged native executable; not the caller game release.','Selected focused regressions, not the complete malformed-save or provider matrix.',hostContactTool?'The first Start and Load contacts use the Simulator host pointer; XCTest requires the corresponding real direct SDL touch evidence.':'XCTest performs all interactions and reads diagnostics from per-launch player stdout.']};
 const exportCheckpoint=path.join(out,'files-export-checkpoint.json');
 const tool=(command,values,logName,timeout,env)=>runBoundedAppleTool(command,values,
   {cwd:root,logFile:path.join(out,logName),timeout,env});
@@ -89,21 +94,28 @@ try {
   await writeFile(swift,template.replaceAll('__APP_ID__',appId));
   const buildArgs=['-project',path.join(copied,'SystemUI.xcodeproj'),'-scheme','SystemUITests','-derivedDataPath',path.join(out,'DerivedData'),'CODE_SIGNING_ALLOWED=NO'];
   await tool('/usr/bin/xcodebuild',['build-for-testing',...buildArgs,'-destination','generic/platform=iOS Simulator'],'build.log');
-  device=sim('create','RaisingEngine system UI '+path.basename(out),selected.type,selected.runtime);
+  const deviceName='RaisingEngine system UI '+path.basename(out);
+  device=sim('create',deviceName,selected.type,selected.runtime);
   receipt.device={id:device,...selected};await writeFile(path.join(out,'result.json'),JSON.stringify(receipt,null,2));
-  const deviceDataPath=selection==='files-roundtrip'?ownedIOSSimulatorDataPath(JSON.parse(sim('list','devices','--json')),device):undefined;
+  const prebootInventory=filesRoundTrip?sim('list','devices','--json'):undefined;
+  const deviceDataPath=prebootInventory?ownedIOSSimulatorDataPath(JSON.parse(prebootInventory),device):undefined;
+  const hostInventory=path.join(out,'host-contact-preboot-inventory.json');
+  if(hostContactTool)await writeFile(hostInventory,prebootInventory+'\n',{flag:'wx',mode:0o600});
   await tool('/usr/bin/xcrun',['simctl','boot',device],'boot-start.log',60000);
   await tool('/usr/bin/xcrun',['simctl','bootstatus',device,'-b'],'boot.log',180000);
   await tool('/usr/bin/xcrun',['simctl','install',device,app],'install.log',120000);
   let filesSaveDirectory;
-  const filesRoundTrip=selection==='files-roundtrip';
   const testDestination='platform=iOS Simulator,id='+device;
   for(const name of cases) {
     const currentLog=path.join(out,name+'.stdout');
     await writeFile(currentLog,'',{flag:'wx',mode:0o600});
     const sandboxNonce=filesRoundTrip?randomBytes(32).toString('hex'):undefined;
+    const inputProofNonce=hostContactTool?randomBytes(32).toString('hex'):undefined;
     const saveArgs=filesRoundTrip?['--sandbox-receipt',sandboxNonce]:[];
+    if(inputProofNonce)saveArgs.push('--input-proof-nonce',inputProofNonce);
     const launchLog=name+'-launch.log';
+    if(hostContactTool&&process.env.RAISING_IOS_CAPTURE_TOUCH_LOG==='1'&&firstLaunchTimestamp===undefined)
+      firstLaunchTimestamp=Math.floor(Date.now()/1000);
     await tool('/usr/bin/xcrun',['simctl','launch','--stdout='+currentLog,
       '--stderr='+path.join(out,name+'.stderr'),device,appId,'--editor-events','--locale','en',
       '--reading-layout','on','--text-scale',textScale,...saveArgs],launchLog,90000);
@@ -113,12 +125,22 @@ try {
     assert.ok(Number.isInteger(pid)&&pid>0,'Simulator launch must report its app PID');
     process.kill(pid,0);
     const {dev,ino}=await stat(currentLog,{bigint:true});
+    let hostContact;
     if(filesRoundTrip) {
       const sandboxReceipt=await waitForIOSSandboxReceipt(currentLog,{alive:()=>process.kill(pid,0)});
       const receiptIdentity=await stat(currentLog,{bigint:true});
       assert.ok(receiptIdentity.dev===dev&&receiptIdentity.ino===ino,'Player stdout was replaced');
-      const sandbox=await validateIOSSandboxReceipt(sandboxReceipt,
-        {nonce:sandboxNonce,pid,contentFingerprint:fixture.snapshot.contentFingerprint,gameId:authored.gameId,deviceDataPath});
+      const expected={nonce:sandboxNonce,pid,contentFingerprint:fixture.snapshot.contentFingerprint,gameId:authored.gameId,deviceDataPath};
+      const sandbox=await validateIOSSandboxReceipt(sandboxReceipt,expected);
+      if(hostContactTool) {
+        const directory=path.join(out,'host-contact-'+name);
+        await mkdir(directory,{mode:0o700});
+        const launchEvidence=path.join(directory,'launch.json');
+        await writeFile(launchEvidence,JSON.stringify({appID:appId,deviceUDID:device,stdout:currentLog,
+          stdoutDevice:String(dev),stdoutInode:String(ino),executableSha256:nativeHash,expected,sandboxReceipt,sandbox},null,2)+'\n',
+        {flag:'wx',mode:0o600});
+        hostContact={directory,launchEvidence,requestPath:path.join(directory,'request.json'),responsePath:path.join(directory,'response.json')};
+      }
       if(filesSaveDirectory)assert.equal(sandbox.directory,filesSaveDirectory,'Relaunch must use the same app sandbox');
       filesSaveDirectory=sandbox.directory;
       receipt.sandbox={home:sandbox.home,saveFile:sandbox.saveFile};
@@ -130,6 +152,8 @@ try {
     }
     const diagnostics={session:appId,test:name,pid,stdout:currentLog,device:String(dev),inode:String(ino),exportedPID};
     const testEnvironment={...process.env,TEST_RUNNER_RAISING_SYSTEM_UI_DIAGNOSTICS:JSON.stringify(diagnostics)};
+    if(hostContact)testEnvironment.TEST_RUNNER_RAISING_SYSTEM_UI_HOST_CONTACT=JSON.stringify({nonce:inputProofNonce,
+      requestPath:hostContact.requestPath,responsePath:hostContact.responsePath});
     const idleProbe=name==='testOwnedTextInputIdle';let memoryTimer;
     const resultBundle=path.join(out,name+'.xcresult');
     const selectedTests=['-only-testing:SystemUITests/SystemUITests/'+name];
@@ -147,7 +171,34 @@ try {
     if(idleProbe){sample();memoryTimer=setInterval(sample,15000);}
     try {
       await delay(1000);
-      await tool('/usr/bin/xcodebuild',['test-without-building',...buildArgs,'-destination',testDestination,'-parallel-testing-enabled','NO','-resultBundlePath',resultBundle,...selectedTests],name+'.log',undefined,testEnvironment);
+      const xctest=tool('/usr/bin/xcodebuild',['test-without-building',...buildArgs,'-destination',testDestination,
+        '-parallel-testing-enabled','NO','-resultBundlePath',resultBundle,...selectedTests],name+'.log',undefined,testEnvironment);
+      if(!hostContact)await xctest;
+      else {
+        let testFinished=false,helperFinished=false,revocationError;
+        const boundedTest=xctest.finally(async()=>{
+          testFinished=true;
+          if(!helperFinished) {
+            try {await rename(hostContact.requestPath,path.join(hostContact.directory,'request-revoked.json'));}
+            catch(error) {if(error.code!=='ENOENT')revocationError=error;}
+          }
+        });
+        const contact=runHostContact({requestPath:hostContact.requestPath,responsePath:hostContact.responsePath,
+          expected:{nonce:inputProofNonce,test:name,pid,stdout:currentLog,stdoutDevice:String(dev),stdoutInode:String(ino)},
+          finished:()=>testFinished,
+          invoke:()=>tool(hostContactTool,[path.join(process.env.DEVELOPER_DIR,'Applications','Simulator.app'),device,deviceName,selected.runtime,
+            appId,String(pid),path.join(hostContact.directory,'window.json'),hostInventory,hostContact.launchEvidence,
+            hostContact.requestPath,hostContact.responsePath],name+'-host-contact.log',55000)
+        }).finally(()=>{helperFinished=true;});
+        const [testOutcome,contactOutcome]=await Promise.allSettled([boundedTest,contact]);
+        receipt.hostContacts??={};
+        receipt.hostContacts[name]={request:path.relative(out,hostContact.requestPath),response:path.relative(out,hostContact.responsePath),
+          transport:contactOutcome.status==='fulfilled'?contactOutcome.value:{error:String(contactOutcome.reason)}};
+        if(revocationError)receipt.hostContacts[name].revocationError=String(revocationError);
+        if(testOutcome.status==='rejected')throw testOutcome.reason;
+        if(contactOutcome.status==='rejected')throw contactOutcome.reason;
+        if(revocationError)throw revocationError;
+      }
     } finally {
       clearInterval(memoryTimer);
       if(idleProbe){sample();await writeFile(path.join(out,'input-memory-samples.json'),JSON.stringify(memory,null,2));}
@@ -191,6 +242,18 @@ try {
   passed=true;receipt.ok=true;
 } catch(error) {receipt.error=String(error);throw error;}
 finally {
+  if(device&&firstLaunchTimestamp!==undefined) {
+    const predicate='(process == "backboardd" AND category == "TouchEvents") OR '+
+      '(process == "testmanagerd" AND (subsystem == "com.apple.dt.xctest" OR subsystem == "com.apple.recap")) OR '+
+      '(process == "RaisingPlayer" AND subsystem == "com.apple.UIKit" AND category == "EventDispatch")';
+    try {
+      await tool('/usr/bin/xcrun',['simctl','spawn',device,'log','show','--start','@'+firstLaunchTimestamp,
+        '--timezone','UTC','--style','compact','--info','--debug','--predicate',predicate],'simulator-touch.log',30000);
+      receipt.touchLog={captured:true,file:'simulator-touch.log',firstLaunchTimestamp};
+    } catch(error) {
+      receipt.touchLog={captured:false,error:String(error),firstLaunchTimestamp};
+    }
+  }
   receipt.keptDevice=!!device&&!passed&&keepFailed;
   if(device&&!receipt.keptDevice) {
     receipt.cleanupErrors=await cleanUpIOSSimulator(device,(action,id)=>

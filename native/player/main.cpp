@@ -35,6 +35,9 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <TargetConditionals.h>
+#if TARGET_OS_SIMULATOR
+#include "simulator-input-proof.hpp"
+#endif
 #endif
 #include "editor-preview.hpp"
 #ifdef SDL_PLATFORM_MACOS
@@ -947,7 +950,8 @@ int main(int argc,char** argv) {
   int max_frames=0;bool hidden=false,editor_events=false,report_checkpoints_only=false;uint32_t requested_seed=42;
   std::string requested_locale,preview_screen,preview_element,preview_state="normal";
 #if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
-  std::string sandbox_receipt_nonce;
+  std::string sandbox_receipt_nonce,input_proof_nonce;
+  SimulatorInputProof input_proof;
 #endif
   fs::path preview_scene_file,preview_inspection_file,recording_file,editor_directory;Json preview_scene=nullptr;
   try {
@@ -964,6 +968,7 @@ int main(int argc,char** argv) {
     else if(arg=="--save"&&i+1<argc)save_file=fs::u8path(argv[++i]);
 #if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
     else if(arg=="--sandbox-receipt"&&i+1<argc)sandbox_receipt_nonce=argv[++i];
+    else if(arg=="--input-proof-nonce"&&i+1<argc){input_proof_nonce=argv[++i];if(input_proof_nonce.size()!=64 || input_proof_nonce.find_first_not_of("0123456789abcdef")!=std::string::npos)throw std::runtime_error("Invalid simulator input proof nonce");input_proof.enabled=true;}
 #endif
     else if(arg=="--automation"&&i+1<argc)automation_file=fs::u8path(argv[++i]);
     else if(arg=="--record-route"&&i+1<argc)recording_file=fs::u8path(argv[++i]);
@@ -977,6 +982,9 @@ int main(int argc,char** argv) {
     else if(arg=="--editor-events")editor_events=true;
     else if(arg=="--help"){std::cout<<"Raising Player --bundle FOLDER [--save FILE] [--seed UINT32] [--automation FILE --report FILE [--report-checkpoints-only]] [--frames N] [--hidden] [--reading-layout auto|on --text-scale 1|1.25|1.5|2] [--preview-screen ID --preview-element ID --preview-state normal|hover|pressed|focus|disabled]\n";return 0;}
   }
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+    if(input_proof.enabled && !editor_events)throw std::runtime_error("Simulator input proof requires --editor-events");
+#endif
     const auto bundle=read_json(bundle_root/"game.json");
     validate_bundle(bundle,bundle_root);
     const auto host_title=application_title(bundle);
@@ -1087,7 +1095,24 @@ int main(int argc,char** argv) {
           }
           if(type=="click"&&!editor.paused&&app.document)app.click(control.value("id",""));
         }
-        SDL_Event event;while(SDL_PollEvent(&event))app.event(event);
+        SDL_Event event;while(SDL_PollEvent(&event)){
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+          input_proof.observe(event);
+#endif
+          app.event(event);
+        }
+#if defined(SDL_PLATFORM_IOS) && TARGET_OS_SIMULATOR
+        // Publish only after the terminal event and its entire SDL batch were
+        // dispatched. Nothing is written during the held contact.
+        if(input_proof.enabled && input_proof.terminal && !input_proof.emitted){
+          input_proof.emitted=true;Json samples=Json::array();
+          for(size_t i=0;i<input_proof.count;++i){const auto& sample=input_proof.samples[i];
+            const char* phase=sample.type==SDL_EVENT_FINGER_DOWN?"down":sample.type==SDL_EVENT_FINGER_UP?"up":sample.type==SDL_EVENT_FINGER_CANCELED?"cancel":sample.type==SDL_EVENT_FINGER_MOTION?"motion":sample.type==SDL_EVENT_MOUSE_BUTTON_DOWN?"mouse-down":"mouse-up";
+            samples.push_back({{"phase",phase},{"timestampNS",std::to_string(sample.timestamp)},{"touchID",std::to_string(sample.touch)},{"fingerID",std::to_string(sample.finger)},{"windowID",sample.window},{"direct",sample.device==SDL_TOUCH_DEVICE_DIRECT},{"mouseTouch",sample.touch==SDL_MOUSE_TOUCHID},{"x",sample.x},{"y",sample.y},{"windowWidth",sample.width},{"windowHeight",sample.height},{"button",sample.button}});
+          }
+          std::cout<<Json({{"event","input-proof"},{"version",1},{"nonce",input_proof_nonce},{"pid",getpid()},{"source","SDL_PollEvent"},{"overflow",input_proof.overflow},{"windowID",SDL_GetWindowID(window)},{"samples",samples}}).dump()<<std::endl;
+        }
+#endif
         if(app.backgrounded){SDL_Delay(50);continue;}
         app.poll_portable();
         app.drain_actions();
