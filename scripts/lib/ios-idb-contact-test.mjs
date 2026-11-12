@@ -97,9 +97,10 @@ export function idbExperimentConfiguration(environment=process.env) {
   const backend=environment.RAISING_IOS_CONTACT_ROUTE;
   if(backend===undefined)return;
   assert.ok(process.platform==='darwin'&&environment.CI==='true'&&environment.GITHUB_ACTIONS==='true'&&
-    environment.RUNNER_ENVIRONMENT==='github-hosted'&&environment.GITHUB_REF==='refs/heads/codex/ios-idb-route-comparison',
+    environment.RUNNER_ENVIRONMENT==='github-hosted'&&environment.GITHUB_REF===(backend==='startup'
+      ?'refs/heads/codex/ios-idb-startup-observation':'refs/heads/codex/ios-idb-route-comparison'),
     'The idb experiment runs only on its isolated GitHub-hosted macOS branch');
-  assert.ok(['xctest','idb','preflight'].includes(backend),'Unknown iOS contact route');
+  assert.ok(['xctest','idb','preflight','startup'].includes(backend),'Unknown iOS contact route');
   assert.ok(environment.DEVELOPER_DIR==='/Applications/Xcode_26.6.app/Contents/Developer'&&
     environment.RAISING_IOS_SIMULATOR_RUNTIME==='com.apple.CoreSimulator.SimRuntime.iOS-26-5'&&
     environment.RAISING_IOS_SIMULATOR_DEVICE_TYPE==='com.apple.CoreSimulator.SimDeviceType.iPhone-17e',
@@ -111,14 +112,18 @@ export function idbExperimentConfiguration(environment=process.env) {
   return {backend,companion,python};
 }
 
-export async function startIDBCompanion(companion,device,out) {
+export async function startIDBCompanion(companion,device,out,{observeStartup}={}) {
   assert.match(device,/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i);
   // sockaddr_un has a short pathname limit. The unique parent is mode 0700.
   const directory=await mkdtemp('/private/tmp/raising-idb-');
   const socket=path.join(directory,'companion.sock');
   const log=path.join(out,'idb-companion.log');
-  let child,finished,closed,forced=false;
+  let child,finished,closed,forced=false,startedAt,startedWallMs,spawnEventAtMs,observer;
+  const observationAbort=observeStartup?new AbortController():undefined;
+  const elapsed=()=>startedAt===undefined?null:performance.now()-startedAt;
   const stop=async()=>{
+    const stoppedAtMs=elapsed();
+    observationAbort?.abort();
     try {
       if(child&&!finished) {
         child.kill('SIGTERM');
@@ -126,33 +131,58 @@ export async function startIDBCompanion(companion,device,out) {
         try {await closed;} finally {clearTimeout(force);}
       }
     } finally {await rm(directory,{recursive:true,force:true});}
-    return {pid:child?.pid??null,exitCode:finished?.code??null,signal:finished?.signal??null,forced};
+    return {pid:child?.pid??null,exitCode:finished?.code??null,signal:finished?.signal??null,forced,
+      ...(observeStartup?{stoppedAtMs,stoppedAfterMs:elapsed()}: {})};
+  };
+  const finishObservation=async()=>observer?await observer:{attempted:false};
+  const saveObservation=async(status,elapsedMs,cleanup)=> {
+    if(!observeStartup)return;
+    await writeFile(path.join(out,'idb-startup-observation.json'),JSON.stringify({
+      status,elapsedMs,startedWallMs,spawnEventAtMs,socketPath:socket,socketPathBytes:Buffer.byteLength(socket),
+      cleanup,observation:await finishObservation()
+    },null,2),{flag:'wx',mode:0o600});
   };
   try {
     const output=await open(log,'wx',0o600);
     try {
       child=spawn(companion,['--udid',device,'--only','simulator','--grpc-domain-sock',socket,
         '--terminate-offline','1','--log-level','debug'],{stdio:['ignore',output.fd,output.fd]});
+      startedAt=performance.now();
+      startedWallMs=Date.now();
       closed=new Promise(resolve=>{
-        child.once('error',error=>{finished=error;resolve();});
+        child.once('spawn',()=>{spawnEventAtMs=elapsed();});
+        child.once('error',error=>{finished=error;observationAbort?.abort();resolve();});
+        child.once('exit',(code,signal)=>{finished??={code,signal};observationAbort?.abort();});
         child.once('close',(code,signal)=>{finished??={code,signal};resolve();});
       });
     } finally {await output.close();}
-    const deadline=Date.now()+30000;
+    const deadline=startedAt+30000;
     do {
       assert.ok(!finished,'Pinned idb companion exited before its Unix socket became available');
       const entry=await lstat(socket).catch(error=>{if(error.code!=='ENOENT')throw error;});
       if(entry) {
         assert.ok(entry.isSocket(),'The pinned companion did not create a Unix socket');
-        return {socket,log,stop};
+        const readyAtMs=elapsed();
+        assert.ok(!finished,'Pinned idb companion exited while checking its Unix socket');
+        assert.ok(readyAtMs<=30000,'Pinned idb companion Unix socket was observed after the 30-second deadline');
+        observationAbort?.abort();
+        return {socket,log,stop,saveObservation:cleanup=>saveObservation('socket-observed',readyAtMs,cleanup)};
+      }
+      if(observeStartup&&!observer&&child.pid&&elapsed()>=15000&&performance.now()<deadline) {
+        observer=Promise.resolve().then(()=>observeStartup({
+          pid:child.pid,device,out,startedAt,startedWallMs,deadline,executable:companion,
+          isAlive:()=>!finished,signal:observationAbort.signal
+        })).catch(error=>({attempted:true,error:String(error)}));
       }
       await delay(100);
-    } while(Date.now()<deadline);
+    } while(performance.now()<deadline);
     throw Error('Timed out waiting for the pinned idb companion Unix socket');
   } catch(error) {
+    const failureAtMs=elapsed();
     const cleanup=await stop();
     await writeFile(path.join(out,'idb-companion-start-failure.json'),
       JSON.stringify({error:String(error),cleanup},null,2),{flag:'wx',mode:0o600});
+    if(observeStartup)error.saveStartupObservation=()=>saveObservation('socket-not-observed',failureAtMs,cleanup);
     throw error;
   }
 }

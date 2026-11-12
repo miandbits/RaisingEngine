@@ -4,7 +4,10 @@ test "${GITHUB_ACTIONS:-}" = true
 test "${RUNNER_ENVIRONMENT:-}" = github-hosted
 test "${RUNNER_OS:-}" = macOS
 test "${RUNNER_ARCH:-}" = ARM64
-test "${GITHUB_REF:-}" = refs/heads/codex/ios-idb-route-comparison
+case "${GITHUB_REF:-}" in
+  refs/heads/codex/ios-idb-route-comparison|refs/heads/codex/ios-idb-startup-observation) ;;
+  *) exit 2 ;;
+esac
 umask 077
 
 base="$RUNNER_TEMP/raising-idb-1.7.8"

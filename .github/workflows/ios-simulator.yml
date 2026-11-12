@@ -1,16 +1,16 @@
-name: iOS Files fixed input-route comparison
+name: Observe pinned iOS companion startup without input
 
 on:
   push:
-    branches: ['codex/ios-idb-route-comparison']
+    branches: ['codex/ios-idb-startup-observation']
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
-  compatibility:
-    name: Verify the pinned Indigo companion with zero input
+  startup-observation:
+    if: ${{ github.repository == 'miandbits/RaisingEngine' && github.run_attempt == 1 }}
+    name: Observe the exact owned-device companion startup
     runs-on: macos-26
     timeout-minutes: 20
     env:
@@ -30,33 +30,24 @@ jobs:
           architecture: arm64
       - name: Prepare exact disposable companion dependencies
         run: bash .github/diagnostics/ios-idb/setup.sh
-      - name: Verify the exact toolchain and no-input capability
+      - name: Observe startup with the original socket deadline
         env:
-          RAISING_IOS_CONTACT_ROUTE: preflight
+          RAISING_IOS_CONTACT_ROUTE: startup
         run: |
           RAISING_IDB_VALIDATE_PROTOBUF=1 "$RAISING_IDB_PYTHON" scripts/lib/ios-idb-contact.test.py
           bash .github/diagnostics/ios-idb/record-toolchain.sh
-          node scripts/test-ios-idb-preflight.mjs
+          shasum -a 256 .github/workflows/ios-simulator.yml .github/diagnostics/ios-idb/setup.sh \
+            scripts/test-ios-idb-startup.mjs scripts/lib/ios-idb-startup-observer.mjs scripts/lib/ios-idb-contact-test.mjs \
+            > .cache/ios-simulator-ci/startup-observation-sources.sha256
+          node scripts/test-ios-idb-startup.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: idb-no-input-capability
+          name: idb-startup-observation-no-input
           path: |
             .cache/ios-simulator-ci/*environment.txt
             .cache/ios-simulator-ci/idb-dependencies.txt
-            .cache/ios-idb-preflight/
+            .cache/ios-simulator-ci/startup-observation-sources.sha256
+            .cache/ios-idb-startup/
           include-hidden-files: true
           retention-days: 14
-
-  pair-a-b:
-    needs: compatibility
-    uses: ./.github/workflows/ios-idb-diagnostic-pair.yml
-    with:
-      order: a-b
-
-  pair-b-a:
-    needs: [compatibility, pair-a-b]
-    if: ${{ !cancelled() && needs.compatibility.result == 'success' && needs.pair-a-b.outputs.compatible == 'true' }}
-    uses: ./.github/workflows/ios-idb-diagnostic-pair.yml
-    with:
-      order: b-a
