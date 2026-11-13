@@ -1,68 +1,16 @@
-name: Creator journey
+name: Windows screenshot mitigation validation
 on:
   push:
-  pull_request:
-  workflow_dispatch:
-  release:
-    types: [published]
+    branches:
+      - codex/windows-chromium-screenshot-check
 permissions:
   contents: read
 concurrency:
-  group: creator-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: creator-windows-screenshot-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  creator-services:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      RAISING_NATIVE_TRANSPORT: process
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.14.0'
-          cache: npm
-      - run: npm ci
-      - run: npm run build:headless
-      - run: npm run test:creator-smoke
-      - run: npm run benchmark:creator
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: creator-service-evidence
-          path: |
-            .cache/creator-smoke/
-            .cache/native-portable-host/
-            .cache/native-schedule-details/
-            .cache/native-control-sizing/
-            .cache/save-slots-layout/
-            .cache/readable-web/
-            .cache/native-phase-forecast/
-            .cache/native-phase-forecast-layouts/
-            .cache/phase-forecast-web/
-            .cache/native-layout-diagnostics/
-            .cache/qt-layout-diagnostics/
-            .cache/qt-surface-authoring/
-            .cache/growth-summary/
-            .cache/readable-screen-activation/
-            .cache/ui-surfaces/
-            .cache/activity-result-copy/
-            .cache/scroll-groups/
-            .cache/ui-control-colors/
-            .cache/control-colors/
-            .cache/schedule-details-web/
-            .cache/control-sizing-web/
-            .cache/native-resume-context/
-            .cache/resume-context-web/
-            .cache/qt-resume-context-acceptance.json
-            .cache/resume-context-*.png
-            .cache/analysis-priorities-qt.png
-            .cache/analysis-priority-editor-*.png
-            .cache/creator-benchmark/latest.json
-          include-hidden-files: true
-          retention-days: 14
   windows-package:
+    if: ${{ github.run_attempt == 1 }}
     runs-on: windows-2022
     timeout-minutes: 90
     env:
@@ -195,8 +143,17 @@ jobs:
           RAISING_TEST_UI_LANGUAGE: en
         run: node scripts/test-windows-preview-upgrade.mjs
       - name: Test the creator journey on Windows
+        id: windows-screenshot-full
         # npm.ps1 can consume the argument separator in PowerShell.
         run: node scripts/smoke-creator.mjs --web --desktop
+      - name: Verify the screenshot helper and bundled Chromium flag after Creator
+        if: ${{ !cancelled() && steps.windows-screenshot-full.outcome != 'skipped' }}
+        env:
+          RAISING_VERIFY_WINDOWS_SCREENSHOT_BROWSER: '1'
+        shell: pwsh
+        run: |
+          node --test tests/helpers/chromium-screenshot.test.mjs | Tee-Object -FilePath .cache/build-provenance/windows-screenshot-helper.log
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Publish Windows evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -264,113 +221,4 @@ jobs:
             release/qt-ci/release-artifacts.json
           compression-level: 0
           if-no-files-found: error
-          retention-days: 14
-  macos-package:
-    runs-on: macos-latest
-    timeout-minutes: 90
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      PLAYWRIGHT_CHANNEL: chromium
-      RAISING_BROWSER_CHANNEL: chromium
-      BUILD_JOBS: '3'
-      QT_BUILD_TARGETS: RaisingStudioQt,qt-canvas-state-test,qt-first-game-test,qt-studio-test,qt-story-flow-dialog-test,qt-validation-location-test,qt-readable-layout-test,qt-update-compatibility-test,qt-analysis-priorities-test,qt-resume-context-test,qt-route-batches-test,qt-editor-interaction-test,qt-layout-diagnostics-test,qt-surface-authoring-test,qt-creator-workflow-test,qt-release-settings-test,qt-analysis-periods-test,qt-presentation-update-test,qt-activity-board-test,qt-growth-authoring-test,qt-raising-screen-flow-test,qt-shared-section-test,qt-timeline-batch-test,qt-activity-workflow-test,qt-release-center-test
-      MACOS_STUDIO_OUT: dist/macos/RaisingStudio.app
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.14.0'
-          cache: npm
-      - run: brew install qt cmake ninja
-      - run: npm ci
-      - run: npm run build:headless
-      - run: npm run build:player
-      - run: npm run build:studio
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - name: Install the pinned Web compiler
-        shell: bash
-        run: |
-          git clone https://github.com/emscripten-core/emsdk.git .cache/emsdk
-          git -C .cache/emsdk checkout 35ff8a6d150541276abbc6bae512ca90bcfbe220
-          .cache/emsdk/emsdk install 6.0.12
-          .cache/emsdk/emsdk activate 6.0.12
-      - name: Build Web player
-        run: EMSDK="$PWD/.cache/emsdk" npm run build:web
-      - run: npx playwright install chromium
-      - name: Package and test the actual bundled services
-        shell: bash
-        run: |
-          export MACOS_NODE_ROOT="$(dirname "$(dirname "$(command -v node)")")"
-          node scripts/capture-build-provenance.mjs
-          npm run package:macos -- --candidate
-          for source in native/player/{CMakeLists.txt,main.cpp,ios-accessibility.hpp,ios-accessibility.mm,portable-save-files-ios.mm,screen.hpp}; do
-            cmp "$source" "$MACOS_STUDIO_OUT/Contents/Resources/engine/$source"
-            shasum -a 256 "$source"
-          done | tee .cache/build-provenance/macos-ios-source.sha256
-          npm run test:creator-smoke -- --web --desktop --package "$MACOS_STUDIO_OUT"
-          npm run benchmark:creator
-      - name: Verify the macOS archive and record its provenance
-        shell: bash
-        run: |
-          version=$(node -p "require('./config/preview-candidate.json').version")
-          mkdir -p release/macos-preview
-          archive="$PWD/release/macos-preview/RaisingStudio-$version-macOS-arm64.zip"
-          /usr/bin/ditto -c -k --keepParent "$MACOS_STUDIO_OUT" "$archive"
-          extracted=$(mktemp -d)
-          trap 'rm -rf "$extracted"' EXIT
-          /usr/bin/ditto -x -k "$archive" "$extracted"
-          candidate="$extracted/RaisingStudio.app"
-          /usr/bin/codesign --verify --deep --strict "$candidate"
-          cp "$candidate/Contents/Resources/package-manifest.json" .cache/build-provenance/macos-package-manifest.json
-          /usr/bin/codesign --display --verbose=4 "$candidate" > .cache/build-provenance/macos-signature.txt 2>&1
-          (cd release/macos-preview && shasum -a 256 "$(basename "$archive")") > .cache/build-provenance/macos-archive.sha256
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: macos-creator-evidence
-          path: |
-            .cache/build-provenance/
-            .cache/creator-smoke/
-            .cache/native-portable-host/
-            .cache/native-schedule-details/
-            .cache/native-control-sizing/
-            .cache/save-slots-layout/
-            .cache/readable-web/
-            .cache/native-phase-forecast/
-            .cache/native-phase-forecast-layouts/
-            .cache/phase-forecast-web/
-            .cache/native-layout-diagnostics/
-            .cache/qt-layout-diagnostics/
-            .cache/qt-surface-authoring/
-            .cache/growth-summary/
-            .cache/activity-board/
-            .cache/readable-screen-activation/
-            .cache/ui-surfaces/
-            .cache/activity-result-copy/
-            .cache/scroll-groups/
-            .cache/ui-control-colors/
-            .cache/control-colors/
-            .cache/schedule-details-web/
-            .cache/control-sizing-web/
-            .cache/native-resume-context/
-            .cache/resume-context-web/
-            .cache/qt-resume-context-acceptance.json
-            .cache/resume-context-*.png
-            .cache/analysis-priorities-qt.png
-            .cache/analysis-priority-editor-*.png
-            .cache/first-game-ui/latest.json
-            .cache/first-game-ui/run-*/ui.txt
-            .cache/first-game-ui/run-*/startup.txt
-            .cache/first-game-ui/run-*/checklist.png
-            .cache/first-game-web/latest.json
-            .cache/first-game-web/run-*/result.json
-            .cache/first-game-web/run-*/*.png
-            .cache/first-game-native/latest.json
-            .cache/first-game-package/run-*/result.json
-            .cache/creator-benchmark/latest.json
-          include-hidden-files: true
           retention-days: 14

@@ -4,6 +4,7 @@ import {mkdir,mkdtemp,readFile,writeFile} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {build} from 'esbuild';
 import {chromium} from 'playwright';
+import {screenshotLaunchOptions,screenshotDiagnostics} from '../helpers/chromium-screenshot.mjs';
 import {decodePng} from '../../dist/packages/studio-service/png.js';
 
 test('scaled save controls and wrapped confirmations keep labels inside real hit bounds across locales',{timeout:120000},async t=>{
@@ -19,7 +20,7 @@ test('scaled save controls and wrapped confirmations keep labels inside real hit
   }createRoot(document.getElementById('root')).render(<App/>);
  `,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',loader:{'.css':'empty'},logLevel:'silent'});
  await mkdir('.cache/save-slots-layout/web',{recursive:true});const out=await mkdtemp(resolve('.cache/save-slots-layout/web/run-'));
- const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL??process.env.RAISING_BROWSER_CHANNEL??'chrome'});t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1280,height:720}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const browser=await chromium.launch(screenshotLaunchOptions({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL??process.env.RAISING_BROWSER_CHANNEL??'chrome'}));t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1280,height:720}}),errors=[];page.on('pageerror',e=>errors.push(e.message));const screenshot=screenshotDiagnostics(browser,page.context(),page);
  await page.setContent('<style>html,body,#root{margin:0;width:100%;height:100%;overflow:hidden}</style><div id="root"></div>');await page.addStyleTag({content:await readFile('apps/player/renderer/visual.css','utf8')});await page.addScriptTag({content:bundle.outputFiles[0].text});await page.locator('.web-save-slots').waitFor();
  const paint=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
  const metrics=async()=>page.locator('.web-save-slots button').evaluateAll(buttons=>buttons.map(b=>{const r=b.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(b);return {card:b.classList.contains('slot-card'),text:b.textContent,x:r.x,y:r.y,width:r.width,height:r.height,clientWidth:b.clientWidth,scrollWidth:b.scrollWidth,clientHeight:b.clientHeight,scrollHeight:b.scrollHeight,textBounds:[...range.getClientRects()].map(t=>({x:t.x,y:t.y,right:t.right,bottom:t.bottom})),right:r.right,bottom:r.bottom};}));
@@ -29,7 +30,7 @@ test('scaled save controls and wrapped confirmations keep labels inside real hit
  const results=[];
  for(const locale of ['en','ko','ja'])for(const[name,width,height,textScale,widgetWidth]of[['desktop',1280,720,1,1120],['short',1024,640,1,1120],['wrapped',1280,720,1,440],['phone',390,844,2,1120]]){
   await page.setViewportSize({width,height});await page.evaluate(o=>window.configure(o),{locale,textScale,width:widgetWidth,metadata:'ordinary'});await paint();
-  const metadata=await metadataMetrics(),recordImage=join(out,'records-'+locale+'-'+name+'.png');await page.screenshot({path:recordImage});await writeFile(join(out,'records-'+locale+'-'+name+'.json'),JSON.stringify(metadata,null,2));assertMetadata(metadata,locale+'/'+name);
+  const metadata=await metadataMetrics(),recordImage=join(out,'records-'+locale+'-'+name+'.png');await screenshot('records-'+locale+'-'+name,{path:recordImage});await writeFile(join(out,'records-'+locale+'-'+name+'.json'),JSON.stringify(metadata,null,2));assertMetadata(metadata,locale+'/'+name);
   const rasterLines=[];if(name==='desktop'||name==='short'){const image=decodePng(await readFile(recordImage));for(const child of metadata.children.slice(1))for(const [fragmentIndex,line] of child.lines.entries()){const rows=[];for(let y=Math.max(0,Math.ceil(line.y));y<Math.min(image.height,Math.floor(line.bottom));y++){let ink=0;for(let x=Math.max(0,Math.ceil(line.x));x<Math.min(image.width,Math.floor(child.box.right),Math.floor(line.right));x++){const i=(y*image.width+x)*4;if(image.pixels[i]<140&&image.pixels[i+1]<160&&image.pixels[i+2]<140)ink++;}if(ink>=2)rows.push(y);}const inkHeight=rows.length?rows.at(-1)-rows[0]+1:0,receipt={text:child.text,fragmentIndex,line,inkHeight,rows};assert.ok(inkHeight>=line.height*.4,'Ordinary metadata renders full-height ink rather than clipped strips: '+JSON.stringify({locale,name,...receipt}));rasterLines.push(receipt);}}
   results.push({locale,name:'record-metadata-'+name,metadata,rasterLines});
   // Keep the existing long-location confirmation journey as a separate stress case.
@@ -47,7 +48,7 @@ test('scaled save controls and wrapped confirmations keep labels inside real hit
   }
   assert.match(await page.locator('[data-testid="selected-checkpoint"]').innerText(),/FINAL PLACE DETAIL/);
   await page.keyboard.press('Tab');assert.equal(await confirm.evaluate(e=>e===document.activeElement),true);await page.keyboard.press('Shift+Tab');assert.equal(await cancel.evaluate(e=>e===document.activeElement),true);
-  const rows=await assertFit();const rect=await cancel.boundingBox();assert.ok(rect);if(name==='wrapped'&&locale==='en')assert.ok(rect.height>60,'Narrow case actually wraps the cancel label onto multiple lines');await page.screenshot({path:join(out,locale+'-'+name+'.png')});
+  const rows=await assertFit();const rect=await cancel.boundingBox();assert.ok(rect);if(name==='wrapped'&&locale==='en')assert.ok(rect.height>60,'Narrow case actually wraps the cancel label onto multiple lines');await screenshot('confirmation-'+locale+'-'+name,{path:join(out,locale+'-'+name+'.png')});
   // Hit the lower content line, rather than delegating to an element click.
   await page.mouse.click(rect.x+rect.width/2,rect.y+rect.height-10);await page.locator('.slot-confirmation').waitFor({state:'detached'});assert.deepEqual(await page.evaluate(()=>window.actions),[{type:'load'},{type:'cancel'}]);assert.equal(await page.evaluate(()=>window.inspect().view.selected),0);
   results.push({locale,name,rows});

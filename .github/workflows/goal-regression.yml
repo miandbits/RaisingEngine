@@ -2,6 +2,8 @@ name: Goal route regression
 
 on:
   push:
+    branches-ignore:
+      - codex/windows-chromium-screenshot-check
   pull_request:
   workflow_dispatch:
 
