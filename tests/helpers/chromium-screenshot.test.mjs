@@ -38,7 +38,7 @@ test('screenshot diagnostic logs only on failure and rethrows the original error
 if(process.env.RAISING_VERIFY_WINDOWS_SCREENSHOT_BROWSER==='1')test('Windows bundled Chromium launch applies the upstream profiler switch',{timeout:30000},async()=>{
  assert.equal(process.platform,'win32','This control must run on Windows');
  const {chromium}=await import('playwright');
- const browser=await chromium.launch(screenshotLaunchOptions({channel:'chromium',headless:true}));
+ const browser=await chromium.launch(screenshotLaunchOptions({channel:'chromium',headless:true,args:['--enable-automation']}));
  try{
   const version=browser.version(),session=await browser.newBrowserCDPSession();
   const {arguments:args}=await session.send('Browser.getBrowserCommandLine');
