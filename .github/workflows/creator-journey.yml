@@ -29,9 +29,9 @@ jobs:
           $head = git rev-parse HEAD
           $tree = git rev-parse 'HEAD^{tree}'
           if ($head -ne $env:GITHUB_SHA) { throw 'Unexpected validation checkout' }
-          $lock = Get-Content package-lock.json -Raw | ConvertFrom-Json
-          $version = $lock.packages.'node_modules/playwright'.version
-          $coreVersion = $lock.packages.'node_modules/playwright-core'.version
+          $lock = Get-Content package-lock.json -Raw | ConvertFrom-Json -AsHashtable
+          $version = $lock['packages']['node_modules/playwright']['version']
+          $coreVersion = $lock['packages']['node_modules/playwright-core']['version']
           if ($version -ne '1.64.0' -or $coreVersion -ne '1.64.0') { throw 'Unexpected Playwright lockfile pin' }
           Write-Output "Source $head; tree $tree; Playwright $version"
       - run: npm ci
