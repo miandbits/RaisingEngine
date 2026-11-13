@@ -12,6 +12,7 @@ const QStringList connectionKeys{"binding","dataBinding","attributeId","characte
 const QMap<QString,QString> bindingLabels{
   {"data-value",QObject::tr("공용·개인 데이터")},
   {"narrative-actor",QObject::tr("현재 사건의 대상 인물")},
+  {"save-storage-guidance",QObject::tr("저장 위치·백업 안내")},
   {"none",QObject::tr("직접 입력")},{"title",QObject::tr("게임 제목")},{"description",QObject::tr("게임 설명")},
   {"calendar",QObject::tr("날짜")},{"calendar-year",QObject::tr("연도")},{"calendar-month",QObject::tr("월")},{"calendar-day",QObject::tr("일")},{"calendar-weekday",QObject::tr("요일")},
   {"schedule-prompt",QObject::tr("일정 안내")},{"ending",QObject::tr("엔딩")},{"speaker",QObject::tr("대화 인물")},{"story",QObject::tr("대사")},{"location",QObject::tr("현재 장소")},

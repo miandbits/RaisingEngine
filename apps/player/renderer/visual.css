@@ -12,14 +12,14 @@
 .visual-meter progress{appearance:none;border:0;background:var(--meter-track);color:inherit}.visual-meter progress::-webkit-progress-bar{background:var(--meter-track)}.visual-meter progress::-webkit-progress-value{background:currentColor}.visual-meter progress::-moz-progress-bar{background:currentColor}
 .visual-text { padding:4px; }
 .visual-stat-list>div { margin-bottom:15px; }.visual-stat-list>div>div{display:flex;justify-content:space-between;gap:12px;}.visual-stat-list progress{width:100%;height:9px;accent-color:#517362;}
-.visual-schedule { display:flex; gap:14px; height:100%; }.visual-schedule label { flex:1; min-width:0; padding:10px; background:#e6ecdb; border-radius:10px; }.visual-schedule select{width:100%;font:inherit;background:#fffdf6;color:inherit;border:1px solid #abb7a5;border-radius:6px;padding:10px;margin-top:9px;}
+.visual-schedule { display:flex; gap:14px; height:100%; }.visual-schedule label { flex:1; min-width:0; padding:10px; background:#e6ecdb; border-radius:10px; }.visual-schedule select{min-height:var(--canvas-control-min,44px);box-sizing:border-box;width:100%;font:inherit;background:#fffdf6;color:inherit;border:1px solid #abb7a5;border-radius:6px;padding:10px;margin-top:9px;}
 .visual-element.visual-schedule{display:block;}
-.schedule-columns{display:flex;gap:14px;height:100%;}
+.schedule-columns{display:flex;gap:14px;height:100%;overflow:auto;}.schedule-columns>label{box-sizing:border-box;min-width:calc(var(--canvas-control-min,44px) + 20px);flex-shrink:0;}
 .schedule-columns .activity-preview,.schedule-activity-grid .activity-preview{display:block;max-height:120px;overflow:auto;overflow-wrap:anywhere;white-space:normal;font-size:16px;line-height:20px;}
 .schedule-calendar{height:100%;display:flex;flex-direction:column;white-space:normal;}
-.schedule-calendar-title{height:40px;text-align:center;font-size:26px;}
-.schedule-calendar-week{height:40px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));text-align:center;font-size:20px;}
-.schedule-calendar-days{flex:1;min-height:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-rows:repeat(6,minmax(0,1fr));}
+.schedule-calendar-title{min-height:40px;flex-shrink:0;text-align:center;font-size:26px;}
+.schedule-calendar-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto;}.schedule-calendar-week{height:40px;flex-shrink:0;min-width:calc(7 * var(--canvas-control-min,44px));display:grid;grid-template-columns:repeat(7,minmax(0,1fr));text-align:center;font-size:20px;}
+.schedule-calendar-days{flex:1;min-width:calc(7 * var(--canvas-control-min,44px));display:grid;grid-template-columns:repeat(7,minmax(var(--canvas-control-min,44px),1fr));}
 .schedule-calendar-days button{min-width:0;min-height:0;padding:0;margin:0;border:1px solid #967769;background:transparent;border-radius:0;font:inherit;color:inherit;text-align:left;overflow:hidden;}
 .schedule-calendar-days button.selected-slot{border-color:#dfc579;}
 .schedule-calendar-days button>span{display:block;font-size:26px;line-height:28px;}
@@ -34,7 +34,7 @@
 .schedule-activity-grid>button>small{display:block;font-size:16px;}
 .schedule-menu-back{margin-top:12px;}
 .schedule-categories{position:absolute;right:0;bottom:0;width:min(342px,100%);max-height:100%;overflow:auto;padding:16px;box-sizing:border-box;background-color:#46343e;color:inherit;}
-.schedule-categories>button,.schedule-menu-back{display:block;width:100%;font:inherit;color:inherit;padding:6px 10px;min-height:40px;background:#46343e;border:1px solid #e5c880;}
+.schedule-categories>button,.schedule-menu-back{display:block;width:100%;font:inherit;color:inherit;padding:6px 10px;min-height:var(--canvas-control-min,44px);background:#46343e;border:1px solid #e5c880;}
 .visual-dialogue{margin:0;}.visual-result{white-space:pre-wrap;}
 .visual-choices{display:flex;flex-direction:column;gap:10px;padding:8px;}.visual-choices button{font:inherit;color:inherit;background:#fffaf0;border:1px solid #8d9d88;border-radius:8px;min-height:58px;padding:10px;text-align:left;}.visual-choices small{display:block;font-size:.65em;}
 .visual-choices .choice-copy{min-width:0;white-space:normal;overflow-wrap:anywhere;}.visual-choices .choice-hint{white-space:pre-wrap;line-height:1.5;margin-top:6px;}.visual-choices.choice-cards button{display:flex;align-items:flex-start;gap:16px;flex-shrink:0;padding:16px 20px;}.choice-cards .choice-number{font-size:1.2em;opacity:.65;min-width:2em;}.choice-cards .choice-copy{flex:1;}
@@ -84,7 +84,7 @@
   .roster-schedule-actions { flex-direction: column; gap: 4px; }
 }
 .roster-schedule-actors label { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.roster-schedule select, .roster-schedule button { font: inherit; min-width: 0; }
+.roster-schedule select, .roster-schedule button { font: inherit; min-width: 0; min-height: var(--canvas-control-min,44px); }
 .roster-schedule select { width: 100%; }
 .roster-schedule-actions button { flex: 1; }
 
@@ -94,3 +94,285 @@
 .roster-schedule .roster-schedule-actors label { padding: 0; background: transparent; border-radius: 0; }
 .roster-schedule select { padding: 4px 8px; margin-top: 0; }
 .roster-schedule-actions button { padding: 4px 8px; line-height: 1.2; }
+
+.slot-gameplay{flex:1;min-height:0;display:flex;position:relative}.slot-gameplay>.visual-viewport{flex:1}
+.authored-slot-modal{position:absolute;inset:34px 0 0;z-index:40;background:#13231caa;display:flex}.authored-slot-modal>.visual-viewport{flex:1}
+.web-save-slots{width:100%;height:100%;display:flex;flex-direction:column;gap:12px;font-size:18px;white-space:normal;box-sizing:border-box}
+.web-save-slots button{font:inherit;color:inherit;background:var(--slot-paper,#f5efdf);border:1px solid var(--slot-border,#c7b99a);border-radius:3px;padding:8px 12px;cursor:pointer}
+.web-save-slots button:disabled{opacity:.55;cursor:default}.web-save-slots button[aria-pressed=true]{outline:3px solid var(--slot-accent,#345c50);outline-offset:-3px}.web-save-slots button:focus-visible{outline:3px solid #bd7436;outline-offset:2px}
+.slot-toolbar,.slot-footer,.slot-footer>div,.slot-backups{display:flex;gap:12px;align-items:center}.slot-backups{margin-left:auto}.slot-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(3,minmax(0,1fr));gap:12px;flex:1;min-height:0}.slot-card{display:flex;gap:14px;text-align:left;min-width:0;overflow:hidden}.slot-thumbnail{display:flex;align-items:center;justify-content:center;background:#e8e2d4;width:27%;min-width:90px;font-size:15px;text-align:center}.slot-details{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}.slot-details>span,.slot-details>small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.slot-details strong{color:var(--slot-accent,#345c50)}.slot-details small{font-size:14px}.slot-footer{justify-content:space-between}.slot-confirmation{justify-content:center;align-items:center;background:#f5efdf;color:#263c36;text-align:center}.slot-confirmation h2{font-size:28px}.slot-confirmation p{margin:4px}.slot-confirmation button{margin:10px}.visual-saveSlots,.visual-loadSlots{padding:0!important}
+
+.visual-player{position:relative}
+
+.authored-slot-modal{flex-direction:column}.authored-slot-modal>.alert,.authored-slot-modal>.notice{flex-shrink:0}
+
+/* Keep the language toolbar inside the same viewport budget as the game. */
+.visual-shell{display:flex;flex-direction:column;height:100dvh;min-height:0;width:100%;}
+.visual-shell>.player-language{flex-shrink:0;}
+.visual-shell>.visual-player{flex:1;height:auto;min-height:0;}
+.preview>.visual-shell{flex:1;height:auto;min-height:0;}
+
+/* The opt-in reading surface uses CSS pixels, never a scaled design canvas. */
+.player-legacy-toolbar{display:contents}
+.visual-shell[data-readable-enabled=true]{box-sizing:border-box;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.player-readable-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0;background:#eff2e7;color:#304d46;padding:4px 8px}
+.player-readable-toolbar .player-quality{position:static;order:2}
+.player-readable-toolbar .player-language{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0}
+.player-readable-toolbar button,.player-readable-toolbar select{min-width:44px;min-height:44px;box-sizing:border-box}
+/* Share one utility row while a reading surface is active. Full status stays available
+   to assistive technology; notices and errors keep their own visible space. */
+.player-compact-status{display:none}
+.visual-shell:has(.visual-readable) .player-readable-toolbar .player-language{display:none}
+.visual-shell:has(.visual-readable) .player-compact-status{display:block;flex:1;min-width:0;font:14px/1.4 sans-serif;overflow-wrap:anywhere}
+.visual-shell:has(.visual-readable)>.visual-player>.visual-status{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;padding:0;border:0}
+.visual-shell:has(.visual-readable)>.visual-player>.authored-slot-modal{top:0}
+.visual-readable{display:flex;flex-direction:column;isolation:isolate;min-width:0;color:#f5efdf;line-height:1.5}
+.readable-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;touch-action:pan-y;scroll-padding:16px}
+.readable-items{display:flex;flex-direction:column;gap:var(--readable-gap);box-sizing:border-box;width:100%;max-width:var(--readable-width);padding:var(--readable-padding);margin:0 auto}
+.visual-readable .visual-element{position:relative;flex-shrink:0;box-sizing:border-box;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;max-width:100%;min-width:0}
+.visual-readable .visual-image{width:100%;height:100%}
+.visual-readable .visual-element button,.visual-readable .visual-element select,.visual-readable .visual-element input{box-sizing:border-box;min-width:var(--readable-target);min-height:var(--readable-target);max-width:100%;height:auto;font:inherit;line-height:1.5;white-space:normal;overflow-wrap:anywhere;touch-action:pan-y}
+.visual-readable .visual-element .visual-action{height:auto;min-height:var(--readable-target);padding:10px 12px}
+.visual-readable .visual-input{width:100%}
+.visual-readable .visual-choices{padding:0}
+.visual-readable .visual-choices button{flex-shrink:0;padding:12px}
+.visual-readable .visual-choices small{font-size:1em}
+.visual-readable .choice-cards .choice-number{min-width:1.5em}
+.visual-readable .visual-dialogue,.visual-readable .visual-result{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.visual-readable .visual-stat-list>div>div{flex-wrap:wrap}
+.visual-readable .visual-meter{height:auto;min-height:44px}
+.readable-actions{display:flex;flex-wrap:wrap;flex:0 1 auto;gap:var(--readable-gap);padding:var(--readable-padding);width:100%;max-width:var(--readable-width);margin:0 auto;box-sizing:border-box;max-height:45%;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;touch-action:pan-y;background:var(--readable-background,#172c29);border-top:1px solid #718c84}
+.readable-actions>.visual-element{flex:1 1 160px;min-width:0}
+.readable-actions:empty{display:none}
+.visual-readable .schedule-columns{display:flex;flex-direction:column;height:auto}
+.visual-readable .schedule-columns label{display:block;flex:auto;min-width:0}
+.visual-readable .schedule-columns select{width:100%}
+.visual-readable .activity-preview{max-height:none;overflow:visible;font-size:1em;line-height:1.5;white-space:normal}
+.visual-readable .readable-selected-activity{white-space:normal;overflow-wrap:anywhere}
+.visual-readable .roster-schedule{height:auto;container-type:normal}
+.visual-readable .roster-schedule-actors{display:flex;flex-direction:column;overflow:visible;flex:none}
+.visual-readable .roster-schedule-actors>label{width:auto}
+.visual-readable .roster-schedule-actors small{max-height:none!important;overflow:visible!important;font-size:1em;line-height:1.5!important}
+.visual-readable .roster-schedule-actions{flex-wrap:wrap}
+.visual-readable .roster-schedule-actions>button{flex:1 1 180px}
+.visual-readable .web-save-slots{height:auto;font-size:inherit;min-width:0}
+.visual-readable .slot-grid{display:flex;flex-direction:column;flex:none;min-width:0}
+.visual-readable .slot-card{flex-direction:column;overflow:visible;flex-shrink:0;width:100%;min-width:0}
+.visual-readable .slot-thumbnail{width:auto;min-width:0;font-size:1em}
+.visual-readable .slot-details{width:100%;min-width:0}
+.visual-readable .slot-details>span,.visual-readable .slot-details>small{overflow:visible;white-space:normal;overflow-wrap:anywhere;text-overflow:clip;font-size:1em}
+.visual-readable .slot-toolbar,.visual-readable .slot-footer,.visual-readable .slot-footer>div,.visual-readable .slot-backups{flex-wrap:wrap;min-width:0}
+.visual-readable .slot-footer>button,.visual-readable .slot-backups>button{flex:1 1 180px}
+.visual-readable .slot-toolbar>button{flex:1 0 min-content;max-width:100%}
+.visual-readable .slot-backups{margin:0;width:100%}
+.visual-readable .slot-confirmation h2{font-size:1.2em;overflow-wrap:anywhere}
+.visual-readable .slot-confirmation button{margin:4px 0;width:100%}
+.visual-readable .player-settings-controls{font-size:inherit}
+
+/* Missing-color fallbacks distinguish the reading surface from built-in light controls. */
+.visual-readable .visual-choices:not(.choice-cards) button,.visual-readable .schedule-columns label,.visual-readable .roster-schedule select,.visual-readable .roster-schedule button,.visual-readable .player-settings-controls select,.visual-readable .slot-thumbnail{color:var(--readable-control-ink,inherit)}
+.visual-readable .web-save-slots button{color:var(--readable-slot-ink,inherit)}
+.visual-settings-fields{border:0;padding:0;margin:0;min-width:0;font:inherit;color:inherit}
+
+/* Opt-in action hierarchy: one current task, one stable utility destination. */
+.visual-shell:has(.readable-grouped) .player-settings-open{display:none}
+/* Wrap actions before squeezing ordinary words; oversized tokens may still break. */
+.readable-grouped-actions{flex-wrap:wrap;align-items:flex-start;max-height:40%}
+.readable-grouped-actions>.visual-element{flex:1 0 min-content}
+.visual-readable .readable-grouped-actions .visual-action{overflow-wrap:break-word}
+.reading-menu-launcher{flex:0 0 auto;font:inherit;line-height:1.5;padding:10px 12px;min-height:var(--readable-target);min-width:var(--readable-target);max-width:100%;white-space:normal;overflow-wrap:break-word}
+.reading-dialog{box-sizing:border-box;border:2px solid #718c84;border-radius:12px;padding:var(--readable-padding,16px);color:var(--readable-ink,#263c36);background:var(--readable-background,#f5efdf);font:inherit;line-height:1.5;width:min(760px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);overflow:hidden;white-space:normal;overflow-wrap:anywhere}
+.reading-dialog[open]{display:flex;flex-direction:column;gap:var(--readable-gap,12px)}
+.reading-dialog::backdrop{background:#0009}
+.reading-dialog h2,.reading-dialog h3{font-size:1em;line-height:1.5;margin:0}
+.reading-dialog-body{overflow-y:auto;min-height:0;overscroll-behavior:contain;touch-action:pan-y}
+.reading-dialog-actions{display:flex;gap:var(--readable-gap,12px);flex-wrap:wrap;flex-shrink:0}
+.reading-dialog-actions>button{flex:1 1 120px}
+.reading-dialog button,.compact-schedule button{box-sizing:border-box;font:inherit;line-height:1.5;min-width:var(--readable-target,44px);min-height:var(--readable-target,44px);max-width:100%;padding:10px 12px;white-space:normal;overflow-wrap:anywhere;color:#263c36;background:#fffdf6;border:1px solid #718c84;border-radius:8px}
+.reading-dialog button[aria-pressed=true]{background:#263c36;color:#fffdf6;border:2px solid #263c36}
+.reading-menu-items,.compact-schedule-slots,.compact-schedule-activities{display:flex;flex-direction:column;gap:var(--readable-gap,12px)}
+.compact-schedule-slots>button{text-align:left;display:flex;flex-wrap:wrap;gap:0 12px}
+.compact-schedule-slots>button>span{flex:1 1 12em}
+.compact-schedule-groups{display:flex;flex-wrap:wrap;gap:var(--readable-gap,12px);margin-bottom:var(--readable-gap,12px)}
+.compact-schedule-detail{margin-top:var(--readable-gap,12px);border-top:1px solid #718c84;padding-top:var(--readable-gap,12px)}
+.compact-schedule-detail p{margin:.5em 0}
+
+.reading-menu-launcher{color:#263c36;background:#fffdf6;border:1px solid #718c84}
+
+.planning-help{margin-bottom:var(--readable-gap,12px)}
+.planning-guide-body p{margin:.5em 0}
+.slot-empty{border-style:dashed}
+.slot-latest{font-weight:normal}
+.slot-time{display:block}
+.slot-image-note{font-size:14px;margin:4px 0}
+.slot-confirmation-identity{border:1px solid #718c84;border-radius:8px;padding:12px;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere}
+.visual-readable .slot-image-note,.visual-readable .slot-confirmation-identity small{font:inherit}
+
+.slot-empty-identity{white-space:normal;overflow-wrap:anywhere;text-align:left}
+.slot-empty-identity strong{color:var(--slot-accent,#345c50)}
+.slot-storage-recovery{display:flex;flex-direction:column;gap:8px;flex-shrink:0}
+.slot-storage-recovery p{margin:0}
+
+.reading-history-host{line-height:1.5}
+.reading-history-body article{border-top:1px solid #718c84;padding-top:12px;margin-top:12px}
+.reading-history-body p{margin:.5em 0}
+.reading-history-text{white-space:pre-wrap}
+.reading-history-meta{font-weight:600}
+
+.plan-reuse{margin-bottom:var(--readable-gap,12px)}
+.plan-reuse p,.plan-reuse-body p{margin:.5em 0}
+.plan-reuse-body section{border-top:1px solid #718c84;padding-top:var(--readable-gap,12px);margin-top:var(--readable-gap,12px)}
+.visual-readable .visual-element .plan-reuse-actions>button{flex:1 0 min-content;overflow-wrap:break-word;word-break:normal}
+
+.resume-context-host{line-height:1.5}
+.resume-context-body p{margin:.5em 0;white-space:pre-wrap}
+.resume-context-notice{border-top:1px solid #718c84;padding-top:12px}
+
+/* Detailed ordinary schedules share one prose viewport across all periods. */
+.schedule-detail-planner{display:flex;flex-direction:column;height:100%;min-height:0;white-space:normal}
+.schedule-detail-periods{display:flex;flex-shrink:0;overflow-x:auto;gap:12px;padding-bottom:8px}
+.schedule-detail-period{flex:1 0 168px;min-width:0}
+.visual-schedule .schedule-period-review{display:block;box-sizing:border-box;width:100%;min-height:var(--canvas-control-min,44px);padding:7px 10px;margin:0;font:inherit;font-size:17px;line-height:1.5;white-space:normal;text-align:left;color:inherit;background:transparent;border:1px solid #8b9e92;border-radius:6px}
+.visual-schedule .schedule-period-review[aria-pressed=true]{border-left:5px solid #b38b49}
+.schedule-detail-period select{box-sizing:border-box;min-height:var(--canvas-control-min,44px);color:#203a34;background:#fffdf6}
+.schedule-draft-note{flex-shrink:0;margin:8px 0 12px;font-size:16px;line-height:1.4;overflow-wrap:anywhere}
+.schedule-detail-pane{flex:1;min-height:0;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;padding:12px 14px;border-top:1px solid #8b9e92;white-space:pre-wrap;overflow-wrap:anywhere;scrollbar-gutter:stable}
+.schedule-detail-title{font-size:20px;line-height:1.5}
+.schedule-detail-text{font-size:17px;line-height:1.5;margin-top:12px}
+.schedule-detail-pane:focus-visible,.schedule-period-review:focus-visible{outline:3px solid #b38b49;outline-offset:-3px}
+
+/* Forecast review stays inside a modal; authored schedule space remains available. */
+.visual-schedule .phase-forecast-launcher{min-height:var(--canvas-control-min,44px);width:auto;max-width:100%;margin:0;padding:7px 12px;font:inherit;font-size:16px;white-space:normal;line-height:1.4;color:inherit;background:transparent;border:1px solid #8b9e92;border-radius:6px}
+.schedule-draft-note.has-forecast{display:flex;align-items:center;gap:12px;margin:4px 0;min-height:var(--canvas-control-min,44px)}
+.schedule-draft-note.has-forecast .phase-forecast-launcher{flex-shrink:0}
+.schedule-draft-note.has-forecast span{min-width:0}
+.phase-forecast-section{margin:0 0 24px}
+.phase-forecast-section h3{font-size:1.15em;line-height:1.5;margin:20px 0 12px}
+.phase-forecast-attribute{padding:12px 0;border-top:1px solid #8b9e92}
+.phase-forecast-attribute p{margin:4px 0;display:flex;flex-wrap:wrap;gap:8px 18px;justify-content:space-between}
+.phase-forecast-attribute .phase-forecast-breakdown{display:block}
+.phase-forecast-assumptions,.phase-forecast-issue{border-left:4px solid #b38b49;padding-left:12px}
+
+/* Save controls use visible window-sized targets and grow with wrapped labels. */
+.web-save-slots{min-width:0;overflow-x:hidden;overflow-y:auto}
+.web-save-slots>*{flex-shrink:0}
+.web-save-slots button{box-sizing:border-box;min-width:var(--canvas-control-min,44px);min-height:var(--canvas-control-min,44px);height:auto;white-space:normal;overflow-wrap:anywhere;line-height:1.5;flex-shrink:0}
+.web-save-slots .slot-toolbar,.web-save-slots .slot-footer,.web-save-slots .slot-footer>div,.web-save-slots .slot-backups{flex-wrap:wrap;min-width:0}
+.web-save-slots .slot-grid{flex:1 1 0;min-height:var(--canvas-control-min,44px);overflow:auto;grid-template-rows:repeat(3,minmax(min-content,1fr))}
+.web-save-slots .slot-details>*{flex-shrink:0}
+.web-save-slots .slot-footer>button,.web-save-slots .slot-backups>button{flex:1 1 180px;max-width:100%}
+.web-save-slots.slot-confirmation{justify-content:flex-start;align-items:stretch;text-align:left;padding:16px;overflow-wrap:anywhere}
+.slot-confirmation-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch;width:100%;min-width:0}
+.web-save-slots .slot-confirmation-actions>button{flex:1 1 180px;max-width:100%;margin:0}
+.visual-readable .web-save-slots{overflow:visible;--canvas-control-min:var(--readable-target,44px)}
+.visual-readable .web-save-slots.slot-confirmation{padding:0}
+.visual-readable .web-save-slots .slot-grid{flex:none;overflow:visible}
+
+/* Surface paint is independent of the live box's border/padding and controls. */
+.engine-surface-host{isolation:isolate;}
+button.engine-surface-host{position:relative;}
+.engine-surface-paint{position:absolute;inset:0;z-index:-1;pointer-events:none;user-select:none;display:block;background-repeat:repeat;background-position:left top;overflow:hidden;}
+.engine-surface-paint>svg{display:block;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden;}
+.visual-element[style*="--style-hover"] button.engine-surface-host:hover:not(:disabled)>.engine-surface-paint,
+.visual-element[style*="--style-pressed"] button.engine-surface-host:active:not(:disabled)>.engine-surface-paint{visibility:hidden;}
+
+/* Opt-in generated control colors. No selector changes layout or authored actions. */
+.visual-element[data-control-owner][data-control-colors~="fill"] :is(button,select,option,input),[data-reading-control-colors~="fill"] :is(.reading-menu-launcher,.reading-dialog button:not(.visual-action):not([data-control-owner] *),.reading-dialog select:not([data-control-owner] *),.player-quality dialog button,.player-quality dialog select,.player-quality dialog input){background-color:var(--control-fill);}
+.visual-element[data-control-owner][data-control-colors~="color"] :is(button,select,option,input),[data-reading-control-colors~="color"] :is(.reading-menu-launcher,.reading-dialog button:not(.visual-action):not([data-control-owner] *),.reading-dialog select:not([data-control-owner] *),.player-quality dialog button,.player-quality dialog select,.player-quality dialog input){color:var(--control-color);}
+.visual-element[data-control-owner][data-control-colors~="color"] :is(.slot-details strong,.slot-empty-identity strong,.slot-latest){color:var(--control-color)}
+.visual-element[data-control-owner][data-control-colors~="borderColor"] :is(button,select,option,input),[data-reading-control-colors~="borderColor"] :is(.reading-menu-launcher,.reading-dialog button:not(.visual-action):not([data-control-owner] *),.reading-dialog select:not([data-control-owner] *),.player-quality dialog button,.player-quality dialog select,.player-quality dialog input){border-color:var(--control-borderColor);}
+.visual-element[data-control-owner][data-control-colors~="hoverFill"] :is(button,select,option,input):hover:not(:disabled),[data-reading-control-colors~="hoverFill"] :is(.reading-menu-launcher,.reading-dialog button:not(.visual-action):not([data-control-owner] *),.reading-dialog select:not([data-control-owner] *),.player-quality dialog button,.player-quality dialog select,.player-quality dialog input):hover:not(:disabled){background-color:var(--control-hoverFill);}
+.visual-element[data-control-owner][data-control-colors~="pressedFill"] :is(button,select,option,input):active:not(:disabled),[data-reading-control-colors~="pressedFill"] :is(.reading-menu-launcher,.reading-dialog button:not(.visual-action):not([data-control-owner] *),.reading-dialog select:not([data-control-owner] *),.player-quality dialog button,.player-quality dialog select,.player-quality dialog input):active:not(:disabled){background-color:var(--control-pressedFill);}
+.visual-element[data-control-owner][data-control-colors~="disabledColor"] :is(button,select,option,input):disabled,[data-reading-control-colors~="disabledColor"] :is(.reading-menu-launcher,.reading-dialog button:not(.visual-action):not([data-control-owner] *),.reading-dialog select:not([data-control-owner] *),.player-quality dialog button,.player-quality dialog select,.player-quality dialog input):disabled{color:var(--control-disabledColor);}
+.visual-element[data-control-owner][data-control-colors~="fill"][data-control-colors~="borderColor"],.visual-element[data-control-owner][data-control-colors~="fill"][data-control-colors~="borderColor"] *,[data-reading-control-colors~="fill"][data-reading-control-colors~="borderColor"] :is(.readable-scroll,.reading-dialog-body){scrollbar-color:var(--control-borderColor) var(--control-fill)}
+
+/* The generated utility strip shares the reading-tool palette even beside a canvas. */
+[data-reading-control-colors~="fill"] :is(.player-readable-toolbar,.player-legacy-toolbar),[data-reading-control-colors~="fill"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input){background-color:var(--control-fill)}
+[data-reading-control-colors~="color"] :is(.player-readable-toolbar,.player-legacy-toolbar),[data-reading-control-colors~="color"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input){color:var(--control-color)}
+[data-reading-control-colors~="borderColor"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input){border-color:var(--control-borderColor)}
+[data-reading-control-colors~="hoverFill"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input):hover:not(:disabled){background-color:var(--control-hoverFill)}
+[data-reading-control-colors~="pressedFill"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input):active:not(:disabled){background-color:var(--control-pressedFill)}
+[data-reading-control-colors~="disabledColor"] :is(.player-readable-toolbar,.player-legacy-toolbar) :is(button,select,option,input):disabled{color:var(--control-disabledColor)}
+
+/* Opt-in activity board: real cards, content-sized labels and independent review state. */
+.activity-board{display:flex;flex-direction:column;height:100%;min-height:0;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;white-space:normal;overflow-wrap:anywhere;padding:6px;overscroll-behavior:contain;touch-action:pan-x pan-y;container-type:inline-size}
+.activity-board button{box-sizing:border-box;min-height:var(--canvas-control-min,44px);min-width:var(--canvas-control-min,44px);max-width:100%;font:inherit;line-height:1.4;white-space:normal;overflow-wrap:anywhere;padding:8px 10px;color:#263c36;background:#fffdf6;border:1px solid #718c84;border-radius:8px}
+.activity-board button:disabled{opacity:.65}
+.activity-board button:focus-visible,.activity-board-detail-body:focus-visible{outline:3px solid #b38b49;outline-offset:-3px}
+.activity-board button[aria-pressed=true]{border-width:3px;box-shadow:inset 0 0 0 1px currentColor}
+.activity-board-periods{display:flex;gap:8px;max-height:100px;min-height:68px;overflow:auto;flex-shrink:0;touch-action:pan-x pan-y}
+.activity-board-ticket{display:flex;flex-direction:column;flex:1 0 170px;align-items:stretch;text-align:left;gap:4px}
+.activity-board-assignment{display:flex;align-items:center;gap:8px;min-width:0}
+.activity-board-assignment strong{min-width:0;overflow-wrap:anywhere}
+.activity-board-ticket .activity-board-image{width:32px;height:32px;flex-shrink:0}
+.activity-board-period{font-size:.75em;letter-spacing:.04em}
+.activity-board-tools,.activity-board-categories,.activity-board-actions{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:6px 0;flex-shrink:0}
+.activity-board-tools>*,.activity-board-categories>*{min-width:0;max-width:100%}
+.activity-board-tools .phase-forecast-launcher{margin:0}
+.activity-board-tools{flex-wrap:nowrap;overflow-x:auto;touch-action:pan-x pan-y}
+.activity-board-tools>*{flex-shrink:0}
+.activity-board-tools .plan-reuse{margin:0}
+.plan-reuse-compact>p{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.activity-board-categories{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;touch-action:pan-x pan-y}
+.activity-board-categories>button{flex:0 0 auto}
+.activity-board-categories button{display:flex;gap:8px;align-items:center}
+.activity-board-categories img{width:28px;height:28px;object-fit:contain;flex-shrink:0}
+.activity-board-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:stretch;flex:1;min-height:128px;overflow:hidden}
+.activity-board-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,148px),1fr));gap:10px;align-content:start;align-items:start;grid-auto-rows:max-content;overflow-y:auto;min-height:0;padding:2px;overscroll-behavior:contain}
+.activity-board-card{display:flex;flex-direction:column;align-items:stretch;text-align:left;gap:8px;background-repeat:no-repeat}
+.activity-board-image{width:100%;height:90px;object-fit:cover;border-radius:4px;pointer-events:none}
+.activity-board-details{display:flex;flex-direction:column;min-width:0;min-height:0;line-height:1.5;white-space:pre-wrap;border:1px solid currentColor;border-radius:8px;overflow:hidden}
+.activity-board-detail-body{flex:1;min-height:0;overflow-y:auto;padding:10px;overscroll-behavior:contain}
+.activity-board-detail-title{font-weight:700}
+.activity-board-details p{margin:.75em 0}
+.activity-board-note{font-size:.9em}
+.activity-board-actions{padding:0 8px}
+.activity-board-actions>button{flex:1 1 130px}
+.activity-board-readable{height:auto;overflow:visible;padding:0;display:block}
+.activity-board-readable .activity-board-periods{display:flex;flex-direction:column;max-height:none;overflow:visible}
+.activity-board-readable .activity-board-ticket{flex:auto}
+.activity-board-readable .activity-board-tools{flex-wrap:wrap;overflow:visible}
+.activity-board-review .activity-board-workspace{display:flex;flex-direction:column;overflow:visible}
+.activity-board-review .activity-board-categories{max-height:none;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden}
+.activity-board-review .activity-board-cards,.activity-board-review .activity-board-details{width:100%;box-sizing:border-box;overflow:visible}
+.activity-board-review .activity-board-detail-body{overflow:visible}
+.activity-board-review .activity-board-card{font:inherit;min-height:44px}
+@container(max-width:560px){.activity-board:not(.activity-board-readable) .activity-board-workspace{grid-template-columns:1fr;overflow:visible;flex:none}.activity-board:not(.activity-board-readable) .activity-board-cards{max-height:280px}.activity-board:not(.activity-board-readable) .activity-board-detail-body{max-height:280px}}
+
+.activity-board-card>*{flex-shrink:0}
+
+/* A finger can pan a catalog strip even when it starts on a real button. */
+.visual-element .activity-board :is(.activity-board-periods,.activity-board-tools,.activity-board-categories) button{touch-action:pan-x pan-y}
+
+/* Compact is authored opt-in: fewer repeated labels, never smaller hit targets. */
+.activity-board-compact{gap:4px}
+.activity-board-compact .activity-board-ticket{padding:5px 8px;gap:2px;flex-basis:150px}
+.activity-board-compact .activity-board-periods{min-height:60px;max-height:92px}
+.activity-board-compact .activity-board-ticket .activity-board-image{width:24px;height:24px}
+.activity-board-compact .activity-board-tools,.activity-board-compact .activity-board-categories{margin:0;gap:6px}
+.activity-board-compact .activity-board-tools button,.activity-board-compact .activity-board-categories button{padding:4px 8px}
+.activity-board-compact .activity-board-categories img{width:22px;height:22px}
+.activity-board-compact .activity-board-workspace{grid-template-columns:minmax(0,1.9fr) minmax(0,1fr);gap:8px;min-height:100px}
+.activity-board-compact .activity-board-cards{grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:6px}
+.activity-board-compact .activity-board-card{flex-direction:row;align-items:flex-start;padding:6px;gap:8px}
+.activity-board-compact .activity-board-card .activity-board-image{width:56px;height:64px;flex-shrink:0}
+.activity-board-card-copy{display:flex;flex:1 1 0;flex-direction:column;min-width:0;gap:4px;white-space:normal;overflow-wrap:anywhere}
+.activity-board-summary{display:flex;flex-wrap:wrap;gap:3px;font-size:.78em;line-height:1.35}
+.activity-board-summary>span{border:1px solid currentColor;border-radius:4px;padding:1px 4px}
+.activity-board-compact .activity-board-details p{margin:.35em 0}
+.activity-board-compact .activity-board-detail-body{padding:6px}
+.activity-board-compact .activity-board-actions{margin:3px 0;padding:0 4px}
+.phase-forecast-inline{display:flex;align-items:center;gap:8px;flex-shrink:0;border:1px solid currentColor;border-radius:6px;padding:4px 8px}
+/* The 44px Details control already sets the compact forecast row's minimum. */
+.activity-board-compact:not(.activity-board-readable) .phase-forecast-inline{padding-block:0}
+.phase-forecast-brief{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;flex:1;min-width:0;font-size:.85em;line-height:1.35}
+.phase-forecast-inline .phase-forecast-launcher{margin:0;flex:0 0 auto}
+.phase-forecast-brief-caveat{flex-basis:100%}
+.activity-board-readable.activity-board-compact .activity-board-periods{max-height:none;min-height:0}
+.activity-board-readable .phase-forecast-inline{flex-wrap:wrap;margin:8px 0}
+.activity-board-readable .phase-forecast-brief{flex-basis:100%;font-size:1em}
+.activity-board-review.activity-board-compact .activity-board-cards{grid-template-columns:1fr}
+@container(max-width:560px){.activity-board-compact:not(.activity-board-readable) .activity-board-workspace{grid-template-columns:1fr}}
+
+.activity-board-readable.activity-board-compact .activity-board-periods{flex-direction:row;overflow-x:auto;overflow-y:hidden;touch-action:pan-x pan-y}
+.activity-board-readable.activity-board-compact .activity-board-ticket{flex:0 0 94%;min-width:0}

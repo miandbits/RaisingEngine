@@ -1,0 +1,56 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "together",
+  "label": "A future in bloom",
+  "requirements": {
+    "op": "all",
+    "conditions": [
+      {
+        "op": "compare",
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "attribute",
+            "attributeId": "skill"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 30
+        }
+      },
+      {
+        "op": "compare",
+        "comparator": "gte",
+        "left": {
+          "op": "read",
+          "target": {
+            "kind": "relationship",
+            "characterId": "mira",
+            "relationshipId": "affection"
+          }
+        },
+        "right": {
+          "op": "literal",
+          "value": 10
+        }
+      }
+    ]
+  },
+  "priority": 80,
+  "entryNodeId": "reflection",
+  "nodes": [
+    {
+      "id": "reflection",
+      "type": "dialogue",
+      "speakerId": null,
+      "text": "Your practice and friendship have flourished. Rowan and Mira present their work together, ready for another season.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

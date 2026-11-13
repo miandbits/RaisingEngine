@@ -10,18 +10,36 @@ async function folder(root) {
   await mkdir(tests, { recursive: true }); inside(base, await realpath(tests));
   const routes = path.join(tests, 'routes'); await mkdir(routes, { recursive: true }); inside(base, await realpath(routes)); return routes;
 }
-async function boundedJson(file) {
-  if ((await stat(file)).size > 4 * 1024 * 1024) throw Error('경로 파일이 4 MiB를 넘습니다.');
-  const text = await readFile(file, 'utf8'); return { value: JSON.parse(text), revision: digest(text) };
+// Batch capture uses a bounded read even if another editor grows the file
+// between the directory/stat check and the actual read. Legacy callers keep
+// their existing validation and listing behavior.
+export async function readGoalRouteBytes(file,limit=4*1024*1024){
+  const handle=await open(file,'r');
+  try{
+    const info=await handle.stat();if(!info.isFile()||info.size>limit)throw Error('Route batch input exceeds its byte limit or is not a regular file.');
+    const bytes=Buffer.allocUnsafe(limit+1);let length=0;
+    while(length<bytes.length){const result=await handle.read(bytes,length,bytes.length-length,null);if(!result.bytesRead)break;length+=result.bytesRead;}
+    if(length>limit)throw Error('Route batch input grew beyond its byte limit.');
+    return bytes.subarray(0,length);
+  }finally{await handle.close();}
 }
-export async function listGoalRoutes(root) {
-  const dir = await folder(root), files = (await readdir(dir)).filter(f => /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\.json$/.test(f)).sort();
+async function boundedJson(file, budget) {
+  if ((await stat(file)).size > 4 * 1024 * 1024) throw Error('경로 파일이 4 MiB를 넘습니다.');
+  const text = budget?(await readGoalRouteBytes(file,Math.max(0,Math.min(4*1024*1024,budget.remaining)))).toString('utf8'):await readFile(file, 'utf8'); if(budget){budget.remaining-=Buffer.byteLength(text);if(budget.remaining<0)throw Error('Route batch files exceed the 64 MiB input budget. Select fewer routes.');} return { value: JSON.parse(text), revision: digest(text) };
+}
+export async function listGoalRoutes(root, options = {}) {
+  const dir = await folder(root); let files = (await readdir(dir)).filter(f => /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\.json$/.test(f)).sort();
   if (files.length > 128) throw Error('한 프로젝트에서 목표 경로는 최대 128개입니다.');
-  return Promise.all(files.map(async file => {
+  if(options.ids?.length)files=files.filter(file=>options.ids.includes(file.slice(0,-5)));
+  const budget=options.maxBytes===undefined?null:{remaining:options.maxBytes};
+  if(budget){let total=0;for(const file of files){const full=path.join(dir,file);inside(dir,await realpath(full));total+=(await stat(full)).size;if(total>options.maxBytes)throw Error('Route batch files exceed the 64 MiB input budget. Select fewer routes.');}}
+  const read=async file => {
     const full = path.join(dir, file); inside(dir, await realpath(full));
-    try { const data = await boundedJson(full), route = validateGoalRoute(data.value); if (route.id + '.json' !== file) throw Error('파일명과 경로 ID가 다릅니다.'); return { route, revision: data.revision, file: full }; }
+    try { const data = await boundedJson(full,budget), route = validateGoalRoute(data.value); if (route.id + '.json' !== file) throw Error('파일명과 경로 ID가 다릅니다.'); return { route, revision: data.revision, file: full }; }
     catch (error) { return { file: full, error: error.message }; }
-  }));
+  };
+  if(budget){const entries=[];for(const file of files)entries.push(await read(file));return entries;}
+  return Promise.all(files.map(read));
 }
 export async function importGoalRecording(file, metadata) { if(typeof file!=='string'||!path.isAbsolute(file))throw Error('기록 파일의 절대 경로를 지정하세요.');return routeFromRecording((await boundedJson(file)).value, metadata); }
 export async function saveGoalRoute(root, input, expectedRevision = null) {

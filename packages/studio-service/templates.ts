@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, writeFile, realpath, lstat } from 'node:fs/promises';
 import path from 'node:path';
 
-export const studioTemplates = ['academy-demo', 'academy-year', 'academy-visual', 'academy-journey', 'academy-adventure', 'genre-suite/roster'] as const;
+export const studioTemplates = ['my-first-raising-game', 'academy-demo', 'academy-year', 'academy-visual', 'academy-journey', 'academy-adventure', 'genre-suite/roster'] as const;
 export type StudioTemplate = typeof studioTemplates[number];
 
 export function checkStudioTemplate(template: unknown): asserts template is StudioTemplate {

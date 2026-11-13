@@ -1,0 +1,99 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "garden-invitation",
+  "label": "A garden invitation",
+  "window": {
+    "fromPeriod": 0,
+    "throughPeriod": 8
+  },
+  "requirements": {
+    "op": "flag",
+    "flagId": "garden-visited",
+    "equals": true
+  },
+  "priority": 80,
+  "entryNodeId": "hello",
+  "nodes": [
+    {
+      "id": "hello",
+      "type": "dialogue",
+      "speakerId": "mira",
+      "text": "I am growing something for the end-of-season exhibition. Would you like to help me?",
+      "next": "invitation"
+    },
+    {
+      "id": "invitation",
+      "type": "choice",
+      "prompt": "How will Rowan answer?",
+      "choices": [
+        {
+          "id": "accept",
+          "text": "Let’s make something together.",
+          "requirements": {
+            "op": "always"
+          },
+          "effects": [
+            {
+              "op": "setFlag",
+              "flagId": "invitation-accepted",
+              "value": true
+            },
+            {
+              "op": "add",
+              "target": {
+                "kind": "relationship",
+                "characterId": "mira",
+                "relationshipId": "affection"
+              },
+              "value": {
+                "op": "literal",
+                "value": 20
+              }
+            }
+          ],
+          "next": "accepted"
+        },
+        {
+          "id": "decline",
+          "text": "I want to find my own path this season.",
+          "requirements": {
+            "op": "always"
+          },
+          "effects": [
+            {
+              "op": "add",
+              "target": {
+                "kind": "relationship",
+                "characterId": "mira",
+                "relationshipId": "affection"
+              },
+              "value": {
+                "op": "literal",
+                "value": -10
+              }
+            }
+          ],
+          "next": "declined"
+        }
+      ]
+    },
+    {
+      "id": "accepted",
+      "type": "dialogue",
+      "speakerId": "mira",
+      "text": "Wonderful! Keep practicing. I’ll meet you here next month.",
+      "next": "end"
+    },
+    {
+      "id": "declined",
+      "type": "dialogue",
+      "speakerId": "mira",
+      "text": "Then I hope you find something that matters to you. The garden is always open.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

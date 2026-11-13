@@ -19,6 +19,10 @@
   void restore_plan(const Json& draft) {
     plan.clear();plan_month=-1;plan_selected=0;plan_group.clear();plan_slot=0;
     if(!draft.is_null()){plan=draft.at("activities").get<std::vector<std::string>>();plan_month=draft.at("month");plan_slot=draft.at("slot");plan_selected=draft.at("selected");}
+    // Legacy saves and reviewed presentation resets retain the confirmed core
+    // schedule. Restore it even when loading a home/result screen with no planner.
+    // An explicit (possibly partial) draft wins; an unplanned game stays unplanned.
+    else if(!game.state.is_null()&&!game.state.at("schedule").is_null())ensure_plan();
   }
   Json plan_forecast() const {
     Json out={{"ok",false},{"complete",plan_selected==((1<<game.periods())-1)},{"rows",Json::array()}};
@@ -98,14 +102,15 @@
     const double sw=(right-12*(std::min(4,game.periods())-1))/std::min(4,game.periods());
     out+="<div style=\""+at(left+gap,46,right,130)+"overflow-x:auto;overflow-y:hidden;pointer-events:auto;\"><div style=\"position:relative;width:"+number((sw+12)*game.periods()-12)+"px;height:116px;\">";
     for(int i=0;i<game.periods();++i){
-      std::string label=std::to_string(i+1)+"주\n";
+      const auto config=raising::dates::spec(display_content.at("project"),locale);const auto slotLabel=config.custom?config.period+" "+std::to_string(i+1):std::to_string(i+1)+"주";
+      std::string label=slotLabel+"\n";
       const bool assigned=plan_selected&(1<<i);std::string activity=assigned?plan[i]:"활동 선택";
       for(const auto& a:display_content.at("activities"))if(a.at("id")==activity)activity=a.value("label",activity);
       label+=activity;
       auto slot=card("board-slot-"+std::to_string(i),label,{{"type","boardSlot"},{"slot",i}},double(i)*(sw+12),0,sw,116,i==plan_slot,i>=first);
       if(e.contains("activityIcons")){
         const auto art=assigned?icon_id(plan[i]):std::string();
-        slot=body(slot,"<div style=\""+at(14,12,sw-28,24)+"font-size:16px;color:#70675D;\">"+std::to_string(i+1)+"주</div>"+icon_markup(art,sw-42,10,24)+"<div style=\""+at(14,46,sw-28,60)+"font-size:"+number(fs)+"px;line-height:27px;\">"+escape(activity)+"</div>");
+        slot=body(slot,"<div style=\""+at(14,12,sw-28,24)+"font-size:16px;color:#70675D;\">"+escape(slotLabel)+"</div>"+icon_markup(art,sw-42,10,24)+"<div style=\""+at(14,46,sw-28,60)+"font-size:"+number(fs)+"px;line-height:27px;\">"+escape(activity)+"</div>");
       }
       out+=slot;
     }
@@ -115,6 +120,7 @@
       for(const auto& a:display_content.at("activities"))if(a.at("id")==plan[plan_slot])description=a.value("description","");
     out+="<div style=\""+at(left+gap,184,right-150,66)+"overflow-y:auto;pointer-events:auto;font-size:"+number(fs)+"px;line-height:"+number(fs*1.55)+"px;\">"+escape(description)+"</div>";
     if(plan_selected&(1<<plan_slot))out+=card("board-clear",std::to_string(plan_slot+1)+"주 비우기",{{"type","boardClear"}},w-136,184,136,44,false);
+    if(e.value("showPhaseForecast",false))return out+"<div style=\""+at(left+gap,253,right,52)+"\">"+phase_forecast_launcher(e)+"</div></div>";
     const auto forecast=plan_forecast();
     const bool predicted=forecast.value("ok",false);
     const bool incomplete=!forecast.value("complete",false);

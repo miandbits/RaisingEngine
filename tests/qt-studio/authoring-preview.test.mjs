@@ -15,7 +15,7 @@ async function fixture() {
   const runtime=path.join(work,'runtime');await mkdir(runtime);
   await writeFile(path.join(runtime,'RaisingPlayer.exe'),'contract fixture');
   await writeFile(path.join(runtime,'capabilities.json'),JSON.stringify({formatVersion:'1',imageExtensions:['.png'],audioExtensions:['.ogg'],fontExtensions:['.ttf'],visualFeatures:['renderer-preview-v1','authoring-preview-v1','component-context-v1','custom-states-v1','presentation-variants-v1','free-screens-v1','relationship-change-v1','roster-activities-v1','character-scoped-rules-v1','data-ui-v1','generic-rules-v1','components-v1','anchors-v1']}));
-  const service=new QtStudioService({runtimes:{windows:runtime,web:runtime}});await service.handle({method:'open',params:{root}});
+  const service=new QtStudioService({nativeTarget:'windows',runtimes:{windows:runtime,web:runtime}});await service.handle({method:'open',params:{root}});
   const {snapshot:content}=await service.editor.snapshot(service.editor.revision);
   return {service,content,root,runtime};
 }

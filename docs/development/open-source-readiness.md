@@ -60,7 +60,7 @@ The command reads tracked files only and optionally writes a JSON report. It doe
 
 ## Decisions still needed
 
-1. Engine license and contributor policy.
+1. Engine licensing is now explicit in the root MIT `LICENSE`. Contributor policy and the rights for separately licensed dependencies and sample assets still need release-specific review; the engine license does not grant rights to every game asset.
 2. Which sample assets may be redistributed and which require replacement.
 3. Release history strategy: cleaned existing history or a separate curated public repository. History rewriting requires a backup and coordination with collaborators.
 4. First officially supported release target and the supported Qt/toolchain matrix.

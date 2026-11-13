@@ -2,6 +2,8 @@
 
 The [root README](../../README.md) is the supported build sequence. Run commands at the repository root. Qt, CLI and MCP share Node/C++ services; the archived Electron editor is not required.
 
+Launch the build with `npm run studio`, retaining the same `QT_STUDIO_OUT` used for building. This starts the Qt executable and passes the source engine root and Node path; it does not compile stale binaries. `node scripts/editor-identity.mjs` prints the current services' version/source metadata. New packages include `engine/editor-identity.json` so relocating an installed app does not replace its recorded source with a nearby checkout's Git revision. See [identity fields and limitations](../manual/editor-identity.md).
+
 ## Requirements and outputs
 
 - Node 22.14.0 and npm; install with `npm ci`.
@@ -17,7 +19,7 @@ The [root README](../../README.md) is the supported build sequence. Run commands
 
 Run `check:repository` and `check:public-content` before committing structural changes. Linux headless CI does not imply Qt/Windows/browser verification.
 
-## Standalone preview
+## Windows standalone preview
 
 After building the core, Qt editor, Windows player and Web player:
 
@@ -37,3 +39,6 @@ Packaging requires a new output directory; set `QT_PACKAGE_OUT` on repeated runs
 See [legacy policy](../../legacy/README.md). Historical Electron development dependencies remain in the root lockfile for opt-in regression work; set `ELECTRON_SKIP_BINARY_DOWNLOAD=1` for Qt/Web builds.
 
 The [cleanup report](repository-cleanup.md) records clean-checkout acceptance and an isolated history experiment. Original shared branches/worktrees are not rewritten. [Public assets](public-assets.md), [release gates](open-source-readiness.md) and [platform support](platform-support.md) remain authoritative.
+## Creator workflow gate
+
+`npm run test:creator-smoke` is the compact P1 contributor entry point after the headless build. Add `--web`, `--desktop`, or `--package PATH_TO_MAC_APP` for their real runtime/package gates. See [setup, reports and limitations](../../CONTRIBUTING.md#creator-smoke-test-p1). `npm run benchmark:creator` measures starter and 517-document service requests, including automatic recovery.

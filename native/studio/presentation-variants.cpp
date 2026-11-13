@@ -1,4 +1,5 @@
 #include "studio.hpp"
+#include "surface-editor.hpp"
 #include "logic-editor.hpp"
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -40,10 +41,11 @@ void StudioWindow::editElementPresentationVariants(QJsonObject original,QWidget*
     if(kind=="text"||kind=="button")property->addItem(tr("문구"),"text");
     if(kind=="image")property->addItem(tr("이미지"),"imageAssetId");
     if(kind=="plugin")property->addItem(tr("애니메이션 컨트롤러"),"extensionRef");
-    property->addItem(tr("문자 색"),"color");property->addItem(tr("배경 색"),"fill");property->addItem(tr("불투명도 (0~1)"),"opacity");
+    property->addItem(tr("문자 색"),"color");property->addItem(tr("배경 색"),"fill");property->addItem(tr("불투명도 (0~1)"),"opacity");property->addItem(tr("배경 표면"),"surface");
     const auto values=rule.value("values").toObject();for(int i=0;i<property->count();++i)if(values.contains(property->itemData(i).toString())){property->setCurrentIndex(i);break;}form->addRow(tr("바꿀 속성"),property);
     auto value=new QLineEdit;value->setObjectName("variantValue");auto resource=new QComboBox;resource->setObjectName("variantResource");form->addRow(tr("값"),value);form->addRow(tr("연결 대상"),resource);
-    auto fill=[=,this]{const auto key=property->currentData().toString();const bool isResource=key=="imageAssetId"||key=="extensionRef";value->setVisible(!isResource);resource->setVisible(isResource);resource->clear();
+    auto surface=new SurfaceField(assets);surface->setObjectName("variantSurface");surface->setValue(values.value("surface"));form->addRow(surface);
+    auto fill=[=,this]{const auto key=property->currentData().toString();const bool isResource=key=="imageAssetId"||key=="extensionRef";value->setVisible(!isResource&&key!="surface");resource->setVisible(isResource);surface->setVisible(key=="surface");resource->clear();
       if(key=="imageAssetId")for(const auto& doc:view.value("documents").toArray())if(doc.toObject().value("kind")=="assets")for(const auto& asset:doc.toObject().value("data").toObject().value("assets").toArray()){const auto a=asset.toObject();if(a.value("kind")=="image")resource->addItem(a.value("label").toString(a.value("id").toString()),a.value("id").toString());}
       if(key=="extensionRef")for(int i=0;i<pluginRefField->count();++i)if(!pluginRefField->itemData(i).toString().isEmpty())resource->addItem(pluginRefField->itemText(i),pluginRefField->itemData(i));
       if(isResource&&values.contains(key)){int index=resource->findData(values.value(key).toString());if(index<0){resource->addItem(tr("누락된 참조 · ")+values.value(key).toString(),values.value(key).toString());index=resource->count()-1;}resource->setCurrentIndex(index);}
@@ -57,7 +59,8 @@ void StudioWindow::editElementPresentationVariants(QJsonObject original,QWidget*
       const auto key=property->currentData().toString();QJsonValue next=value->text();if(key=="imageAssetId"||key=="extensionRef"){if(resource->currentIndex()<0){message->setText(tr("연결할 리소스를 먼저 만드세요."));return;}next=resource->currentData().toString();}
       if(key=="opacity"){bool ok=false;const auto number=value->text().toDouble(&ok);if(!ok||number<0||number>1){message->setText(tr("불투명도는 0~1입니다."));return;}next=number;}
       if((key=="color"||key=="fill")&&!QColor(value->text()).isValid()){message->setText(tr("유효한 색상을 입력하세요. 예: #80c0a0"));return;}
-      auto updated=rule,newValues=values;newValues[key]=next;updated["label"]=name->text().trimmed();updated["values"]=newValues;updated["when"]=*condition;
+      if(key=="surface")next=surface->value();
+      auto updated=rule,newValues=values;if(next.isUndefined())newValues.remove(key);else newValues[key]=next;if(newValues.isEmpty()){message->setText(tr("표현에는 바꿀 속성이 하나 이상 필요합니다."));return;}updated["label"]=name->text().trimmed();updated["values"]=newValues;updated["when"]=*condition;
       const auto id=activity->currentData().toString();if(id!="__preserve"){updated.remove("activityIds");if(!id.isEmpty())updated["activityIds"]=QJsonArray{id};}
       (*rules)[row]=updated;refresh(row);d->accept();
     });d->open();

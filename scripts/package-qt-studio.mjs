@@ -2,15 +2,18 @@ import {cp,mkdir,readFile,writeFile,readdir,lstat,access} from 'node:fs/promises
 import {resolve,join,dirname,relative,basename} from 'node:path';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
-import {execFileSync} from 'node:child_process';
 import {replaceReleaseMedia,auditReleaseMedia} from './release-sample-media.mjs';
 import {studioTemplates} from '../dist/packages/studio-service/templates.js';
+import {createPackagedEditorIdentity} from '../apps/qt-studio/editor-identity.mjs';
+import {windowsPreviewCandidate} from './lib/preview-artifact-metadata.mjs';
 
-const root=resolve('.'),out=resolve(process.env.QT_PACKAGE_OUT||'release/qt-preview/RaisingStudio');
+const candidate=await windowsPreviewCandidate();
+const root=resolve('.'),out=candidate.bundle;
 const qt=resolve(process.env.QT_STUDIO_OUT||'dist/qt-studio');
 const windows=resolve(process.env.RAISING_NATIVE_PLAYER_RUNTIME||'dist/native-player-app');
 const web=resolve(process.env.RAISING_WEB_PLAYER_RUNTIME||'dist/web');
 const release=JSON.parse(await readFile('config/preview-release.json','utf8'));
+const editorIdentity=await createPackagedEditorIdentity(root,{platform:'win32',arch:'x64',releaseVersion:candidate.version,channel:candidate.channel});
 const qtSources=JSON.parse(await readFile('config/qt-corresponding-source.json','utf8'));
 const sourceDir=resolve(process.env.QT_SOURCE_ARCHIVES||'.cache/preview-release/qt-sources');
 for(const source of qtSources.archives){
@@ -34,11 +37,14 @@ for(const entry of await readdir(qt,{withFileTypes:true})){
 await writeFile(join(out,'qt.conf'),'[Paths]\nPlugins=.\n');
 await copy('native/studio/fonts','fonts');
 await copy('apps/qt-studio','engine/apps/qt-studio');
+await copy('config/native-dependencies.json','engine/config/native-dependencies.json');
+await copy('scripts/lib/ios-project.mjs','engine/scripts/lib/ios-project.mjs');
 await copy('dist/packages','engine/dist/packages');
 await copy('packages/schema','engine/packages/schema');
 await copy('packages/plugin-host','engine/packages/plugin-host');
 await copy(process.execPath,'engine/node.exe');
-await writeFile(join(out,'engine/package.json'),JSON.stringify({name:'raising-studio-service',version:'0.1.0',type:'module',private:true,license:'MIT'}));
+await writeFile(join(out,'engine/package.json'),JSON.stringify({name:'raising-studio-service',version:editorIdentity.engineVersion,type:'module',private:true,license:'MIT'}));
+await writeFile(join(out,'engine/editor-identity.json'),JSON.stringify(editorIdentity,null,2)+'\n');
 const runtime=JSON.parse(await readFile('dist/native/runtime.json','utf8'));
 await copy('dist/native/runtime.json','engine/dist/native/runtime.json');
 await copy(join('dist/native',runtime.executable),'engine/dist/native/'+runtime.executable);
@@ -56,11 +62,13 @@ await copy('LICENSE','LICENSE');await copy('licenses','licenses');await copy('TH
 for(const source of qtSources.archives)await copy(join(sourceDir,source.file),'licenses/qt/sources/'+source.file);
 await copy('config/qt-corresponding-source.json','licenses/qt/corresponding-source.json');
 await copy('docs/development/preview-license-review.md','licenses/README.md');
-await copy('docs/getting-started/preview','guides');
+for(const language of release.editorLanguages)await copy(`docs/getting-started/preview/${language}.md`,`guides/${language}.md`);
+await copy('docs/getting-started/creator-pilot.md','guides/README.md');
 await copy('docs/getting-started/first-game.md','FIRST-GAME.md');
 for(const doc of ['getting-started/first-game.md','development/platform-support.md','development/platform-capabilities.json','development/public-assets.md','development/qt-preview-release.md'])await copy('docs/'+doc,'engine/docs/'+doc);
 await copy('LICENSE','engine/LICENSE');await copy('THIRD_PARTY_NOTICES.md','engine/THIRD_PARTY_NOTICES.md');
 await copy(join(windows,'licenses'),'licenses/player');await copy(join(windows,'fonts/OFL.txt'),'licenses/NotoSansKR-OFL.txt');
+await copy(join(windows,'fonts/OFL-NotoSansJP.txt'),'licenses/NotoSansJP-OFL.txt');
 await copy('native/vendor/LICENSE.MIT','licenses/nlohmann-json.txt');
 await copy('native/player/assets/OFL.txt','engine/dist/web/licenses/NotoSansKR-OFL.txt');
 await copy('native/vendor/LICENSE.MIT','engine/dist/web/licenses/nlohmann-json.txt');
@@ -79,7 +87,7 @@ async function dependency(name,from=join(root,'package.json')){
  await copy(dirname(file),'engine/node_modules/'+name);
  for(const child of Object.keys(p.dependencies||{}))await dependency(child,file);
 }
-for(const name of ['ajv','jsonc-parser','yauzl'])await dependency(name);
+for(const name of ['ajv','jsonc-parser','yauzl','resedit'])await dependency(name);
 // Retain licenses for JS code embedded in the Web runtime as well as Node services.
 for(const name of ['react','react-dom','scheduler']){
  const p=join(root,'node_modules',name);await copy(join(p,'LICENSE'),'engine/dist/web/licenses/'+name+'.txt');
@@ -90,6 +98,6 @@ async function inventory(dir){for(const e of await readdir(dir,{withFileTypes:tr
  if(e.isDirectory())await inventory(file);else{const bytes=await readFile(file),sha256=createHash('sha256').update(bytes).digest('hex');if(blocked.has(sha256))throw Error('Private reference asset in package: '+file);files.push({path:relative(out,file).replaceAll('\\','/'),bytes:bytes.length,sha256});}
 }}
 await inventory(out);files.sort((a,b)=>a.path.localeCompare(b.path));
-const manifest={version:1,product:'Raising Studio Qt',releaseVersion:release.version,channel:release.channel,publicReleaseReady:false,editorLanguages:release.editorLanguages,editorTranslationStatus:release.editorTranslationStatus,sourceCommit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),sourceTreeDirty:!!execFileSync('git',['status','--porcelain'],{encoding:'utf8'}).trim(),node:process.version,qt:'6.10.1',qtCorrespondingSource:qtSources.archives,templates,dependencies:[...dependencies.values()],files};
+const manifest={version:1,product:'Raising Studio Qt',engineVersion:editorIdentity.engineVersion,editorIdentity,releaseVersion:candidate.version,channel:candidate.channel,publicReleaseReady:false,editorLanguages:release.editorLanguages,editorTranslationStatus:release.editorTranslationStatus,sourceCommit:editorIdentity.source.commit,sourceTreeDirty:editorIdentity.source.dirty,node:process.version,qt:'6.10.1',qtCorrespondingSource:qtSources.archives,templates,dependencies:[...dependencies.values()],files};
 await writeFile(join(out,'package-manifest.json'),JSON.stringify(manifest,null,2));
 console.log(JSON.stringify({out,files:files.length,bytes:files.reduce((n,f)=>n+f.bytes,0),publicReleaseReady:false}));

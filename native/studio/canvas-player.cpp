@@ -19,7 +19,10 @@ void CanvasPlayer::launch(QJsonObject value){
   stop();descriptor=value;buffer.clear();report={};serial=0;pauseRequested=false;
   directory=QFileInfo(value.value("report").toString()).absolutePath()+"/live-"+QUuid::createUuid().toString(QUuid::WithoutBraces);
   if(!QDir().mkpath(directory)){emit failed(tr("임시 재생 폴더를 만들 수 없습니다."));return;}
-  QStringList args{"--bundle",value.value("directory").toString(),"--preview-screen",value.value("screenId").toString(),"--preview-inspection",value.value("inspection").toString(),"--editor-live-preview",directory,"--hidden"};
+  QStringList args{"--bundle",value.value("directory").toString(),"--preview-screen",value.value("screenId").toString(),"--preview-inspection",value.value("inspection").toString(),"--editor-live-preview",directory};
+#ifdef Q_OS_WIN
+  args<<"--hidden";
+#endif
   if(!value.value("locale").toString().isEmpty())args<<"--locale"<<value.value("locale").toString();
   process.setWorkingDirectory(value.value("directory").toString());process.start(value.value("executable").toString(),args);startup.start();emit stateChanged();
 }
@@ -39,6 +42,10 @@ void CanvasPlayer::receive(){
   while(buffer.contains('\n')){
     const auto pos=buffer.indexOf('\n');const auto line=buffer.left(pos);buffer.remove(0,pos+1);const auto value=QJsonDocument::fromJson(line).object().value("editorPreview").toObject();if(value.isEmpty())continue;
     if(value.value("ready").toBool()){
+      if(value.contains("embedded") && !value.value("embedded").toBool()){
+        container=new QLabel(tr("Live preview is running in a separate player window. Pause, reset and stop remain available here."),this);
+        static_cast<QLabel*>(container)->setWordWrap(true);layout()->addWidget(container);show();raise();startup.stop();pause(false);continue;
+      }
       auto window=QWindow::fromWinId(WId(value.value("windowHandle").toString().toULongLong()));
       if(!window){stop();emit failed(tr("이 환경에서는 플레이어 창을 캔버스에 연결할 수 없습니다."));return;}
       container=QWidget::createWindowContainer(window,this);container->setFocusPolicy(Qt::StrongFocus);layout()->addWidget(container);setGeometry(parentWidget()->rect());show();raise();container->show();startup.stop();pause(false);container->setFocus();

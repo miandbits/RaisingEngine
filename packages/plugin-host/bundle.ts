@@ -53,10 +53,11 @@ export const extensionPath = (plugin: string, type: string, id: string) => `plug
  * runtime module of `target` is copied; authoring and service modules never leave the
  * store. Refuses (PLUGIN_RUNTIME_MISSING) instead of silently dropping animation.
  */
-export async function exportBundle(options: { store?: string | null; lock: unknown; documents: readonly { kind: string; data: unknown }[]; visual: unknown; target: 'windows' | 'web'; assets?: ExportAssetSource; hostFeatures?: readonly string[] }): Promise<PreparedExtensions | null> {
+export async function exportBundle(options: { store?: string | null; lock: unknown; documents: readonly { kind: string; data: unknown }[]; visual: unknown; target: 'windows' | 'web' | 'macos' | 'ios'; assets?: ExportAssetSource; hostFeatures?: readonly string[] }): Promise<PreparedExtensions | null> {
   const used = [...new Set(pluginElements(options.visual).map(e => String(e.element.extension?.plugin ?? '')))].sort();
   if (!used.length) return null;
   const resolved = await resolveProjectPlugins(pluginStorePath(options.store), options.lock);
+  if (options.target === 'macos' || options.target === 'ios') throw new PluginError('PLUGIN_RUNTIME_MISSING', `Presentation plugins are not yet available for ${options.target}. Remove plugin elements or export to a supported target.`);
   const platform = RUNTIME_PLATFORMS[options.target];
   const game: GameExtensions = { version: 1, plugins: [] }, files: PreparedExtensions['files'] = [], features = new Set<string>();
   const assets: NonNullable<PreparedExtensions['assets']> = [], replaced = new Set<string>(), reports: Record<string, unknown> = {};

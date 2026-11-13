@@ -33,17 +33,17 @@ test('packaged exploratory keyboard, cancellation and editor selection review', 
   const observations = { cancelPreservedState: true, keyboard: [], selectionPreserved: false };
   await click(page, '일정');
   for (const period of ['상순', '중순', '하순']) await select(page, `${period} 활동`, 'rest');
-  await click(page, '일정 확정 / 활동 시작'); await click(page, '일정 확정 / 활동 시작'); await click(page, '다음으로');
+  await click(page, '일정 확정'); await click(page, '활동 시작'); await click(page, '결과 확인 · 다음');
   for (let i = 0; i < 40; i++) {
     const view = (await page.evaluate(() => window.player.view())).view;
     if (view.state.phase !== 'narrative') {
       if (observations.keyboard.some(step => step.choice)) break;
       if (await page.getByRole('button', { name: '일정', exact: true }).count()) await click(page, '일정');
-      await click(page, '일정 확정 / 활동 시작'); await click(page, '다음으로');
+      await click(page, '활동 시작'); await click(page, '결과 확인 · 다음');
       continue;
     }
     const choice = view.narrative.node.type === 'choice';
-    const target = choice ? page.locator('.visual-choices button:enabled').first() : page.getByRole('button', { name: '계속', exact: true });
+    const target = choice ? page.locator('.visual-choices button:enabled').first() : page.getByRole('button', { name: '이야기 계속', exact: true });
     const label = await target.textContent();
     const tabs = await keyboardActivate(page, target);
     observations.keyboard.push({ choice, label, tabs });

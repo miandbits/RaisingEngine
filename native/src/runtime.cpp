@@ -1,4 +1,5 @@
 #include "raising/runtime.hpp"
+#include "raising/json-calendar.hpp"
 #include "json.hpp"
 #include "raising/relationship-history.hpp"
 #include "raising/choice-feedback.hpp"
@@ -16,6 +17,8 @@ using J = nlohmann::json;
 constexpr int64_t SAFE = 9007199254740991LL;
 const std::string VERSION = "0.2.0";
 thread_local J *executionTrace = nullptr;
+// Forecasts must stop before consuming or revealing any random outcome.
+thread_local bool forecastNoRandom = false;
 void traceExecution(J row) {
   if (executionTrace && executionTrace->size() < 10000) executionTrace->push_back(std::move(row));
 }
@@ -67,6 +70,7 @@ void checkContent(const J &c) {
                         [](char v) { return (v >= '0' && v <= '9') || (v >= 'a' && v <= 'f'); });
   }
   need(valid, "INCOMPATIBLE_CONTENT", "지원하는 buildSnapshot 결과가 필요합니다.", "/content");
+  const auto calendarIssue=raising::dates::problem(c.at("project"));need(calendarIssue.empty(),"INCOMPATIBLE_CONTENT","Invalid calendar configuration.","/project"+calendarIssue);
   need(!c["project"].contains("periodFlow") || (!c["project"].contains("roster")&&!c["project"].contains("progression")),"PERIOD_FLOW_MODE","기간 단계는 현재 단일 대상의 월 일정에서 사용할 수 있습니다.","/project/periodFlow");
 }
 int periods(const J &c) {
@@ -78,11 +82,8 @@ J calendar(const J &c, const J &s) {
   auto p = s.at("periodIndex");
   need(integer(p) && number(p) >= 0 && number(p) < number(c.at("project").at("durationMonths")) * periods(c),
        "INVALID_TIME", "기간 인덱스가 프로젝트 범위를 벗어났습니다.", "/periodIndex");
-  int64_t n = number(p), month = number(c.at("project").at("startMonth")) - 1 + n / periods(c);
-  return {{"periodIndex", n},
-          {"year", number(c.at("project").at("startYear")) + month / 12},
-          {"month", month % 12 + 1},
-          {"periodInMonth", n % periods(c)}};
+  const auto d=raising::dates::date(c.at("project"),number(p));
+  return {{"periodIndex",d.index},{"year",d.year},{"month",d.month},{"periodInMonth",d.period}};
 }
 #include "character-state.inc"
 #include "custom-states.inc"
@@ -290,6 +291,7 @@ J seedRandom(const J &seed) {
           {"draws", 0}};
 }
 uint32_t draw(J &r) {
+  need(!forecastNoRandom, "FORECAST_RANDOM", "A random outcome is not predictable.", "/rng");
   bool valid = r.value("algorithm", "") == "pcg32-xsh-rr-v1" && r.contains("state") &&
                r["state"].is_string() &&
                std::regex_match(str(r, "state"), std::regex("(0|[1-9][0-9]{0,19})")) &&
@@ -963,6 +965,7 @@ J command(const J &c, const J &old, const J &cmd, const J &rev) {
 // clang-format off
 #include "view.inc"
 #include "systems-view.inc"
+#include "phase-forecast.inc"
 #include "protocol.inc"
 // clang-format on
 } // namespace raising

@@ -1,3 +1,4 @@
+import {waitForResponse} from './response-wait.js';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { createRequire } from 'node:module';
@@ -94,7 +95,7 @@ function connection(executable:string):WorkerConnection {
  * the C++ subprocess, never to TypeScript rules. */
 export function nativeRequest(request: unknown, executable = nativeExecutable()): unknown {
   const c=connection(executable);
-  if(request&&typeof request==='object'&&'operation' in request&&['create','command','view','evaluate','replay'].includes(String(request.operation))&&'content' in request&&request.content&&typeof request.content==='object'&&immutableJson(request.content)){
+  if(request&&typeof request==='object'&&'operation' in request&&['create','command','inspect','view','evaluate','replay','forecastPhase'].includes(String(request.operation))&&'content' in request&&request.content&&typeof request.content==='object'&&immutableJson(request.content)){
     const content=request.content;
     let id=c.contents.get(content);
     if(!id){
@@ -114,8 +115,7 @@ function rawRequest(c:WorkerConnection,request:unknown,executable:string):unknow
   const control=c.control!,worker=c.worker!,bytes=c.bytes!;
   Atomics.store(control,0,0);
   worker.postMessage(JSON.stringify(request));
-  const status=Atomics.wait(control,0,0,30_000);
-  if(status==='timed-out'){connections.delete(executable);void worker.terminate();throw new Error('Native runtime request timed out.');}
+  if(!waitForResponse(control,30_000)){connections.delete(executable);void worker.terminate();throw new Error('Native runtime request timed out.');}
   const text=new TextDecoder().decode(bytes.subarray(0,Atomics.load(control,1)));
   const response=JSON.parse(text) as unknown;
   if(Atomics.load(control,0)===2)throw new Error((response as {message:string}).message);

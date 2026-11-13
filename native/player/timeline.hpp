@@ -31,6 +31,7 @@ inline std::string timeline_tokens(const std::string& source,const std::map<std:
   std::string result;size_t position=0;
   while(position<source.size()){const auto start=source.find('{',position);if(start==std::string::npos){result+=source.substr(position);break;}result+=source.substr(position,start-position);const auto end=source.find('}',start);if(end==std::string::npos){result+=source.substr(start);break;}const auto found=tokens.find(source.substr(start+1,end-start-1));result+=found==tokens.end()?source.substr(start,end-start+1):found->second;position=end+1;}return result;
 }
+inline std::string timeline_word(const std::string& locale,const std::string& ko,const std::string& en,const std::string& ja) {return locale.rfind("en",0)==0?en:locale.rfind("ja",0)==0?ja:ko;}
 inline Json plan_result_playback(const Json& content,const Json& state,const Json& config) {
   const auto& result=state.at("lastActivityResult");Json rows=Json::array(),clips=Json::array();
   for(const auto& change:result.at("changes"))if(change.value("kind","")=="numeric"&&change.value("delta",0)!=0){
@@ -40,24 +41,24 @@ inline Json plan_result_playback(const Json& content,const Json& state,const Jso
   }
   int64_t total=0;for(size_t i=0;i<rows.size()+2;i++){const int duration=config.at(i==0?"leadInMs":i==rows.size()+1?"holdMs":"changeMs");total+=duration;const auto id="result-"+std::to_string(i);clips.push_back({{"id",id},{"clipId",id},{"durationMs",duration},{"text",""},{"transition","none"},{"day",nullptr}});}
   std::string title=result.at("activityId");for(const auto& a:content.at("activities"))if(a.at("id")==result.at("activityId"))title=a.value("label",title);
-  if(!result.at("success").is_null())title+=result.at("success").value("passed",false)?" · 성공":" · 실패";
-  return {{"resultRevision",state.at("stateRevision")},{"activityId",result.at("activityId")},{"timelineId","inline-result"},{"clips",clips},{"totalDurationMs",total},{"resultPlayback",{{"title",title},{"rows",rows}}}};
+
+  return {{"resultRevision",state.at("stateRevision")},{"activityId",result.at("activityId")},{"timelineId","inline-result"},{"clips",clips},{"totalDurationMs",total},{"resultPlayback",{{"title",title},{"outcome",result.at("success").is_null()?"":result.at("success").value("passed",false)?"success":"failure"},{"rows",rows}}}};
 }
-inline std::string result_playback_text(const Json& plan,const Json& cursor,bool changes_only=false) {
+inline std::string result_playback_text(const Json& plan,const Json& cursor,bool changes_only=false,const std::string& locale="ko") {
   if(!plan.contains("resultPlayback"))return "";
-  const auto& playback=plan.at("resultPlayback");std::string text=changes_only?"":playback.at("title").get<std::string>();const auto& rows=playback.at("rows");
+  const auto& playback=plan.at("resultPlayback");std::string title=playback.at("title");const auto outcome=playback.value("outcome","");if(!outcome.empty())title+=" · "+timeline_word(locale,outcome=="success"?"성공":"실패",outcome=="success"?"Success":"Failure",outcome=="success"?"成功":"失敗");std::string text=changes_only?"":title;const auto& rows=playback.at("rows");
   for(size_t i=0;i<rows.size();i++){
     const auto& row=rows.at(i);const int index=cursor.at("clipIndex");const double progress=cursor.value("completed",false)||index>int(i+1)?1:index==int(i+1)?std::min(1.0,cursor.at("elapsedMs").get<double>()/plan.at("clips").at(i+1).at("durationMs").get<double>()):0;
     const int64_t before=row.at("before"),after=row.at("after"),delta=static_cast<int64_t>((after-before)*progress);
     if(changes_only){
       if(delta==0)continue;
       if(!text.empty())text+="\n";
-      text+=row.at("label").get<std::string>()+" "+(delta>0?"+":"−")+std::to_string(delta>0?delta:-delta)+"   현재 "+std::to_string(before+delta);
+      text+=row.at("label").get<std::string>()+" "+(delta>0?"+":"−")+std::to_string(delta>0?delta:-delta)+timeline_word(locale,"   현재 ","   Now ","   現在 ")+std::to_string(before+delta);
     }else text+="\n"+row.at("label").get<std::string>()+"  "+std::to_string(before)+" → "+std::to_string(before+delta)+"  ("+(delta>=0?"+":"")+std::to_string(delta)+")";
   }
-  if(rows.empty()&&(!changes_only||cursor.value("completed",false)))text+="능력 변화 없음";return text;
+  if(rows.empty()&&(!changes_only||cursor.value("completed",false)))text+=timeline_word(locale,"능력 변화 없음","No stat changes","能力値の変化なし");return text;
 }
-inline Json plan_activity_timeline(const Json& content,const Json& state) {
+inline Json plan_activity_timeline(const Json& content,const Json& state,const std::string& locale="ko") {
   if(state.is_null()||state.value("phase","")!="activity-result"||state.value("lastActivityResult",Json()).is_null())return nullptr;
   const auto result=state.at("lastActivityResult"),visual=content.at("project").value("visual",Json::object());Json binding=nullptr;
   for(const auto& candidate:visual.value("activityTimelines",Json::array()))if(candidate.at("activityId")==result.at("activityId")){binding=candidate;break;}if(binding.is_null())return visual.contains("resultPlayback")?plan_result_playback(content,state,visual.at("resultPlayback")):Json();
@@ -70,7 +71,7 @@ inline Json plan_activity_timeline(const Json& content,const Json& state) {
   std::string activity=result.at("activityId");for(const auto& a:content.at("activities"))if(a.at("id")==result.at("activityId"))activity=a.value("label",activity);
   const auto summary=timeline_changes_text(content,result.at("changes"));Json clips=Json::array();int64_t duration=0;
   for(size_t index=0;index<days.size();index++)for(const auto& clip:timeline.at("clips")) {
-    const int day=days[index];const std::map<std::string,std::string> tokens={{"activity",activity},{"outcome",success.is_null()?"완료":success.value("passed",false)?"성공":"실패"},{"day",day?std::to_string(day):""},{"changes",index==0?summary:""}};
+    const int day=days[index];const std::map<std::string,std::string> tokens={{"activity",activity},{"outcome",success.is_null()?timeline_word(locale,"완료","complete","完了"):success.value("passed",false)?timeline_word(locale,"성공","Success","成功"):timeline_word(locale,"실패","Failure","失敗")},{"day",day?std::to_string(day):""},{"changes",index==0?summary:""}};
     Json item={{"id",(day?"day-"+std::to_string(day):"once")+"__"+clip.value("id","")},{"clipId",clip.at("id")},{"durationMs",clip.at("durationMs")},{"text",timeline_tokens(clip.value("text",""),tokens)},{"transition",clip.value("transition","none")},{"day",day?Json(day):Json()}};
     if(clip.contains("imageAssetId"))item["imageAssetId"]=clip.at("imageAssetId");
     if(clip.contains("stage"))item["stage"]=clip.at("stage");

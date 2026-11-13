@@ -1,0 +1,86 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "friendship-route",
+  "description": "A complete starter route with save/replay coverage.",
+  "seed": 42,
+  "initialOverrides": {
+    "attributes": {},
+    "flags": {},
+    "relationships": {}
+  },
+  "commands": [
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "walk",
+        "study",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": [
+        {
+          "eventId": "garden-invitation",
+          "nodeId": "invitation",
+          "choiceId": "accept"
+        }
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "study",
+        "study",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "planMonth",
+      "activityIds": [
+        "work",
+        "rest",
+        "rest"
+      ]
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    },
+    {
+      "type": "runPeriod",
+      "choices": []
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "ending",
+      "endingId": "together"
+    }
+  ],
+  "stepLimit": 500
+}

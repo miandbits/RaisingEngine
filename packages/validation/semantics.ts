@@ -1,3 +1,4 @@
+import { calendarProblem } from '../core/calendar.js';
 import { checkStateGroups, checkStateReference } from './custom-states.js';
 import { childPointer, isObject, type Diagnostic, type DocumentKind, type Json, type JsonObject, type ProjectDocument } from './model.js';
 import { SemanticContext, idOf, objectItems, type Entry, type Index } from './context.js';
@@ -101,6 +102,7 @@ export function validateSemantics(documents: ProjectDocument[]): Diagnostic[] {
     for (const [key, child] of Object.entries(value)) walk(child, doc, childPointer(pointer, key), depth);
   }
   if (root && project) {
+    const calendarIssue=calendarProblem(project as any);if(calendarIssue)ctx.report(root,calendarIssue.path,'CALENDAR_RANGE',calendarIssue.message);
     checkRoster(ctx, root, project);
     checkProgression(ctx, root, project);
     checkUserFields(ctx, root, project);

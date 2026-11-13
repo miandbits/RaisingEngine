@@ -44,11 +44,11 @@ test('image revision preserves the entire save baseline and records current pixe
   assert.deepEqual(preparePresentationRevision(f.content,{...f.base,...result}),result);
 });
 
-test('rules, layouts, dialogue, asset definitions, non-image hashes and plugins cannot use image-only compatibility',async t=>{
+test('rules, screen structure, dialogue, asset definitions, non-image hashes and plugins cannot use presentation compatibility',async t=>{
   const f=await setup(t);
   for(const mutate of [
     s=>s.project.title+=' changed',
-    s=>s.project.visual.screens[0].label+=' changed',
+    s=>s.project.visual.screens[0].elements[0].visibleWhen='planning',
     s=>s.events[0].nodes[0].text='changed dialogue',
     s=>s.assets.find(a=>a.id==='revision-image').path='assets/other.png',
   ]) {

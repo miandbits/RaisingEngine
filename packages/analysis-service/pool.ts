@@ -35,7 +35,7 @@ export async function runAnalysisPool(content:ContentSnapshot,input:AnalysisOpti
         result.exploredStates+=message.exploredStates;
         for(const [key,value]of Object.entries(message.blocked))result.blocked[key]=(result.blocked[key]??0)+value;
         if(message.trace){
-          if(Atomics.load(flag,0)===2&&message.trace.outcome==='limit')message.trace.reason='분석 시간 제한';
+          if(Atomics.load(flag,0)===2&&message.trace.outcome==='limit'){message.trace.reason='분석 시간 제한';if(message.trace.balance?.termination==='cancelled')message.trace.balance.termination='time-limit';}
           await hooks.trace?.(message.trace);record(result,message.trace,undefined);
         }
         await hooks.progress?.(result);

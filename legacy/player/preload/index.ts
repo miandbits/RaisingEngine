@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { PlayerBridge } from '../../../packages/player-service/controller.js';
 
 const bridge: PlayerBridge = {
+  forecastPhase: (ids,version) => ipcRenderer.invoke('player:forecast-phase',ids,version),
   view: () => ipcRenderer.invoke('player:view'),
   newRun: (version, userValues) => ipcRenderer.invoke('player:new', version, userValues),
   act: (action, version) => ipcRenderer.invoke('player:act', action, version),

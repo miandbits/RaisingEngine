@@ -75,7 +75,7 @@ export async function releaseUnsavedAssets(root: string): Promise<string[]> {
   try {
     const loaded = await loadProject(root);
     saved = new Set(loaded.documents.filter(d => d.kind === 'assets')
-      .flatMap(d => ((d.data as { assets?: { path?: unknown }[] })?.assets ?? []).map(a => typeof a?.path === 'string' ? relativeOf(root, a.path) : null))
+      .flatMap(d => {const data=d.data as {assets?:{path?:unknown}[];release?:{icon?:{path?:unknown};notices?:{path?:unknown}[]}};return [...(data.assets??[]),...(data.release?.icon?[data.release.icon]:[]),...(data.release?.notices??[])].map(a=>typeof a?.path==='string'?relativeOf(root,a.path):null);})
       .filter((p): p is string => !!p));
   } catch { return []; /* An unreadable project keeps every file. */ }
   const removed: string[] = [], kept: Entry[] = [];

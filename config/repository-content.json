@@ -1,6 +1,7 @@
 {
   "version": 1,
   "publicSamples": [
+    "examples/my-first-raising-game",
     "examples/academy-demo",
     "examples/academy-year",
     "examples/academy-visual",

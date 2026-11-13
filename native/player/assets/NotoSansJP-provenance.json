@@ -1,0 +1,10 @@
+{
+  "file": "NotoSansJP.ttf",
+  "family": "Noto Sans JP",
+  "source": "https://github.com/google/fonts/tree/main/ofl/notosansjp",
+  "downloadUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf",
+  "sha256": "c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f",
+  "license": "OFL-1.1",
+  "licenseFile": "OFL-NotoSansJP.txt",
+  "modifications": "Unmodified font bytes; local filename simplified, font name unchanged."
+}

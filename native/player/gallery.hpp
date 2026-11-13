@@ -51,7 +51,7 @@ class GalleryProfile {
   std::string game_id;
   Json empty() const {return {{"version",1},{"gameId",game_id},{"entries",Json::object()}};}
   Json read() const {
-    const auto backup=fs::path(path.u8string()+".bak");
+    auto backup=path;backup+=".bak";
     if(!fs::exists(path)&&!fs::exists(backup))return empty();
     const auto value=read_json(fs::exists(path)?path:backup,64*1024*1024);
     if(!value.is_object()||value.value("version",0)!=1||value.value("gameId","")!=game_id||!value.contains("entries")||!value.at("entries").is_object())throw std::runtime_error("컬렉션 기록 형식이 올바르지 않습니다. 원본 파일을 보존했습니다.");
@@ -67,6 +67,18 @@ class GalleryProfile {
     }
     return value;
   }
+  // Shared deterministic merge: staged restores use the same entry selection,
+  // duplicate handling and limits as a successful persistent unlock.
+  static bool merge_record(Json& merged,const Json& config,Json record,const std::string& unlocked_at) {
+    const auto entryIds=record.value("_entryIds",Json());record.erase("_entryIds");bool changed=false;
+    for(const auto& entry:config.at("entries"))if(entry.at("kind")==record.at("kind")&&entry.at("sourceId")==record.at("sourceId")&&(entryIds.is_null()||std::find(entryIds.begin(),entryIds.end(),entry.at("id"))!=entryIds.end())) {
+      const auto id=entry.at("id").get<std::string>();auto& item=merged["entries"][id];if(item.is_null())item={{"records",Json::array()}};
+      bool duplicate=false;for(auto& old:item.at("records"))if(old.value("kind","")==record.at("kind")&&old.value("sourceId","")==record.at("sourceId")&&old.at("frames")==record.at("frames")){duplicate=true;if(!old.contains("replayFrames")&&record.contains("replayFrames")){old["replayFrames"]=record.at("replayFrames");old["content"]=record.at("content");changed=true;}}
+      if(!duplicate){if(item["records"].size()>=32)throw std::runtime_error("한 항목의 회상 기록 한도(32개)에 도달했습니다. 기존 기록을 보존했습니다.");record["title"]=entry.at("title");record["unlockedAt"]=unlocked_at;item["records"].push_back(record);changed=true;}
+    }
+    return changed;
+  }
+
 public:
   Json data=Json::object();
   std::string error;
@@ -79,22 +91,24 @@ public:
     for(const auto& record:entries.at(entry.at("id").get<std::string>()).at("records"))if(record.value("kind","")==entry.value("kind","")&&record.value("sourceId","")==entry.value("sourceId",""))out.push_back(record);
     return out;
   }
+  void stage_unlock(const Json& config,Json record) {
+    if(record.is_null()||config.is_null())return;
+    auto merged=data;
+    // Same serialized timestamp width, with no clock or filesystem dependency.
+    const bool changed=merge_record(merged,config,std::move(record),"1970-01-01T00:00:00Z");
+    if(changed&&merged.dump(2).size()>64*1024*1024)throw std::runtime_error("컬렉션 기록 용량 한도를 초과했습니다. 기존 파일을 보존했습니다.");
+    data=std::move(merged);error.clear();
+  }
   void unlock(const Json& config,Json record) {
     if(record.is_null()||config.is_null())return;
-    const auto entryIds=record.value("_entryIds",Json());record.erase("_entryIds");
     // Read-merge-write under a cross-process lock. Failed/corrupt files are never reset.
-    fs::create_directories(path.parent_path());const auto lock=fs::path(path.u8string()+".lock");bool locked=false;
+    fs::create_directories(path.parent_path());auto lock=path;lock+=".lock";bool locked=false;
     for(int i=0;i<20&&!locked;i++){locked=fs::create_directory(lock);if(!locked)std::this_thread::sleep_for(std::chrono::milliseconds(10));}
     if(!locked)throw std::runtime_error("다른 실행에서 컬렉션을 저장 중입니다. 도감을 다시 열어 저장을 재시도하세요.");
     struct Unlock {fs::path path;~Unlock(){std::error_code ec;fs::remove(path,ec);}} unlock{lock};
-    auto merged=read();bool changed=false;
-    for(const auto& entry:config.at("entries"))if(entry.at("kind")==record.at("kind")&&entry.at("sourceId")==record.at("sourceId")&&(entryIds.is_null()||std::find(entryIds.begin(),entryIds.end(),entry.at("id"))!=entryIds.end())) {
-      const auto id=entry.at("id").get<std::string>();auto& item=merged["entries"][id];if(item.is_null())item={{"records",Json::array()}};
-      bool duplicate=false;for(auto& old:item.at("records"))if(old.value("kind","")==record.at("kind")&&old.value("sourceId","")==record.at("sourceId")&&old.at("frames")==record.at("frames")){duplicate=true;if(!old.contains("replayFrames")&&record.contains("replayFrames")){old["replayFrames"]=record.at("replayFrames");old["content"]=record.at("content");changed=true;}}
-      if(!duplicate){if(item["records"].size()>=32)throw std::runtime_error("한 항목의 회상 기록 한도(32개)에 도달했습니다. 기존 기록을 보존했습니다.");record["title"]=entry.at("title");record["unlockedAt"]=gallery_timestamp();item["records"].push_back(record);changed=true;}
-    }
+    auto merged=read();const bool changed=merge_record(merged,config,std::move(record),gallery_timestamp());
     if(changed){
-      const auto temp=fs::path(path.u8string()+".tmp"),backup=fs::path(path.u8string()+".bak");
+      auto temp=path;temp+=".tmp";auto backup=path;backup+=".bak";
       const auto serialized=merged.dump(2);if(serialized.size()>64*1024*1024)throw std::runtime_error("컬렉션 기록 용량 한도를 초과했습니다. 기존 파일을 보존했습니다.");
       {std::ofstream out(temp,std::ios::binary|std::ios::trunc);if(!out)throw std::runtime_error("컬렉션 기록을 쓸 수 없습니다.");out<<serialized;out.flush();if(!out)throw std::runtime_error("컬렉션 기록 저장에 실패했습니다.");}
       if(fs::exists(path)){std::error_code ec;fs::remove(backup,ec);fs::rename(path,backup);}

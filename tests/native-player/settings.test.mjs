@@ -10,7 +10,7 @@ import {exportGame} from '../../dist/packages/export-service/export.js';
 test('player preferences survive restart/load, mix buses, reveal UTF-8 and stop auto reading at choices/modals',{timeout:180000},async()=>{
  const source=resolve('tests/fixtures/projects/last-grandson-polished');
  const snapshot=await buildSnapshot(await loadProject(source));assert.equal(snapshot.ok,true);
- const content=structuredClone(snapshot.snapshot),root=await mkdtemp(resolve('.cache/player-settings-'));
+ const content=structuredClone(snapshot.snapshot),root=await mkdtemp(resolve('.cache/player-settings-한글-'));
  const runtime=resolve(process.env.NATIVE_PLAYER_TEST_RUNTIME??process.env.RAISING_NATIVE_PLAYER_RUNTIME??'dist/native-player-app');
  const e=(id,kind,x,y,width,height,extra={})=>({id,kind,x,y,width,height,...extra});
  const b=(id,action,y,extra={})=>e(id,'button',30,y,270,44,{text:id,action,autoLabel:false,...extra});

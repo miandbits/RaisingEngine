@@ -1,0 +1,7 @@
+{
+  "version": "0.1.0-preview.4",
+  "platforms": {
+    "windows": {"architecture": "x64", "channel": "unsigned-preview"},
+    "darwin": {"architecture": "arm64", "channel": "development"}
+  }
+}

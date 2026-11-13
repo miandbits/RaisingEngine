@@ -1,0 +1,16 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "mira",
+  "name": "Mira",
+  "description": "A fellow student tending the academy garden.",
+  "portraits": {},
+  "relationships": [
+    {
+      "id": "affection",
+      "label": "Affection",
+      "min": -100,
+      "max": 100,
+      "initial": 0
+    }
+  ]
+}

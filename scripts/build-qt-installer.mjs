@@ -1,12 +1,16 @@
-import {readFile,writeFile,mkdir,readdir} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,readdir,access} from 'node:fs/promises';
 import {resolve,join,dirname} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-const bundle=resolve(process.env.QT_PACKAGE_OUT||'release/qt-preview/RaisingStudio');
-const output=resolve(process.env.QT_INSTALLER_OUT||'release/qt-preview/RaisingStudio-Qt-Preview-0.1.0-x64.exe');
-const manifest=JSON.parse(await readFile(join(bundle,'package-manifest.json'),'utf8'));
-const version=JSON.parse(await readFile('config/preview-release.json','utf8')).version;
-if(!/^[0-9A-Za-z.-]+$/.test(version))throw Error('Unsafe release version');
+import {windowsPreviewCandidate} from './lib/preview-artifact-metadata.mjs';
+const {bundle,installer:output,version}=await windowsPreviewCandidate();
+const manifestBytes=await readFile(join(bundle,'package-manifest.json'));
+const manifest=JSON.parse(manifestBytes);
+if(manifest.releaseVersion!==version)throw Error('Bundle version does not match preview candidate');
+for(const file of [output,output+'.json']){
+  try{await access(file);throw Error('Choose a new installer path; existing artifacts are never overwritten.');}
+  catch(error){if(error.code!=='ENOENT')throw error;}
+}
 const product=`RaisingEngine ${version}`;
 const uninstallKey=`Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\RaisingEngine-${version}`;
 // Hash-pinned payload; never package files added after the reviewed manifest.
@@ -17,7 +21,7 @@ const escape=s=>{if(/[\r\n]/.test(s))throw Error('Newline in installer path');re
 const files=[...manifest.files.map(f=>f.path),'package-manifest.json'];
 const dirs=new Set();for(const f of files){let d=dirname(f).replaceAll('\\','/');while(d!=='.'){dirs.add(d);d=dirname(d).replaceAll('\\','/');}}
 const lines=[
- 'Unicode true','RequestExecutionLevel user','SetCompressor /SOLID lzma','Name "Raising Studio Qt Preview"',
+ 'Unicode true','RequestExecutionLevel user','SetCompressor /SOLID lzma',`Name "Raising Studio ${version}"`,
  `OutFile "${escape(output)}"`,`InstallDir "$LOCALAPPDATA\\Programs\\RaisingEngine-${version}"`,
  '!include "MUI2.nsh"',`!insertmacro MUI_PAGE_LICENSE "${escape(join(bundle,'LICENSE'))}"`,
  '!define MUI_DIRECTORYPAGE_TEXT_TOP "$(FreshDirectoryHint)"','!insertmacro MUI_PAGE_DIRECTORY','!insertmacro MUI_PAGE_INSTFILES','!insertmacro MUI_UNPAGE_CONFIRM','!insertmacro MUI_UNPAGE_INSTFILES','!insertmacro MUI_LANGUAGE "English"','!insertmacro MUI_LANGUAGE "Korean"','!insertmacro MUI_LANGUAGE "Japanese"',
@@ -53,5 +57,6 @@ await mkdir('.cache/qt-installer',{recursive:true});await mkdir(dirname(output),
 // NSIS 3.0 detects UTF-8 reliably with a BOM, including on Korean Windows.
 const script=resolve('.cache/qt-installer/preview.nsi');await writeFile(script,'\uFEFF'+lines.join('\n'));
 execFileSync(nsis,['/V2',script],{stdio:'inherit',windowsHide:true});
-const bytes=await readFile(output),result={file:output,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),signed:false,publicReleaseReady:false};
+const bytes=await readFile(output),result={file:output,releaseVersion:version,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),
+  packageManifestSha256:createHash('sha256').update(manifestBytes).digest('hex'),signed:false,publicReleaseReady:false};
 await writeFile(output+'.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));

@@ -50,46 +50,41 @@ inline QJsonArray hierarchyCanvasElements(const QJsonArray& elements,QSize refer
 inline void translateCanvasElement(QJsonObject& e,double x,double y){e["x"]=e.value("x").toDouble()+x;e["y"]=e.value("y").toDouble()+y;if(e.contains("_clipRect")){auto r=canvasClipRect(e.value("_clipRect").toObject());r.translate(x,y);e["_clipRect"]=canvasRectJson(r);}}
 inline QJsonArray canvasElements(const QJsonObject& visual,const QJsonArray& elements,QSize actual) {
   const QSize reference(visual["width"].toInt(1280),visual["height"].toInt(720));
-  QJsonArray out;
-  for(auto value:hierarchyCanvasElements(elements,reference,actual)){
-    auto instance=value.toObject();
-    if(instance["kind"]=="collection"){
+  QJsonArray out;int budget=10000;
+  std::function<void(QJsonObject,QSet<QString>,int)> append;
+  append=[&](QJsonObject instance,QSet<QString> stack,int depth){
+    if(--budget<0||depth>8)return;
+    const auto kind=instance.value("kind").toString();
+    if(kind!="component"&&kind!="collection"){out.append(instance);return;}
+    const auto componentId=instance.value("componentId").toString();
+    if(stack.contains(componentId))return;stack.insert(componentId);
+    QJsonObject component;for(auto v:visual.value("components").toArray())if(v.toObject().value("id")==componentId){component=v.toObject();break;}
+    if(component.isEmpty())return;
+    if(kind=="collection"){
       QJsonArray rows;const auto source=instance["source"].toObject();
       if(source["type"]=="table")for(auto t:visual["dataTables"].toArray())if(t.toObject()["id"]==source["tableId"])rows=t.toObject()["rows"].toArray();
       const bool placeholders=source["type"]!="table";
       if(placeholders)for(int n=0;n<3;n++)rows.append(QJsonObject{{"id",QString("preview-%1").arg(n+1)},{"values",QJsonObject{}}});
-      int columns=instance["layout"]=="grid"?qMax(1,instance["columns"].toInt(1)):1;int gap=instance["gap"].toInt(8),rh=instance["rowHeight"].toInt(180);int cw=qMax(16,(instance["width"].toInt()-(columns-1)*gap)/columns);
-      for(auto cv:visual["components"].toArray()){auto c=cv.toObject();if(c["id"]!=instance["componentId"])continue;
-        rh=instance["rowHeight"].toInt(c["height"].toInt(180));int displayRow=0;
-        for(int r=0;r<rows.size();r++){auto row=rows[r].toObject(),values=row["values"].toObject();values["id"]=row["id"];auto f=instance["rowFilter"].toObject();if(!placeholders&&!f.empty()){auto a=values[f["field"].toString()],b=f["value"];auto op=f["operator"].toString();bool pass=op=="eq"?a==b:op=="ne"?a!=b:op=="gt"?a.toDouble()>b.toDouble():op=="gte"?a.toDouble()>=b.toDouble():op=="lt"?a.toDouble()<b.toDouble():a.toDouble()<=b.toDouble();if(!pass)continue;}int y=(displayRow/columns)*(rh+gap);int x=(displayRow%columns)*(cw+gap);++displayRow;if(y+rh>instance["height"].toInt())break;
-          QJsonArray boundChildren;for(auto ch:c["elements"].toArray()){auto child=ch.toObject();for(auto bv:instance["bindings"].toArray()){auto b=bv.toObject();if(b["elementId"]!=child["id"])continue;auto p=b["property"].toString(),field=b["field"].toString();if(p=="text"||p=="label"){auto v=values[field];QString s=placeholders?"{"+field+"}":v.isString()?v.toString():v.isBool()?(v.toBool()?"true":"false"):QString::number(v.toDouble());if(b.contains("format"))s=b["format"].toString().replace("{value}",s);child[p]=s;if(p=="label")child["text"]=s;}else if(p=="imageAssetId"&&!placeholders)child[p]=values[field];else if(p=="visible"&&!placeholders&&!values[field].toBool())child["hidden"]=true;}
-            boundChildren.append(child);
-          }
-          for(auto ch:hierarchyCanvasElements(boundChildren,QSize(c["width"].toInt(),c["height"].toInt()),QSize(cw,rh))){auto child=ch.toObject();
-            child["id"]=instance["id"].toString()+"__"+row["id"].toString()+"__"+child["id"].toString();child["_componentChild"]=true;
-            translateCanvasElement(child,instance.value("x").toDouble()+x,instance.value("y").toDouble()+y);inheritCanvasElement(child,instance);out.append(child);
-          }
-        }
+      const int columns=instance["layout"]=="grid"?qMax(1,instance["columns"].toInt(1)):1,gap=instance["gap"].toInt(8),rh=instance["rowHeight"].toInt(component["height"].toInt(180)),cw=qMax(16,(instance["width"].toInt()-(columns-1)*gap)/columns);
+      int displayRow=0;
+      for(auto value:rows){if(budget<=0)break;auto row=value.toObject(),values=row["values"].toObject();values["id"]=row["id"];auto filter=instance["rowFilter"].toObject();
+        if(!placeholders&&!filter.empty()){auto a=values[filter["field"].toString()],b=filter["value"];auto op=filter["operator"].toString();bool pass=op=="eq"?a==b:op=="ne"?a!=b:op=="gt"?a.toDouble()>b.toDouble():op=="gte"?a.toDouble()>=b.toDouble():op=="lt"?a.toDouble()<b.toDouble():a.toDouble()<=b.toDouble();if(!pass)continue;}
+        const int y=(displayRow/columns)*(rh+gap),x=(displayRow%columns)*(cw+gap);++displayRow;if(y+rh>instance["height"].toInt())break;
+        QJsonArray boundChildren;for(auto ch:component["elements"].toArray()){auto child=ch.toObject();for(auto bv:instance["bindings"].toArray()){auto binding=bv.toObject();if(binding["elementId"]!=child["id"])continue;auto property=binding["property"].toString(),field=binding["field"].toString();
+          if(property=="text"||property=="label"){auto v=values[field];QString text=placeholders?"{"+field+"}":v.isString()?v.toString():v.isBool()?(v.toBool()?"true":"false"):QString::number(v.toDouble());if(binding.contains("format"))text=binding["format"].toString().replace("{value}",text);child[property]=text;if(property=="label")child["text"]=text;}
+          else if(property=="imageAssetId"&&!placeholders)child[property]=values[field];else if(property=="visible"&&!placeholders&&!values[field].toBool())child["hidden"]=true;
+        }boundChildren.append(child);}
+        for(auto ch:hierarchyCanvasElements(boundChildren,QSize(component["width"].toInt(),component["height"].toInt()),QSize(cw,rh))){auto child=ch.toObject();child["id"]=instance["id"].toString()+"__"+row["id"].toString()+"__"+child["id"].toString();child["_componentChild"]=true;translateCanvasElement(child,instance.value("x").toDouble()+x,instance.value("y").toDouble()+y);inheritCanvasElement(child,instance);append(child,stack,depth+1);}
       }
-      instance["kind"]="panel";instance["fill"]="#00000000";instance["borderWidth"]=0;out.append(instance);continue;
+    }else{
+      QJsonArray children;for(auto childValue:component["elements"].toArray()){
+        auto child=childValue.toObject();for(auto override:instance["overrides"].toArray())if(override.toObject()["elementId"]==child["id"]){auto values=override.toObject()["values"].toObject();for(auto it=values.begin();it!=values.end();++it)child[it.key()]=it.value();}children.append(child);
+      }
+      for(auto childValue:hierarchyCanvasElements(children,QSize(component["width"].toInt(),component["height"].toInt()),QSize(instance["width"].toInt(),instance["height"].toInt()))){auto child=childValue.toObject();child["id"]=instance["id"].toString()+"__"+child["id"].toString();child["_componentChild"]=true;translateCanvasElement(child,instance.value("x").toDouble(),instance.value("y").toDouble());inheritCanvasElement(child,instance);append(child,stack,depth+1);}
     }
-    if(instance["kind"]!="component"){out.append(instance);continue;}
-    for(auto v:visual["components"].toArray()) {
-      auto component=v.toObject();if(component["id"]!=instance["componentId"])continue;
-      QJsonArray children;
-      for(auto childValue:component["elements"].toArray()) {
-        auto child=childValue.toObject();const auto childId=child["id"].toString();
-        for(auto o:instance["overrides"].toArray())if(o.toObject()["elementId"]==childId){auto values=o.toObject()["values"].toObject();for(auto it=values.begin();it!=values.end();++it)child[it.key()]=it.value();}
-        children.append(child);
-      }
-      for(auto childValue:hierarchyCanvasElements(children,QSize(component["width"].toInt(),component["height"].toInt()),QSize(instance["width"].toInt(),instance["height"].toInt()))) {
-        auto child=childValue.toObject();const auto childId=child.value("id").toString();
-        child["id"]=instance["id"].toString()+"__"+childId;child["_componentChild"]=true;
-        translateCanvasElement(child,instance.value("x").toDouble(),instance.value("y").toDouble());inheritCanvasElement(child,instance);out.append(child);
-      }
-    }
-    // A transparent selection rectangle moves the complete instance as one item.
+    // Selection rectangles retain each owner's original geometry and inherited state.
     instance["kind"]="panel";instance["fill"]="#00000000";instance["borderWidth"]=0;out.append(instance);
-  }
+  };
+  for(auto value:hierarchyCanvasElements(elements,reference,actual)){if(budget<=0)break;append(value.toObject(),{},0);}
   return out;
 }

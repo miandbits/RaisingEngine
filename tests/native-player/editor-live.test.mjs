@@ -6,7 +6,7 @@ import {spawn} from 'node:child_process';
 import {setTimeout as delay} from 'node:timers/promises';
 import {QtStudioService} from '../../apps/qt-studio/service.mjs';
 
-test('embedded player advances, freezes, restores private saves and rejects ordinary loading',{skip:process.platform!=='win32'||!process.env.RAISING_NATIVE_PLAYER_RUNTIME,timeout:120000},async t=>{
+test('live player advances, freezes, restores private saves and rejects ordinary loading',{skip:!['win32','darwin'].includes(process.platform)||!process.env.RAISING_NATIVE_PLAYER_RUNTIME,timeout:120000},async t=>{
   await mkdir('.cache/editor-live-test',{recursive:true});const out=await mkdtemp(resolve('.cache/editor-live-test/run-'));
   const root=join(out,'project');await cp('tests/fixtures/projects/direction-lab',root,{recursive:true});
   const original=await readFile(join(root,'project.json'));
@@ -16,9 +16,9 @@ test('embedded player advances, freezes, restores private saves and rejects ordi
   const session=join(out,'session');await mkdir(session);const ignoredSave=join(out,'original.json');await writeFile(ignoredSave,'preserve me');
   const child=spawn(p.executable,['--bundle',p.directory,'--save',ignoredSave,'--hidden','--preview-screen',p.screenId,'--preview-inspection',p.inspection,'--editor-live-preview',session],{windowsHide:true});
   t.after(()=>child.kill());let buffer='',stderr='',ready=false;const reports=new Map();
-  child.stderr.on('data',b=>stderr+=b);child.stdout.on('data',b=>{buffer+=b;while(buffer.includes('\n')){const at=buffer.indexOf('\n'),line=buffer.slice(0,at);buffer=buffer.slice(at+1);try{const r=JSON.parse(line).editorPreview;if(r?.ready)ready=true;else if(r)reports.set(r.serial,r);}catch{}}});
+  child.stderr.on('data',b=>stderr+=b);child.stdout.on('data',b=>{buffer+=b;while(buffer.includes('\n')){const at=buffer.indexOf('\n'),line=buffer.slice(0,at);buffer=buffer.slice(at+1);try{const r=JSON.parse(line).editorPreview;if(r?.ready)ready=r;else if(r)reports.set(r.serial,r);}catch{}}});
   async function until(predicate){for(let i=0;i<1000;i++){if(predicate())return;if(child.exitCode!==null)throw Error(stderr||'Player exited');await delay(20);}throw Error('Editor preview timed out: '+stderr);}
-  await until(()=>ready);let serial=0;
+  await until(()=>ready);if(process.platform==='darwin')assert.equal(ready.embedded,false);let serial=0;
   async function command(value){const id=++serial;await writeFile(join(session,'next.json'),JSON.stringify({...value,serial:id}));await rename(join(session,'next.json'),join(session,'control.json'));await until(()=>reports.has(id));await writeFile(join(out,'last-report.json'),JSON.stringify(reports.get(id)));return reports.get(id);}
   await command({type:'pause',paused:false});await delay(100);
   const before=await command({type:'inspect'});assert.equal(before.ui.preview.active,false);

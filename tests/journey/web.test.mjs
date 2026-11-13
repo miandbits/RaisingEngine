@@ -114,7 +114,7 @@ test('exported browser executes C++ Wasm and exchanges real download/upload save
   await page.waitForFunction(() => [...document.querySelectorAll('.visual-stage img')].every(image => image.complete && image.naturalWidth > 0));
   await page.waitForTimeout(450);
   await page.screenshot({ path: resolve(output, 'wasm-relationship-event.png') });
-  await click(page, '계속');
+  await click(page, '이야기 계속');
   await page.locator('.visual-stage[data-screen=city]').waitFor();
   const settled = await state(page);
   assert.equal(settled.relationships.mentor.trust, 15);
@@ -144,7 +144,7 @@ test('exported browser executes C++ Wasm and exchanges real download/upload save
   await touch.locator('.visual-stage[data-screen=schedule]').waitFor();
   const schedules=touch.locator('.visual-stage select');assert.equal(await schedules.count(),3);
   for(let i=0;i<3;i++)await schedules.nth(i).selectOption('rest');
-  await touch.getByRole('button',{name:'일정 확정 / 활동 시작',exact:true}).tap();
+  await touch.getByRole('button',{name:'일정 확정',exact:true}).tap();
   await touch.getByRole('button',{name:'환경 설정',exact:true}).tap();
   await touch.getByRole('dialog').waitFor();await touch.waitForTimeout(200);
   const paused=await state(touch);await touch.waitForTimeout(1100);assert.deepEqual(await state(touch),paused);

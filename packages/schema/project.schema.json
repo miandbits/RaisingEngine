@@ -42,7 +42,7 @@
     "startMonth": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 12
+      "maximum": 60
     },
     "durationMonths": {
       "type": "integer",
@@ -564,6 +564,66 @@
           "initialValueId",
           "values"
         ]
+      }
+    },
+    "calendar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "monthsPerYear",
+        "daysPerMonth"
+      ],
+      "properties": {
+        "monthsPerYear": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "daysPerMonth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 366
+        },
+        "startWeekday": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        "yearLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "\\S"
+        },
+        "monthLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "\\S"
+        },
+        "periodLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "\\S"
+        },
+        "dayLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "\\S"
+        },
+        "weekdayLabels": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "\\S"
+          }
+        }
       }
     }
   },

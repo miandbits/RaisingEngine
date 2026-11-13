@@ -1,0 +1,3 @@
+// Generated from config/presentation-policy.json.
+#pragma once
+inline constexpr const char* raising_presentation_policy=R"policy({"version":"paint-layout-v1","root":["width","height"],"style":["fontSize","color","fill","radius","align","fontAssetId","surface","padding","borderWidth","borderColor","hoverFill","pressedFill","disabledColor"],"element":["label","x","y","width","height","fit","opacity","fontSize","color","fill","radius","align","fontAssetId","surface","padding","borderWidth","borderColor","hoverFill","pressedFill","disabledColor","anchorX","anchorY","styleId","controlStyleId","gap","rowHeight","columns","meterThickness"],"staticTextKinds":["text","button"]})policy";

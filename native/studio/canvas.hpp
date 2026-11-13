@@ -49,6 +49,7 @@ private:
   QJsonArray sourceElements;
   QMap<QGraphicsItem*,QPointF> dragStart;
   QPoint dragDelta;
+  QPointF runtimeScale{1,1};
   QSize canvasSize{1280, 720};
   QMap<QString, QPixmap> imageCache;
   bool refreshing = false, autoFit = true, panning = false;

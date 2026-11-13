@@ -1,4 +1,6 @@
 #include "project-manager.hpp"
+#include "release-center.hpp"
+#include <QTimer>
 #include <QComboBox>
 #include <QDir>
 #include <QFile>
@@ -59,7 +61,8 @@ ProjectManager::ProjectManager(const QString &engineRoot, QWidget *parent)
   layout->setContentsMargins(28, 24, 28, 24);
   auto title = new QLabel(tr("Raising Studio"));
   title->setStyleSheet("font-size:28px;font-weight:700;");
-  layout->addWidget(title);
+  auto titleRow=new QHBoxLayout;titleRow->addWidget(title,1);auto identityButton=new QPushButton(tr("Raising Studio 정보…"));identityButton->setObjectName("projectEditorIdentity");titleRow->addWidget(identityButton);layout->addLayout(titleRow);
+  connect(identityButton,&QPushButton::clicked,this,[this]{StudioReleaseCenter::showIdentity(this,[this](QString method,QJsonObject params,StudioReleaseCenter::Done done){auto timer=new QTimer(this);timer->setInterval(50);connect(timer,&QTimer::timeout,this,[this,timer,method,params,done]{if(bridge.busy()||bridge.backgroundBusy())return;timer->stop();timer->deleteLater();bridge.requestBackground(method,params,done);});timer->start();});});
   layout->addWidget(editorLanguagePicker(this));
   layout->addWidget(new QLabel(tr("육성 시뮬레이션 제작 도구  ·  프로젝트를 선택해 작업을 시작하세요.")));
   controls = new QWidget;
@@ -95,6 +98,7 @@ ProjectManager::ProjectManager(const QString &engineRoot, QWidget *parent)
   auto createGroup = new QGroupBox(tr("새 프로젝트"));
   auto createLayout = new QVBoxLayout(createGroup);
   base = new QComboBox; base->setObjectName("launcherTemplate");
+  base->addItem(tr("My first raising game · recommended"), "my-first-raising-game");
   base->addItem(tr("최소 일정 육성 · 2개월"), "academy-demo");
   base->addItem(tr("일정 육성 · 12개월"), "academy-year");
   base->addItem(tr("화면·UI 제작"), "academy-visual");

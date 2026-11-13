@@ -1,4 +1,4 @@
-# Save slots and automatic checkpoints (Windows source builds)
+# Save slots and automatic checkpoints
 
 Add **Save slots · write record** or **Save slots · load record** from the Qt
 element palette to an authored modal screen. Connect ordinary `openModal` buttons
@@ -9,10 +9,12 @@ modal when slot mode is enabled; they do not overwrite or load immediately.
 The widget uses its normal position, size, font, `color`, `fill`, `hoverFill`
 (selection/accent), and `borderColor`. A 1160×500 widget works on a 1280×720
 canvas. Use fit scaling for smaller windows. It supports reusable components.
-The slot cards show a captured gameplay screen, game date, screen/location name,
-and each record's local wall-clock timestamp. Captures preserve 16:9
-proportions; they do not contain the save/menu overlay. Names and dates are frozen
-at save time. Legacy records without metadata show a date and no screenshot.
+The slot cards show the game date, screen/location name, and save timestamp.
+Native players also capture the gameplay screen. The Web player truthfully shows
+**No captured image** and stores an empty thumbnail reference; it does not capture
+the DOM or include a screenshot library. Captures preserve 16:9
+proportions; they do not contain the save/menu overlay. Names are frozen at save time. Custom calendar dates use the current translated
+calendar labels when browsing records. Legacy records without metadata show a date and no screenshot.
 
 Optional project configuration:
 
@@ -39,11 +41,9 @@ game, choices, activity results and other rule-changing actions. Screen/location
 navigation and consecutive dialogue lines do not consume the ring. Finishing a
 story creates another checkpoint. Modal browsing, recollection playback and
 loading a record do not themselves create checkpoints. Failed automatic writes
-report an error and do not replace manual records. The legacy mobile lifecycle
-recovery file is separate from this browser; this change does not claim mobile
-or web support.
+report an error and do not replace manual records. The legacy mobile lifecycle recovery file is separate from the slot browser.
 
-Manual slot 1 uses the existing `--save` file. Other files are under
+On native players, manual slot 1 uses the existing `--save` file. Other files are under
 `<save-stem>.slots/`, so independent playtest profiles cannot collide. Each save
 atomically replaces its JSON envelope and retains a `.bak`. Screenshot metadata
 is in `playerPresentation.saveRecord`; the image is an immutable PNG written
@@ -52,8 +52,66 @@ backups are retained; obsolete captures are pruned. Nothing is written to the
 installed game's content/assets directory. Existing single-file projects and
 save envelopes without this optional metadata retain their behavior.
 
-Requires `save-slots-v1`. Export rejects incompatible Windows and web runtimes.
+The Web player stores each record in an atomic IndexedDB transaction, isolated by
+browser origin, deployment directory and `gameId`. Updating content keeps old
+records visible as incompatible; it never silently replays against different
+content. Another tab changing a record invalidates its pending confirmation.
+Failed writes preserve the previous record. Storage failure is reported; the
+player keeps running and **Download backup** remains available. Browser storage
+is tied to that browser profile and may be cleared by its owner or storage policy.
+Download a backup before moving hosting locations or clearing browser data.
+
+**Download backup** and **Import backup** use the existing portable JSON save
+format and replay validation. Importing during a game requires confirmation.
+Importing or loading does not create an automatic checkpoint; explicitly save a
+manual record to retain the imported position in this browser. Screenshots are
+not included in portable JSON files. Records without screenshots remain valid
+on native players. No cloud sync or cross-device storage is implied.
+
+On iOS runtimes with documented Files-backup support, record widgets also provide
+**Import backup** and **Export current progress** through the system Files picker.
+See [Portable save backups](portable-save-backups.md) for player steps and the
+distinction between a portable copy and an in-app record.
+
+Requires `save-slots-v1`. Export rejects incompatible native and Web runtimes.
+This capability includes authored save/load modals, their open/close controls,
+paging, keyboard focus, decorative images/text/statistics, and backup controls.
+Gameplay widgets inside a record modal, ordinary modals, scrolling, sorting, selection and
+other advanced composition still require their separate runtime support.
 This feature is not in the previously published preview binary.
+
+### Storage and backup guidance without platform-specific screens
+
+Select a text element, then choose **Save location and backup guidance** in
+**Text binding** or **Find and bind display data…**. The serialized binding
+is `save-storage-guidance`. It can also live in a shared component, including
+nested components. **Batch text bindings** copies the
+connection to matching text IDs while retaining their placement and style.
+The connection replaces the displayed text; it does not rewrite the author's
+original text, change a save, or change storage settings.
+
+The player selects Korean, English or Japanese guidance using its current
+locale and its actual storage capabilities:
+
+- Web record slots explain browser-local storage and **Download backup**.
+  A storage-access failure or the last failed write produces recovery guidance;
+  being able to read records does not imply that a later write will succeed.
+- A Web game using the older file-only save flow describes downloaded save files.
+- Native desktop players describe device-local records and do not advertise
+  unavailable Files or download controls.
+- iOS players with an available Files-backup backend and a currently displayed,
+  enabled save/load widget describe **Export current progress**. Hidden widgets,
+  unused components and widgets omitted from the reading layout do not advertise
+  backup controls. The guidance does not claim automatic synchronization.
+- The editor canvas and authoring preview show a neutral reminder to check the
+  exported player's storage and backup options.
+
+This binding additionally requires `save-storage-guidance-v1`. Export rejects
+an older runtime that lacks it, even if that runtime supports ordinary save
+slots. Existing unbound text remains authored text; it is never searched for
+platform names or silently replaced. When adopting the binding, remove any
+separate obsolete platform-specific instructions through the editor and check
+the text's space in each supported locale and phone layout.
 
 Verification:
 
@@ -66,3 +124,16 @@ The native test drives real rendered buttons, checks exact state restoration,
 cancel behavior, ring retention, metadata and PNG files, damaged-record
 isolation, legacy records and old-renderer rejection. Qt `saveSlotsAuthoring`
 checks palette creation through the normal authoring service.
+
+Web verification:
+
+```sh
+node --test tests/native/web-save-slots.test.mjs tests/runtime/native-slot-metadata.test.mjs
+RAISING_BROWSER_CHANNEL=chrome node --test tests/journey/save-slots-web.test.mjs
+```
+
+The browser test drives authored controls through a normal export and verifies
+IndexedDB persistence across reload, exact restored state, ring retention,
+confirmation cancellation and conflicts, damaged records, quota failures,
+backup download/import and unavailable storage. On CI, omit
+`RAISING_BROWSER_CHANNEL` to use Playwright's installed Chromium.

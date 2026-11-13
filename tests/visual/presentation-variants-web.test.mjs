@@ -22,12 +22,12 @@ test('Qt-authored variants change in the real web player and survive download/up
   // Inspect live DOM rather than assuming the number or order of timetable controls.
   const count=await selects.count();assert.ok(count>0);
   for(let i=0;i<count;i++)await selects.nth(i).selectOption('rest');
-  await click('계속');if((await state()).phase==='ready')await click('계속');
+  await click('일정 확정');if((await state()).phase==='ready')await click('활동 시작');
   await page.getByText('휴식 중 · 기운을 회복한다',{exact:true}).waitFor();assert.equal((await state()).phase,'activity-result');
   const expected=await state();const folder=resolve('output/playwright/presentation-variants');await mkdir(folder,{recursive:true});
   await page.screenshot({path:resolve(folder,'activity-result.png')});
   const download=page.waitForEvent('download');await click('저장');const save=resolve(folder,'web-save.json');await(await download).saveAs(save);
-  await click('다음으로');await page.getByText('기본 표현',{exact:true}).waitFor();
+  await click('결과 확인 · 다음');await page.getByText('기본 표현',{exact:true}).waitFor();
   const chooser=page.waitForEvent('filechooser');await click('불러오기');await(await chooser).setFiles(save);
   await page.getByText('휴식 중 · 기운을 회복한다',{exact:true}).waitFor();assert.deepEqual(await state(),expected);assert.equal(await page.locator('.visual-stage').getAttribute('data-screen'),beforeScreen);
   await page.setViewportSize({width:800,height:600});await page.screenshot({path:resolve(folder,'restored.png')});assert.deepEqual(await state(),expected);assert.deepEqual(errors,[]);

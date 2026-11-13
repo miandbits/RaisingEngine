@@ -16,18 +16,24 @@ export interface HistoricalComparison extends RouteComparison {
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const plain=(v:any):v is Row=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const MAX_BYTES=64*1024*1024;
-export async function captureGoalBaseline(content:ContentSnapshot,route:unknown,name:string,runtime:string):Promise<GoalBaseline>{
+export interface BaselineCaptureOptions {timeoutMs?:number;cancelled?:()=>boolean;progress?:(value:{executed:number;commands:number;captureStage:'replay'|'details'})=>void}
+export async function captureGoalBaseline(content:ContentSnapshot,route:unknown,name:string,runtime:string,options:BaselineCaptureOptions={}):Promise<GoalBaseline>{
   if(typeof name!=='string'||!name.trim()||name.length>120)throw Error('기준 기록 이름은 1~120자여야 합니다.');
-  const started=Date.now(),pair=await compareGoalRoutes(content,null,route),trace=pair.right,records:Row[]=[];
+  const timeoutMs=options.timeoutMs??60000;
+  if(!Number.isFinite(timeoutMs)||timeoutMs<1||timeoutMs>3600000)throw Error('기준 기록 시간 제한이 올바르지 않습니다.');
+  const started=Date.now(),pair=await compareGoalRoutes(content,null,route,{timeoutMs,...(options.cancelled?{cancelled:options.cancelled}:{}),progress:value=>options.progress?.({...value,captureStage:'replay'})}),trace=pair.right,records:Row[]=[];
   let bytes=Buffer.byteLength(JSON.stringify({content,trace}));
   for(let i=0;i<trace.steps.length;i++){
     if(i%16===0)await new Promise<void>(r=>setImmediate(r));
-    if(Date.now()-started>60000)throw Error('기준 기록 생성이 60초를 넘었습니다. 경로를 나누어 저장하세요.');
+    if(options.cancelled?.())throw Object.assign(Error('기준 기록 생성을 취소했습니다.'),{code:'CANCELLED'});
+    if(Date.now()-started>timeoutMs)throw Object.assign(Error('기준 기록 생성 시간 제한을 넘었습니다. 경로를 나누어 저장하세요.'),{code:'TIMEOUT'});
+    if(i%16===0)options.progress?.({executed:i,commands:trace.steps.length-1,captureStage:'details'});
     const {before,after,changes,step,...record}=routeStepDetails(pair,trace,i)!;
     bytes+=Buffer.byteLength(JSON.stringify(record));
     if(bytes>MAX_BYTES)throw Error('기준 기록이 64 MiB를 넘습니다. 더 짧은 경로로 나누세요.');
     records.push(record);
   }
+  options.progress?.({executed:trace.steps.length-1,commands:trace.steps.length-1,captureStage:'details'});
   // Detach everything from the editor and comparison cache. Old observations are never re-evaluated.
   const payload=JSON.parse(JSON.stringify({version:1,id:randomUUID(),name:name.trim(),createdAt:new Date().toISOString(),runtime,content,trace:{...trace,recordedDetails:records}}));
   return {...payload,checksum:hash(payload)};
@@ -69,7 +75,7 @@ export async function compareGoalBaseline(content:ContentSnapshot,input:unknown,
   let firstCheckDifference:number|null=null;const changedSteps:number[]=[];const records:Row[]=[];let recordBytes=0;
   for(let i=0;i<Math.max(pair.left!.steps.length,pair.right.steps.length);i++){
     if(i%16===0)await new Promise<void>(r=>setImmediate(r));
-    if(Date.now()-started>timeoutMs)throw Error('기준 비교 검사 시간이 60초를 넘었습니다.');
+    if(Date.now()-started>timeoutMs)throw Object.assign(Error(`기준 비교 시간 제한(${timeoutMs}ms)을 넘었습니다. 저장 검사에서 제한을 늘려 다시 검사하세요.`),{code:'TIMEOUT',timeoutMs});
     const a=i<pair.left!.steps.length?routeStepDetails(pair,pair.left,i):null,b=i<pair.right.steps.length?routeStepDetails(pair,pair.right,i):null;
     if(b){const {before,after,changes,step,...record}=b;recordBytes+=Buffer.byteLength(JSON.stringify(record));if(recordBytes>MAX_BYTES)throw Error('현재 검사 추적이 64 MiB를 넘습니다. 경로를 나누세요.');records.push(record);}
     if(hash(a?observation(a):null)!==hash(b?observation(b):null)){changedSteps.push(i);firstCheckDifference??=i;}

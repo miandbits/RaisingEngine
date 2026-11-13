@@ -6,6 +6,8 @@
 /release export-ignore
 /docs/evidence export-ignore
 
-# The schema generator writes LF on every host. Match checkout bytes so a
+# The type generator writes LF on every host. Match checkout bytes so a
 # clean Windows build does not report unchanged generated types as dirty.
 /packages/schema/generated/*.ts text eol=lf
+/packages/visual/presentation-policy.generated.ts text eol=lf
+/native/player/presentation-policy.generated.hpp text eol=lf

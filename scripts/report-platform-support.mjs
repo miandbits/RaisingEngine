@@ -1,13 +1,15 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-const roots={windows:process.env.RAISING_NATIVE_PLAYER_RUNTIME||'dist/native-player-authoring-preview',web:process.env.WEB_OUT||'dist/web'};
-const report={version:1,generatedAt:new Date().toISOString(),meaning:'Declared capabilities are export gates, not hardware certification. This command reads manifests only; documented test evidence is in release-durability.md.',runtimes:{},platforms:{
+import {fileURLToPath} from 'node:url';
+import {readEditorIdentity} from '../apps/qt-studio/editor-identity.mjs';
+const roots={macos:process.env.RAISING_MACOS_PLAYER_RUNTIME||(process.platform==='darwin'?process.env.RAISING_NATIVE_PLAYER_RUNTIME||'dist/native-player-app':'dist/macos-player-app'),windows:process.env.RAISING_WINDOWS_PLAYER_RUNTIME||(process.platform==='win32'?process.env.RAISING_NATIVE_PLAYER_RUNTIME||'dist/native-player-app':'dist/windows-player-app'),web:process.env.RAISING_WEB_PLAYER_RUNTIME||process.env.WEB_OUT||'dist/web'};
+const report={version:1,generatedAt:new Date().toISOString(),editorIdentity:await readEditorIdentity(fileURLToPath(new URL('..',import.meta.url))),meaning:'Declared capabilities are export gates, not hardware certification. This command reads manifests only and performs no acceptance tests. Platform verification descriptions are dated reference scope; see docs/development/platform-support.md.',runtimes:{},platforms:{
   windows:{stage:'capabilities-present',verification:'native integration tests and Qt authoring tests; see release-durability.md'},
   web:{stage:'capabilities-present',verification:'Chromium Wasm play, download/upload, touch emulation; other browsers unverified'},
   android:{stage:'source-preparation-tested',verification:'Packaging tests use a fake SDK; no APK/device claim'},
-  ios:{stage:'unverified',verification:'Requires macOS/Xcode and device build'},
-  macos:{stage:'unverified',verification:'Standalone native distribution not tested in this session'},
+  ios:{stage:'simulator-tested',verification:'Source export, simulator touch routes/save restoration and unsigned arm64 device build; see platform-support.md. Physical devices and signing unverified'},
+  macos:{stage:'apple-silicon-tested',verification:'Qt GUI journey, standalone dependency audit, exported routes and saves; see platform-support.md. Intel and notarization unverified'},
   linux:{stage:'unverified',verification:'Standalone native distribution not tested in this session'},
   switch:{stage:'blocked-sdk',verification:'No approved SDK or development hardware'},
   playstation:{stage:'blocked-sdk',verification:'No approved SDK or development hardware'},

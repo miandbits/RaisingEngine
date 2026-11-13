@@ -1,8 +1,10 @@
-# Finding authoring tools
+# Finding commands and authoring tools
 
-Open **Design → Find authoring tools…** or press **Ctrl+K**. Search using a tool name or words describing the task. Multiple words narrow the results; for example, the Korean query `인물 일정` finds the roster and activity assignment tool. The search includes translated names, categories and available tool descriptions.
+Open **Design → Find commands and tools…** or press **Cmd+K** on macOS or **Ctrl+K** on Windows. Search using a tool name or words describing the task. Multiple words narrow the results; for example, the Korean query `인물 일정` finds the roster and activity assignment tool. The search includes translated command names, menu paths, available tool descriptions and native keyboard shortcuts. It covers File commands such as Save and Export, Play, validation, panel navigation, screen and canvas tools, and authoring workspaces. Shared menu and toolbar actions appear once.
 
-Select a result and press **Enter** or **Open**. **Esc** cancels. Unavailable tools remain disabled; search does not bypass their requirements.
+Use **↑/↓** to select a result, then press **Enter** or **Open**. **Esc** cancels and returns focus to the field or panel you were using. Unavailable commands remain disabled, including commands inside a disabled menu or toolbar. Search uses the original command, so Save, export and unsaved-change guards still apply. Active IME composition must finish before the finder can open.
+
+Toolbar choices such as preview language, screen size and the element palette are searchable. The current choice is marked; choosing another item follows the same selection handler as its toolbar control.
 
 The Design menu groups tools into characters/growth, story/rules, screens/presentation, exploration/combat/trading, validation/regression and starters/samples. Story authoring, the integrated workspace and selected-element connections remain near the top. Existing toolbar buttons and action identifiers are preserved.
 
@@ -14,8 +16,8 @@ The **Authoring tools** menu in the menu bar and the first **Authoring tools**
 button in the main toolbar expose every main-toolbar command, even when it does
 not fit on the screen. The menu also includes the preview language selector and
 **＋ Element** palette. It uses the original commands, so disabled tools remain
-disabled and shortcuts and checked states are preserved. **Find authoring tools…**
-is available at the top of this menu for the wider set of authoring workspaces.
+disabled and shortcuts and checked states are preserved. **Find commands and tools…**
+is available at the top of this menu for commands across the editor.
 
 Qt's automatic toolbar overflow remains available; the explicit menu provides a
 labelled alternative to its small chevron. Changing the window size does not edit
@@ -30,11 +32,13 @@ it does not replace gameplay or export tests.
 
 ## Verification
 
-- Qt widget test: keyword matching, original action dispatch, disabled/no-result handling, cancellation, categories and shortcut.
+- Qt widget tests: keyword matching, original action dispatch, duplicate suppression, live availability, disabled menu/widget controls, cancellation/focus restoration, menu paths, native shortcuts and toolbar choices.
+- Isolated-project test: a focused inspector edit → command search → Save → reopen preserves the edited Unicode label.
+- Actual Studio command inventory at 1000×680 includes Save, Export, Play, Validate, panel restore and canvas/palette actions.
 - Korean, English and Japanese translation coverage.
 - Windows editor: Ctrl+K → task query → Enter → roster tool → cancel, using a separately authored three-character project.
 
-Search is a tool finder, not a natural-language project editor. Tool descriptions are supplementary search terms; they are not a complete synonym dictionary.
+Search matches command names and descriptions; it does not interpret natural-language editing instructions or promise a complete synonym dictionary. Automated coverage does not establish independent designer discoverability.
 
 ## Inspecting dynamic layouts before playing
 

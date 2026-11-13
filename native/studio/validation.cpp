@@ -37,6 +37,8 @@ void StudioWindow::openValidationLocation(QJsonObject diagnostic,int revision,QS
   if(document.isEmpty()||document["kind"]=="extension"||document["kind"]=="pluginLock"){
     validationSummary->setText(diagnostic["file"].toString()+diagnostic["pointer"].toString()+"\n"+diagnostic["message"].toString()+"\n"+tr("이 위치는 일반 필드 편집 대상이 아닙니다. 파일 또는 플러그인 진단에서 수정한 뒤 다시 검증하세요."));return;
   }
+  if(document["kind"]=="project"&&diagnostic.value("code")=="UI_READING_HISTORY_REQUIRED"){editProjectSettings(true);return;}
+  if(document["kind"]=="project"&&(diagnostic.value("code")=="UI_RESUME_CONTEXT_REQUIRED"||diagnostic.value("code").toString().startsWith("RESUME_CONTEXT_")||diagnostic.value("pointer").toString().startsWith("/visual/resumeContext"))){editProjectSettings(true);return;}
   QStringList parts;if(!ValidationLocation::tokens(diagnostic["pointer"].toString(),parts)){validationSummary->setText(tr("편집 위치를 찾을 수 없습니다. 다시 검증하세요."));return;}
   // Also reveal the screen/element behind the precise field inspector.
   if(document["kind"]=="project"&&parts.size()>=3&&parts[0]=="visual"&&parts[1]=="screens"){

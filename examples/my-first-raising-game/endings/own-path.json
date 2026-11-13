@@ -1,0 +1,23 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "own-path",
+  "label": "A path of your own",
+  "requirements": {
+    "op": "always"
+  },
+  "priority": 0,
+  "entryNodeId": "reflection",
+  "nodes": [
+    {
+      "id": "reflection",
+      "type": "dialogue",
+      "speakerId": null,
+      "text": "Elin welcomes you at the academy gates. Every season teaches us something, she says. Rowan leaves with new experiences and a future still to write.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end"
+    }
+  ]
+}

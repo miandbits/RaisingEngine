@@ -3,12 +3,15 @@ import {mkdir,mkdtemp,readFile,writeFile,cp,unlink,access} from 'node:fs/promise
 import {resolve,join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
+import {windowsPreviewCandidate} from './lib/preview-artifact-metadata.mjs';
 await mkdir('.cache/qt-release',{recursive:true});
 const root=await mkdtemp(resolve('.cache/qt-release/run-')),installed=join(root,'Installed Preview'),evidence=join(root,'evidence');
 const portable=process.argv.includes('--portable');
-await mkdir(evidence);const installer=resolve(process.env.QT_INSTALLER_OUT||'release/qt-preview/RaisingStudio-Qt-Preview-0.1.0-x64.exe');
+const creatorPilot=process.argv.includes('--creator-pilot');
+await mkdir(evidence);
+const {installer,bundle}=await windowsPreviewCandidate();
 const run=(exe,args,env=process.env,timeout=120000)=>{const r=spawnSync(exe,args,{env,windowsHide:true,windowsVerbatimArguments:args.some(a=>a.startsWith('/D=')||a.startsWith('_?=')),encoding:'utf8',timeout});assert.equal(r.status,0,JSON.stringify({exe,status:r.status,error:r.error?.message,stdout:r.stdout?.slice(-2000),stderr:r.stderr?.slice(-2000)}));return r;};
-if(portable)await cp(resolve(process.env.QT_PACKAGE_OUT||'release/qt-preview/RaisingStudio'),installed,{recursive:true,errorOnExist:true});
+if(portable)await cp(bundle,installed,{recursive:true,errorOnExist:true});
 else run(installer,['/S',`/D=${installed}`]);await access(join(installed,'RaisingStudioQt.exe'));
 if(!portable){
 const retry=spawnSync(installer,['/S',`/D=${installed}`],{windowsHide:true,windowsVerbatimArguments:true,encoding:'utf8',timeout:30000});assert.equal(retry.status,2,'existing install directory must not be overwritten');
@@ -20,21 +23,72 @@ if(!portable){await access(shortcut);const registration=run('reg.exe',['query',r
 for(const f of manifest.files)assert.equal(createHash('sha256').update(await readFile(join(installed,f.path))).digest('hex'),f.sha256,f.path);
 const env={...process.env,PATH:process.env.SystemRoot+'\\System32',QT_QPA_PLATFORM:'offscreen',RAISING_QT_TEST:'1',RAISING_RELEASE_EVIDENCE:evidence,RAISING_TEST_UI_LANGUAGE:process.env.RAISING_TEST_UI_LANGUAGE||'ko',RAISING_EDITOR_SETTINGS:join(evidence,'editor-settings.ini')};
 for(const name of Object.keys(env))if((name.startsWith('RAISING_')&&!['RAISING_QT_TEST','RAISING_RELEASE_EVIDENCE','RAISING_TEST_UI_LANGUAGE','RAISING_EDITOR_SETTINGS'].includes(name))||['QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH','NODE_PATH','NODE_OPTIONS'].includes(name))delete env[name];
+let pilot, source, testedArtifact, launcherFailure;
+if (creatorPilot) {
+  pilot = await import('./lib/installed-creator-pilot.mjs');
+  const candidate = JSON.parse(await readFile('config/preview-candidate.json','utf8'));
+  const commit = run('git',['rev-parse','HEAD']).stdout.trim();
+  const tree = run('git',['rev-parse','HEAD^{tree}']).stdout.trim();
+  assert.equal(manifest.releaseVersion, candidate.version);
+  assert.equal(manifest.editorIdentity.distribution.releaseVersion, candidate.version);
+  assert.equal(manifest.editorIdentity.distribution.platform, 'win32');
+  assert.equal(manifest.editorIdentity.distribution.arch, candidate.platforms.windows.architecture);
+  assert.equal(manifest.editorIdentity.source.dirty, false);
+  assert.equal(manifest.sourceCommit, commit);
+  assert.equal(manifest.editorIdentity.source.commit, commit);
+  assert.equal(manifest.editorIdentity.source.tree, tree);
+  assert.equal(manifest.publicReleaseReady, false);
+  source = {commit, tree};
+  testedArtifact = {packageManifestSha256:await pilot.sha256(join(installed,'package-manifest.json'))};
+  if (!portable) {
+    const installerMeta = JSON.parse(await readFile(installer+'.json','utf8'));
+    testedArtifact.installerSha256 = await pilot.sha256(installer);
+    assert.equal(testedArtifact.installerSha256, installerMeta.sha256);
+    assert.equal(testedArtifact.packageManifestSha256, installerMeta.packageManifestSha256);
+  }
+  env.RAISING_RELEASE_CREATOR_PILOT = '1';
+  const powershell = join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe');
+  try {
+    run(powershell,['-NoProfile','-ExecutionPolicy','RemoteSigned','-File',resolve('scripts/test-windows-editor-launch.ps1'),'-Editor',join(installed,'RaisingStudioQt.exe'),'-Evidence',evidence,'-Locale',env.RAISING_TEST_UI_LANGUAGE],env,60000);
+  } catch (error) {
+    launcherFailure = error;
+    console.error(error.message);
+  }
+}
 // Only the test driver and QtTest DLL are temporary; the editor/service/player use installed files.
 const driver=join(installed,'release-workflow-test.exe'),testDll=join(installed,'Qt6Test.dll'),offscreen=join(installed,'platforms/qoffscreen.dll');
 await cp(resolve(process.env.QT_STUDIO_OUT||'dist/qt-studio','qt-studio-test.exe'),driver);
 await cp(process.env.QT_VALIDATION_KIT?resolve(process.env.QT_VALIDATION_KIT,'Qt6Test.dll'):resolve(process.env.QT_ROOT||'C:/Qt/6.10.1/mingw_64','bin/Qt6Test.dll'),testDll);
 await cp(process.env.QT_VALIDATION_KIT?resolve(process.env.QT_VALIDATION_KIT,'qoffscreen.dll'):resolve(process.env.QT_ROOT||'C:/Qt/6.10.1/mingw_64','plugins/platforms/qoffscreen.dll'),offscreen);
+if (creatorPilot) testedArtifact.qtDriverSha256 = await pilot.sha256(driver);
 try{run(join(installed,'RaisingStudioQt.exe'),['--help'],env);run(driver,['releasePackageWorkflow','-o',join(evidence,'qt-tests.txt')+',txt'],env,180000);}finally{await unlink(driver);await unlink(testDll);await unlink(offscreen);}
 const workflow=JSON.parse(await readFile(join(evidence,'qt-workflow.json'),'utf8'));assert.ok(workflow.ok);
 const game=join(evidence,'windows'),steps=join(evidence,'native-steps.json'),report=join(evidence,'native-report.json'),save=join(evidence,'play-save.json');
+let creatorProof;
+if (creatorPilot) {
+  assert.deepEqual(workflow.editorIdentity.source, manifest.editorIdentity.source);
+  assert.deepEqual(workflow.editorIdentity.distribution, manifest.editorIdentity.distribution);
+  assert.equal(workflow.editorIdentity.engineVersion, manifest.engineVersion);
+  assert.equal(workflow.editorLanguage, env.RAISING_TEST_UI_LANGUAGE);
+  creatorProof = await pilot.verifyInstalledCreatorPilot({run:(exe,args)=>run(exe,args,env),evidence,workflow});
+  for (const release of Object.values(creatorProof.releases)) {
+    assert.deepEqual(release.engineIdentity.source, manifest.editorIdentity.source);
+    assert.equal(release.engineIdentity.distribution.releaseVersion, manifest.releaseVersion);
+  }
+} else {
 await writeFile(steps,JSON.stringify([{click:'start'},{checkpoint:'started'},{click:'visit-city'},{checkpoint:'before-save'},{key:'F5'},{checkpoint:'saved'},{click:'visit-market'},{checkpoint:'market'},{key:'F9'},{checkpoint:'restored',screenshot:join(evidence,'restored.png')}]));
 run(join(game,'RaisingPlayer.exe'),['--bundle',game,'--save',save,'--hidden','--automation',steps,'--report',report],env);
 const played=JSON.parse(await readFile(report,'utf8'));assert.ok(played.ok,JSON.stringify(played));
 assert.equal(played.steps.find(s=>s.command.checkpoint==='before-save').ui.state.gameplay.locationId,'city');
 assert.equal(played.steps.find(s=>s.command.checkpoint==='market').ui.state.gameplay.locationId,'market');
 assert.deepEqual(played.steps.find(s=>s.command.checkpoint==='before-save').ui.state,played.final.state);
+}
+let preserved;
 if(!portable){
+if (creatorPilot) {
+  const files = [join(workflow.project,'project.json'),join(workflow.project,'activities/study.json'),join(workflow.restoredProject,'project.json'),join(workflow.restoredProject,'activities/study.json'),join(game,'Project-backup.zip'),join(game,'RELEASE.json'),save];
+  preserved = await Promise.all(files.map(async file=>({file,sha256:await pilot.sha256(file)})));
+}
 await writeFile(join(installed,'user-keep.txt'),'User-created file survives uninstall');
 // Uninstall deletes only the packaged file list and leaves projects, saves and unknown files.
 run(join(installed,'Uninstall.exe'),['/S',`_?=${installed}`],env);
@@ -43,6 +97,12 @@ await assert.rejects(access(join(installed,'RaisingStudioQt.exe')));
 await assert.rejects(access(shortcut));
 assert.notEqual(spawnSync('reg.exe',['query',registryKey],{windowsHide:true}).status,0,'Uninstall removes its registration');
 assert.equal(await readFile(join(installed,'user-keep.txt'),'utf8'),'User-created file survives uninstall');await access(join(workflow.project,'project.json'));await access(save);
+if (preserved) for (const item of preserved) assert.equal(await pilot.sha256(item.file),item.sha256);
 }
-const result={ok:true,portable,root,evidence,project:workflow.project,web:join(evidence,'web'),windows:game,installedManifestFiles:manifest.files.length,systemNodeAndQtPathsRemoved:true,createdEditedExportedInQt:true,windowsSaveExact:true,overwriteRejected:portable?'not-tested':true,uninstallPreservedUnknownFiles:portable?'not-tested':true};
+const result={ok:!launcherFailure,portable,root,evidence,project:workflow.project,web:join(evidence,'web'),windows:game,installedManifestFiles:manifest.files.length,systemNodeAndQtPathsRemoved:true,createdEditedExportedInQt:true,windowsSaveExact:true,overwriteRejected:portable?'not-tested':true,uninstallPreservedUnknownFiles:portable?'not-tested':true};
+if (creatorPilot) {
+  Object.assign(result,{source,testedArtifact,editorLanguage:workflow.editorLanguage,restoredProject:workflow.restoredProject,creatorPilot:creatorProof,preserved,nativeLauncherVerified:!launcherFailure});
+  await writeFile(join(evidence,'package-validation.json'),JSON.stringify(result,null,2));
+}
 await writeFile('.cache/qt-release/latest.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+if (launcherFailure) throw launcherFailure;

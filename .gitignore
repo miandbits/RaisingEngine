@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 coverage/
 dist/
 .cache/
@@ -113,6 +113,7 @@ Thumbs.db
 /examples/last-grandson-polished/
 /examples/novice-three-month-trial/
 /native/player/vendor/SDL/
+/native/player/vendor/SDL-ios/
 /native/player/vendor/SDL_image/
 /native/player/vendor/RmlUi/
 /native/player/vendor/freetype/

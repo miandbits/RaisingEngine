@@ -30,7 +30,7 @@
       const auto p=projectData();const int per=qMax(1,p.value("periodsPerMonth").toInt()),total=qMax(1,p.value("durationMonths").toInt()*per);
       for(const auto &field:QStringList{"fromPeriod","throughPeriod"}){
         auto date=new QComboBox;date->setObjectName("workspaceDate-"+field);
-        for(int i=0;i<total;++i){const int month=p.value("startMonth").toInt(1)-1+i/per;date->addItem(tr("%1년 %2월 · %3번째 일정").arg(p.value("startYear").toInt(1)+month/12).arg(month%12+1).arg(i%per+1),i);}
+        for(int i=0;i<total;++i)date->addItem(StudioCalendar::label(p,i),i);
         const int previous=state->draft.value("window").toObject().value(field).toInt();if(date->findData(previous)<0)date->addItem(tr("범위 밖 일정: %1").arg(previous+1),previous);date->setCurrentIndex(date->findData(previous));
         form->addRow(field=="fromPeriod"?tr("발생 시작 날짜"):tr("발생 마지막 날짜"),date);state->fields["window/"+field]=[date]{return date->currentData().toInt();};connect(date,qOverload<int>(&QComboBox::currentIndexChanged),panel,dirty);
       }

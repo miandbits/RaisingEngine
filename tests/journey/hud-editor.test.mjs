@@ -43,7 +43,7 @@ test('designer binds resource, inventory and relationship HUD text and observes 
   await expectValues(60, 0, 0);
   await click(page, '작은 상점 방문'); await click(page, '감사의 꽃 구매'); await click(page, '우리 집 방문');
   await expectValues(20, 1, 0);
-  await click(page, '도시 광장 방문'); await click(page, '유나에게 꽃 선물'); await click(page, '계속'); await click(page, '우리 집 방문');
+  await click(page, '도시 광장 방문'); await click(page, '유나에게 꽃 선물'); await click(page, '이야기 계속'); await click(page, '우리 집 방문');
   await expectValues(20, 0, 15);
   assert.equal((await state(page)).relationships.mentor.trust, 15);
   await page.evaluate(async () => { await Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))); });

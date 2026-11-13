@@ -543,5 +543,19 @@
   ["같은 활동의 아이콘은 한 번만 연결하세요.","Assign only one icon per activity.","同じ活動に割り当てるアイコンは一つにしてください。"],
   ["플러그인 저장소의 절대 경로를 선택하세요.","Select an absolute path to a plugin store.","プラグイン保管先の絶対パスを選んでください。"],
   ["플러그인 저장소의 registry.json 형식이 올바르지 않습니다.","The plugin store registry.json has an invalid format.","プラグイン保管先のregistry.jsonの形式が不正です。"],
-  ["저장된 플러그인 저장소를 사용할 수 없습니다: %1","The saved plugin store is unavailable: %1","保存したプラグイン保管先を使用できません：%1"]
+  ["저장된 플러그인 저장소를 사용할 수 없습니다: %1","The saved plugin store is unavailable: %1","保存したプラグイン保管先を使用できません：%1"],
+  ["간결한 일정 표시는 일정 요소에만 적용할 수 있습니다.","Compact planning applies only to schedule elements.","コンパクトな予定表示は予定要素にのみ適用できます。"],
+  ["주요 동작을 지정하려면 하단 버튼 묶기가 필요합니다.","A primary action requires grouped bottom actions.","主要操作を指定するには下部ボタンをまとめる設定が必要です。"],
+  ["주요 동작은 이 화면의 하단 버튼 목록에 있는 버튼이어야 합니다.","The primary action must be a button listed in this screen’s bottom actions.","主要操作はこの画面の下部ボタン一覧にあるボタンである必要があります。"],
+  ["간결한 일정 표시는 현재 단일 인물 일정만 지원합니다. 명단 일정은 기본 표시를 사용하세요.","Compact planning currently supports single-character schedules. Use the standard presentation for roster schedules.","コンパクトな予定表示は現在、単一人物の予定のみに対応しています。名簿の予定には標準表示を使ってください。"],
+["계획 안내에는 간결한 단일 인물 일정이 필요합니다.","Planning guidance requires a compact single-character schedule.","計画ガイドには単一人物のコンパクトな予定が必要です。"],
+["이 행동을 연결하기 전에 프로젝트 설정에서 최근 읽은 내용을 켜세요.", "Enable recent reading in project settings before connecting this action.", "この動作を接続する前に、プロジェクト設定で最近読んだ内容を有効にしてください。"],
+["계획 재사용에는 간결한 단일 인물 일정이 필요합니다.","Plan reuse requires a compact single-character schedule.","計画の再利用には単一人物のコンパクトな予定が必要です。"],
+["이 행동을 연결하기 전에 프로젝트 설정에서 현재 알림을 구성하세요.", "Configure current reminders in project settings before connecting this action.", "この動作を接続する前に、プロジェクト設定で現在のリマインダーを設定してください。"],
+["현재 알림에 사용할 기존 화면을 선택하세요.", "Choose an existing screen for current reminders.", "現在のリマインダーに使用する既存の画面を選択してください。"],
+["각 알림 텍스트는 한 번만 선택하세요.", "Select each reminder text only once.", "各リマインダーのテキストは一度だけ選択してください。"],
+["선택한 화면에서 이 알림 텍스트를 찾을 수 없습니다.", "This reminder text no longer exists on the selected screen.", "選択した画面にこのリマインダーのテキストがありません。"],
+["현재 알림에는 텍스트 요소만 넣을 수 있습니다.", "Current reminders can include text elements only.", "現在のリマインダーにはテキスト要素のみ含められます。"],
+["이 알림에는 고정 텍스트나 지원되는 현재 상태 연결을 선택하세요.", "Choose static text or a supported current-state binding for this reminder.", "このリマインダーには固定テキストか対応する現在の状態のバインドを選択してください。"],
+["현재 알림에는 선택한 행이나 데이터 연결을 사용할 수 없습니다.", "Current reminders cannot use selected-row or data bindings.", "現在のリマインダーには選択行やデータのバインドを使用できません。"]
 ]

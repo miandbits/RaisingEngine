@@ -141,6 +141,7 @@ private slots:
   void progressionAuthoringGuards();
   void advanceButtonAuthoring();
   void projectSetupAuthoring();
+  void customCalendarAuthoring();
   void workbenchValidationHierarchy();
   void workbenchAnalysis5000();
   void workbenchAnalysisHistory();
@@ -331,6 +332,7 @@ private slots:
     QVERIFY(w.findChild<QComboBox*>("textBinding")->findData("schedule-summary")>=0);
     QVERIFY(w.findChild<QComboBox*>("textBinding")->findData("activity-progress")>=0);
     QVERIFY(w.findChild<QComboBox*>("textBinding")->findData("save-summary")>=0);
+    QVERIFY(w.findChild<QComboBox*>("textBinding")->findData("save-storage-guidance")>=0);
     QVERIFY(w.findChild<QComboBox*>("textBinding")->findData("player-notice")>=0);
     auto resultAction=w.findChild<QAction*>("add-element-result");QVERIFY(resultAction);resultAction->trigger();
     QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&w.selectedId().startsWith("result-"),10000);
@@ -1029,6 +1031,7 @@ private slots:
 #include "component-hierarchy-test.inc"
 #include "pm2-facilities-test.inc"
 #include "project-settings-test.inc"
+#include "calendar-authoring-test.inc"
 #include "roster-test.inc"
 #include "tool-search-test.inc"
 #include "toolbar-access-test.inc"

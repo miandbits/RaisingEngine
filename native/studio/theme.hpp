@@ -3,7 +3,11 @@
 #include <QFont>
 inline void applyStudioTheme(QApplication &app) {
   app.setStyle("Fusion");
+#ifdef Q_OS_WIN
   app.setFont(QFont("Malgun Gothic", 10));
+#else
+  auto font=app.font();font.setPointSize(11);app.setFont(font);
+#endif
   QPalette p;
   p.setColor(QPalette::Window, QColor("#24292f"));
   p.setColor(QPalette::WindowText, QColor("#e3e9ef"));

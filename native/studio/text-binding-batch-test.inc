@@ -11,7 +11,14 @@ bool prepareTextBindingFixture(const QString &engine,const QString &target,const
   screens.append(QJsonObject{{"id","binding-panel"},{"label","Not text"},{"elements",QJsonArray{QJsonObject{{"id","shared-name"},{"kind","panel"},{"x",1},{"y",2},{"width",100},{"height",100}}}}});
   visual["screens"]=screens;project["visual"]=visual;if(!file.open(QIODevice::WriteOnly|QIODevice::Truncate))return false;file.write(QJsonDocument(project).toJson());return true;
 }
-void selectTextBindingSource(StudioWindow &w){selectSettingsScreen(w,"title");QMetaObject::invokeMethod(w.findChild<ScreenCanvas*>("screenCanvas"),"selectionChanged",Q_ARG(QString,QString("shared-name")));}
+void selectTextBindingSource(StudioWindow &w){
+  selectSettingsScreen(w,"title");auto canvas=w.findChild<ScreenCanvas*>("screenCanvas");QVERIFY(canvas);
+  // Select the actual item: the editor consumes selectionsChanged(QStringList),
+  // not the old single-selection notification emitted by earlier fixtures.
+  canvas->QGraphicsView::scene()->clearSelection();bool found=false;
+  for(auto item:canvas->QGraphicsView::scene()->items())if(item->data(0).toString()=="shared-name"&&(item->flags()&QGraphicsItem::ItemIsSelectable)){item->setSelected(true);found=true;break;}
+  QVERIFY(found);QCOMPARE(w.selectedId(),QString("shared-name"));QCOMPARE(canvas->selectedIds(),QStringList{"shared-name"});
+}
 QJsonObject batchTargetElement(const StudioWindow &w,const QString &screen){return settingsScreen(w,screen).value("elements").toArray().first().toObject();}
 QJsonObject withoutTextBinding(QJsonObject element){for(auto key:{"binding","attributeId","characterId","relationshipId","itemId","userFieldId","valueFormat"})element.remove(key);return element;}
 }
@@ -28,10 +35,14 @@ void StudioTests::textBindingBatchRoundtrip(){
 
 void StudioTests::textBindingBatchKindsAndGuards(){
   const auto engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());
-  const QList<QJsonObject> cases{{{"binding","attribute-value"},{"attributeId","knowledge"},{"valueFormat","{label} = {value}"}},{{"binding","relationship-value"},{"characterId","mentor"},{"relationshipId","trust"}},{{"binding","calendar"}},{{"binding","none"}}};
+  const QList<QJsonObject> cases{{{"binding","attribute-value"},{"attributeId","knowledge"},{"valueFormat","{label} = {value}"}},{{"binding","relationship-value"},{"characterId","mentor"},{"relationshipId","trust"}},{{"binding","calendar"}},{{"binding","none"}},{{"binding","save-storage-guidance"}}};
   for(const auto &connection:cases){QTemporaryDir temp(engine+"/.cache/qt-text-binding-XXXXXX");QVERIFY(temp.isValid());QVERIFY(prepareTextBindingFixture(engine,temp.path(),connection));StudioWindow w(engine);w.show();w.openProject(temp.path());QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),20000);selectTextBindingSource(w);const auto before=w.projectData(),oldA=batchTargetElement(w,"binding-a"),oldB=batchTargetElement(w,"binding-b");
+    if(connection.value("binding")=="save-storage-guidance"){
+      QVERIFY(w.findChild<QComboBox*>("textBinding")->findData("save-storage-guidance")>=0);
+      w.findChild<QPushButton*>("dataBindingPicker")->click();auto d=w.findChild<QDialog*>("dataBindingDialog");QVERIFY(d);auto list=d->findChild<QListWidget*>("dataBindingSources");QVERIFY(list);bool found=false;for(int i=0;i<list->count();++i)if(list->item(i)->data(Qt::UserRole).toJsonObject().value("binding")=="save-storage-guidance")found=true;QVERIFY(found);d->reject();
+    }
     QTimer::singleShot(100,&w,[&]{auto d=w.findChild<QDialog*>("textBindingBatchDialog");QVERIFY(d);d->findChild<QPushButton*>("textBindingSelectAll")->click();d->findChild<QPushButton*>("textBindingSelectNone")->click();QVERIFY(!d->findChild<QDialogButtonBox*>("textBindingBatchButtons")->button(QDialogButtonBox::Apply)->isEnabled());d->findChild<QPushButton*>("textBindingSelectAll")->click();d->reject();});w.findChild<QAction*>("applyTextBindingBatch")->trigger();QCOMPARE(w.projectData(),before);
-    QTimer::singleShot(100,&w,[&]{auto d=w.findChild<QDialog*>("textBindingBatchDialog");QVERIFY(d);d->findChild<QPushButton*>("textBindingSelectAll")->click();d->findChild<QDialogButtonBox*>("textBindingBatchButtons")->button(QDialogButtonBox::Apply)->click();});w.findChild<QPushButton*>("textBindingBatch")->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
+    QTimer::singleShot(100,&w,[&]{auto d=w.findChild<QDialog*>("textBindingBatchDialog");QVERIFY(d);d->findChild<QPushButton*>("textBindingSelectAll")->click();d->findChild<QDialogButtonBox*>("textBindingBatchButtons")->button(QDialogButtonBox::Apply)->click();});auto applyButton=w.findChild<QPushButton*>("textBindingBatch");QVERIFY2(applyButton->isEnabled(),qPrintable(QString("Batch entry disabled before click; busy=%1 selected=%2 revision=%3 error=%4").arg(w.busy()).arg(w.selectedId()).arg(w.currentView().value("revision").toInt()).arg(w.lastError)));applyButton->click();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));
     auto expectedA=withoutTextBinding(oldA),expectedB=withoutTextBinding(oldB);for(auto it=connection.begin();it!=connection.end();++it){expectedA[it.key()]=it.value();expectedB[it.key()]=it.value();}QCOMPARE(batchTargetElement(w,"binding-a"),expectedA);QCOMPARE(batchTargetElement(w,"binding-b"),expectedB);w.findChild<QAction*>("undoEdit")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);QCOMPARE(w.projectData(),before);
     // An independent edit while the modal is open must not be overwritten.
     QJsonObject concurrent;QTimer::singleShot(100,&w,[&]{auto d=w.findChild<QDialog*>("textBindingBatchDialog");QVERIFY(d);QTimer::singleShot(15000,d,&QDialog::reject);d->findChild<QPushButton*>("textBindingSelectAll")->click();auto name=w.findChild<QLineEdit*>("elementName");QVERIFY(name);name->setText("Concurrent label");QMetaObject::invokeMethod(name,"editingFinished");QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),10000);concurrent=w.projectData();QVERIFY(concurrent!=before);d->findChild<QDialogButtonBox*>("textBindingBatchButtons")->button(QDialogButtonBox::Apply)->click();QVERIFY(d->isVisible());QVERIFY(!d->findChild<QLabel*>("textBindingBatchError")->text().isEmpty());d->reject();});w.findChild<QAction*>("applyTextBindingBatch")->trigger();QCOMPARE(w.projectData(),concurrent);

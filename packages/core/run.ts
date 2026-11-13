@@ -1,3 +1,4 @@
+import { calendarProblem } from './calendar.js';
 import { createCustomStates } from './custom-states.js';
 import { createProgression, guardProgression, startTimedAction, progressSession } from './progression.js';
 import { startCalendar } from './unified-time.js';
@@ -15,6 +16,7 @@ import { applyPolicies, beginRuleCommand, emitRules, emitRelationshipRules, runB
 import { applySystems, createSystems, startExpedition, syncRelationshipStages } from '../systems/service.js';
 
 function checkContent(content: ContentSnapshot): void {
+  const problem=calendarProblem(content.project);requireCore(!problem,'INCOMPATIBLE_CONTENT',problem?.message??'', '/project'+(problem?.path??''));
   requireCore(!content.project.periodFlow || (!content.project.roster && !content.project.progression),
     'PERIOD_FLOW_MODE', '기간 단계는 현재 단일 대상의 월 일정에서 사용할 수 있습니다.', '/project/periodFlow');
   requireCore(content.snapshotVersion === '1' && /^sha256:[0-9a-f]{64}$/.test(content.contentFingerprint),

@@ -14,13 +14,14 @@
 #include <QVBoxLayout>
 #include <memory>
 
-void showSaveMigration(const QString& engineRoot,const QString& currentProject,QWidget* parent){
+void showSaveMigration(const QString& engineRoot,const QString& currentProject,QWidget* parent,const QString& previousProject,const QString& sampleSave){
   auto d=new QDialog(parent);d->setAttribute(Qt::WA_DeleteOnClose);d->setObjectName("saveMigrationDialog");d->setWindowTitle(QObject::tr("콘텐츠 업데이트 · 저장 이전 / 복구"));d->resize(1000,700);
   auto layout=new QVBoxLayout(d);auto intro=new QLabel(QObject::tr("디스크에 저장된 이전·새 프로젝트로 검사합니다. 편집 중인 초안은 사용하지 않습니다.\n원본 저장과 기존 출력 파일은 덮어쓰지 않습니다. 복구하려면 보관한 이전 프로젝트에서 원본 저장을 여세요."),d);intro->setWordWrap(true);layout->addWidget(intro);
   auto form=new QFormLayout;layout->addLayout(form);
   auto row=[&](const QString& name,const QString& title,bool directory,bool output){auto box=new QWidget(d);auto line=new QHBoxLayout(box);line->setContentsMargins(0,0,0,0);auto edit=new QLineEdit(box);edit->setObjectName(name);auto browse=new QPushButton(QObject::tr("찾기…"),box);line->addWidget(edit);line->addWidget(browse);form->addRow(title,box);QObject::connect(browse,&QPushButton::clicked,d,[=]{QString value;if(directory)value=QFileDialog::getExistingDirectory(d,title,edit->text());else if(output)value=QFileDialog::getSaveFileName(d,title,edit->text(),"JSON (*.json)");else value=QFileDialog::getOpenFileName(d,title,edit->text(),"JSON (*.json)");if(!value.isEmpty())edit->setText(value);});return edit;};
-  auto from=row("migrationFrom",QObject::tr("이전 프로젝트"),true,false),to=row("migrationTo",QObject::tr("새 프로젝트"),true,false),save=row("migrationSave",QObject::tr("원본 저장"),false,false),output=row("migrationOutput",QObject::tr("새 저장 경로"),false,true);to->setText(currentProject);
+  auto from=row("migrationFrom",QObject::tr("이전 프로젝트"),true,false),to=row("migrationTo",QObject::tr("새 프로젝트"),true,false),save=row("migrationSave",QObject::tr("원본 저장"),false,false),output=row("migrationOutput",QObject::tr("새 저장 경로"),false,true);to->setText(currentProject);from->setText(previousProject);save->setText(sampleSave);
   auto reset=new QCheckBox(QObject::tr("연출·플러그인 재생 위치 초기화 허용 (게임 진행은 명령 기록으로 재현)"),d);reset->setObjectName("migrationReset");layout->addWidget(reset);
+  auto resetHelp=new QLabel(QObject::tr("연출 초기화는 미확정 계획, 기록 이름·썸네일, 재생 위치와 플러그인 연출 상태를 제거합니다. 게임 진행은 검증한 명령으로 다시 만듭니다."),d);resetHelp->setObjectName("migrationResetHelp");resetHelp->setWordWrap(true);layout->addWidget(resetHelp);
   auto summary=new QLabel(QObject::tr("이전 원본과 새 콘텐츠를 선택하고 검사하세요."),d);summary->setWordWrap(true);summary->setObjectName("migrationSummary");layout->addWidget(summary);
   auto tree=new QTreeWidget(d);tree->setObjectName("migrationChanges");tree->setHeaderLabels({QObject::tr("변경 위치"),QObject::tr("이전 값"),QObject::tr("새 값")});layout->addWidget(tree,1);
   auto buttons=new QHBoxLayout;layout->addLayout(buttons);auto preview=new QPushButton(QObject::tr("검사·비교"),d),publish=new QPushButton(QObject::tr("검토한 결과를 새 파일로 저장"),d),close=new QPushButton(QObject::tr("닫기"),d);preview->setObjectName("migrationPreview");publish->setObjectName("migrationPublish");publish->setEnabled(false);buttons->addWidget(preview);buttons->addWidget(publish);buttons->addStretch();buttons->addWidget(close);

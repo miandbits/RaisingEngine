@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cp, mkdir, mkdtemp, readFile, writeFile, access } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, writeFile, access, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { QtStudioService } from '../../apps/qt-studio/service.mjs';
@@ -16,7 +16,7 @@ async function fixture(features = ['renderer-preview-v1']) {
   await writeFile(path.join(runtime, 'capabilities.json'), JSON.stringify({ formatVersion: '1',
     imageExtensions: ['.png', '.jpg', '.jpeg', '.webp'], audioExtensions: ['.wav', '.ogg', '.mp3'],
     fontExtensions: ['.ttf', '.otf'], visualFeatures: features }));
-  const service = new QtStudioService({ runtimes: { windows: runtime, web: runtime } });
+  const service = new QtStudioService({ nativeTarget:'windows', runtimes: { windows: runtime, web: runtime } });
   await service.handle({ method: 'open', params: { root } });
   const doc = service.editor.documents.find(d => d.kind === 'project');
   const replaceText = text => {
@@ -43,7 +43,7 @@ test('renderer preview exports the unsaved draft without touching disk, revision
   assert.deepEqual(after.documents, before.documents);
   for (const [file, bytes] of originalFiles) assert.deepEqual(await readFile(path.join(root, file)), bytes, file);
   assert.equal(result.play.preview, true); assert.equal(result.play.revision, before.revision);
-  assert.ok(result.play.directory.startsWith(path.join(process.env.RAISING_STUDIO_CACHE||path.join(os.tmpdir(),'RaisingStudio'),'qt-render-preview')+path.sep));
+  assert.ok(result.play.directory.startsWith((await realpath(path.join(process.env.RAISING_STUDIO_CACHE||path.join(os.tmpdir(),'RaisingStudio'),'qt-render-preview')))+path.sep));
   assert.equal(path.dirname(result.play.save), path.dirname(result.play.directory));
   assert.notEqual(path.dirname(result.play.save), root);
   await assert.rejects(access(result.play.save), { code: 'ENOENT' });

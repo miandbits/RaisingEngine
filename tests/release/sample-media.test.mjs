@@ -19,7 +19,7 @@ test('release media is deterministic and fails closed on unknown or modified med
 test('generator rejects undeclared artwork types',()=>assert.throws(()=>samplePng('unknown'),/Unknown/));
 test('portable packaging rejects files added after manifest review',async()=>{
   await mkdir('.cache',{recursive:true});const root=await mkdtemp('.cache/unreviewed-payload-');
-  const release=JSON.parse(await readFile('config/preview-release.json','utf8'));
+  const release=JSON.parse(await readFile('config/preview-candidate.json','utf8'));
   await writeFile(join(root,'package-manifest.json'),JSON.stringify({releaseVersion:release.version,files:[]}));
   await writeFile(join(root,'private-history.txt'),'Must not be distributed');
   const result=spawnSync(process.execPath,['scripts/package-preview-artifacts.mjs'],{env:{...process.env,QT_PACKAGE_OUT:root},encoding:'utf8',windowsHide:true});

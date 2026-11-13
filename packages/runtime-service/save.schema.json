@@ -217,7 +217,7 @@
             "thumbnail": {
               "type": "string",
               "maxLength": 511,
-              "pattern": "^frame-[0-9]+-[0-9]+\\.png$"
+              "pattern": "^(frame-[0-9]+-[0-9]+\\.png)?$"
             },
             "sequence": {
               "type": "integer",

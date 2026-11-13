@@ -10,6 +10,7 @@
 #include <QUuid>
 
 void StudioWindow::showGettingStarted() {
+  if (!firstGameState.isEmpty()) { showFirstGameChecklist(); return; }
   if (busy()) return;
   QDialog dialog(this); dialog.setObjectName("gettingStartedDialog");
   dialog.setWindowTitle(tr("처음 만드는 게임 · 제작 순서")); dialog.resize(760,560);

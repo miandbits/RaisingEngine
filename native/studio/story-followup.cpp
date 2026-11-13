@@ -1,3 +1,4 @@
+#include "calendar.hpp"
 #include "story-followup.hpp"
 #include "story-connections.hpp"
 #include "script-continuation.hpp"
@@ -159,7 +160,7 @@ StoryFollowupDialog::StoryFollowupDialog(QJsonArray docs,QString source,QWidget 
   auto activity=new QComboBox;activity->setObjectName("followupActivity");activity->addItem(tr("활동 선택"),"");for(auto v:docs){auto d=v.toObject();if(d.value("kind")=="activity")activity->addItem(label(d.value("data").toObject()),d.value("data").toObject().value("id").toString());}form->addRow(tr("대상 활동"),activity);
   auto location=new QComboBox;location->setObjectName("followupLocation");location->addItem(tr("장소 선택"),"");for(auto v:project.value("gameplay").toObject().value("locations").toArray()){auto d=v.toObject();location->addItem(d.value("name").toString(d.value("id").toString()),d.value("id").toString());}form->addRow(tr("대상 장소"),location);
   auto from=new QComboBox;from->setObjectName("followupFrom");auto through=new QComboBox;through->setObjectName("followupThrough");
-  for(int i=0;i<total;++i){int month=project.value("startMonth").toInt(1)-1+i/perMonth;const auto date=tr("%1년 %2월 · %3번째 일정").arg(project.value("startYear").toInt(1)+month/12).arg(month%12+1).arg(i%perMonth+1);from->addItem(date,i);through->addItem(date,i);}
+  for(int i=0;i<total;++i){const auto date=StudioCalendar::label(project,i);from->addItem(date,i);through->addItem(date,i);}
   from->setCurrentIndex(qMin(total-1,before.value("window").toObject().value("fromPeriod").toInt()+(personal?0:1)));through->setCurrentIndex(total-1);form->addRow(tr("발생 시작 날짜"),from);form->addRow(tr("발생 마지막 날짜"),through);
   auto promise=new QComboBox;promise->setObjectName("followupPromise");promise->addItem(tr("약속 조건 추가 안 함"),QJsonObject{});for(auto v:storyFollowupPromises(docs,source)){auto p=v.toObject();promise->addItem(p.value("label").toString(),p.value("condition").toObject());}form->addRow(tr("함께 필요한 약속"),promise);
   auto preview=new QLabel;preview->setObjectName("followupPreview");preview->setWordWrap(true);outer->addWidget(preview);

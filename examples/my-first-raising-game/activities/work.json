@@ -1,0 +1,39 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "work",
+  "label": "Work",
+  "description": "Spend 10 energy to earn 12 money and gain 8 stress.",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [
+    {
+      "attributeId": "stamina",
+      "amount": 10
+    }
+  ],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "money"
+      },
+      "value": {
+        "op": "literal",
+        "value": 12
+      }
+    },
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stress"
+      },
+      "value": {
+        "op": "literal",
+        "value": 8
+      }
+    }
+  ]
+}

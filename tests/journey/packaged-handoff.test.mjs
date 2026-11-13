@@ -42,9 +42,9 @@ test('packaged Studio creates the handoff project, plays and saves the journey, 
   assert.ok(addonProof.loaded.includes(resolve(addonProof.resourcesPath, 'native', addonManifest.filename)), JSON.stringify(addonProof));
   await page.locator('.visual-stage').getByText('소지금 60 G', { exact: true }).waitFor();
   await click(page, '일정'); for (const period of ['상순', '중순', '하순']) await select(page, `${period} 활동`, 'rest');
-  await click(page, '일정 확정 / 활동 시작'); await click(page, '일정 확정 / 활동 시작'); await click(page, '다음으로');
+  await click(page, '일정 확정'); await click(page, '활동 시작'); await click(page, '결과 확인 · 다음');
   for (let i = 0; i < 20 && (await state(page)).phase === 'narrative'; i++) {
-    const next = page.getByRole('button', { name: '계속', exact: true });
+    const next = page.getByRole('button', { name: '이야기 계속', exact: true });
     if (await next.count()) await next.click();
     else await page.locator('.visual-stage button:not([disabled])').last().click();
   }
@@ -58,7 +58,7 @@ test('packaged Studio creates the handoff project, plays and saves the journey, 
   await page.waitForFunction(() => [...document.querySelectorAll('.visual-stage img')].every(image => image.complete && image.naturalWidth > 0));
   await page.evaluate(async () => { await Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))); });
   await page.screenshot({ path: resolve(output, 'packaged-relationship.png') });
-  await click(page, '계속'); await click(page, '우리 집 방문');
+  await click(page, '이야기 계속'); await click(page, '우리 집 방문');
   await page.locator('.visual-stage').getByText('유나 신뢰 15', { exact: true }).waitFor();
   await page.screenshot({ path: resolve(output, 'packaged-hud.png') });
   await click(page, '편집기로 돌아가기');

@@ -1,3 +1,4 @@
+import {activityResultWords} from './activity-result.js';
 import type { ContentSnapshot, RunState, Change, NumericTarget } from '../core/model.js';
 import type { ReadonlyDesign } from './model.js';
 
@@ -26,7 +27,7 @@ export interface TimelineClip {
 export interface TimelinePlan {
   resultRevision: number; activityId: string; timelineId: string;
   clips: TimelineClip[]; totalDurationMs: number;
-  resultPlayback?: {title:string; rows:{label:string; before:number; after:number}[]};
+  resultPlayback?: {title:string; outcome?:'success'|'failure'|''; rows:{label:string; before:number; after:number}[]};
 }
 export interface TimelineCursor {
   resultRevision: number; activityId: string; timelineId: string;
@@ -56,7 +57,7 @@ export function timelineChangesText(content:ContentSnapshot,changes:readonly Cha
 }
 
 /** Compile authored presentation against one already committed activity result. */
-export function planActivityTimeline(content:ContentSnapshot,state:RunState):TimelinePlan|null {
+export function planActivityTimeline(content:ContentSnapshot,state:RunState,locale='ko'):TimelinePlan|null {
   const result=state.lastActivityResult;
   if(state.phase!=='activity-result'||!result)return null;
   const visual=content.project.visual,binding=visual?.activityTimelines?.find(x=>x.activityId===result.activityId);
@@ -69,7 +70,7 @@ export function planActivityTimeline(content:ContentSnapshot,state:RunState):Tim
     });
     const clips=[config.leadInMs,...rows.map(()=>config.changeMs),config.holdMs].map((durationMs,index):TimelineClip=>({id:`result-${index}`,clipId:`result-${index}`,durationMs,text:'',transition:'none',day:null}));
     const activity=content.activities.find(x=>x.id===result.activityId)?.label??result.activityId;
-    return {resultRevision:state.stateRevision,activityId:result.activityId,timelineId:'inline-result',clips,totalDurationMs:clips.reduce((sum,c)=>sum+c.durationMs,0),resultPlayback:{title:activity+(result.success?` · ${result.success.passed?'성공':'실패'}`:''),rows}};
+    return {resultRevision:state.stateRevision,activityId:result.activityId,timelineId:'inline-result',clips,totalDurationMs:clips.reduce((sum,c)=>sum+c.durationMs,0),resultPlayback:{title:activity,outcome:result.success?(result.success.passed?'success':'failure'):'',rows}};
   }
   const timelineId=result.success?(result.success.passed?binding.successTimelineId:binding.failureTimelineId)??binding.timelineId:binding.timelineId;
   const timeline=visual?.timelines?.find(x=>x.id===timelineId);if(!timeline?.clips.length)return null;
@@ -82,21 +83,22 @@ export function planActivityTimeline(content:ContentSnapshot,state:RunState):Tim
   }
   const activity=content.activities.find(x=>x.id===result.activityId),summary=timelineChangesText(content,result.changes),clips:TimelineClip[]=[];
   for(const [index,day]of days.entries())for(const clip of timeline.clips){
-    const tokens:Record<string,string>={activity:activity?.label??result.activityId,outcome:result.success?(result.success.passed?'성공':'실패'):'완료',day:day===null?'':String(day),changes:index===0?summary:''};
+    const tokens:Record<string,string>={activity:activity?.label??result.activityId,outcome:result.success?(result.success.passed?activityResultWords(locale).success:activityResultWords(locale).failure):activityResultWords(locale).complete,day:day===null?'':String(day),changes:index===0?summary:''};
     clips.push({id:`${day===null?'once':`day-${day}`}__${clip.id}`,clipId:clip.id,durationMs:clip.durationMs,...(clip.imageAssetId?{imageAssetId:clip.imageAssetId}:{}),...(clip.stage?{stage:clip.stage}:{}),text:(clip.text??'').replace(/\{(activity|outcome|day|changes)\}/g,(_,key:string)=>tokens[key]!),transition:clip.transition??'none',day});
   }
   return {resultRevision:state.stateRevision,activityId:result.activityId,timelineId,clips,totalDurationMs:clips.reduce((sum,x)=>sum+x.durationMs,0)};
 }
 
 /** Animate display values only; committed simulation state is never rewritten. */
-export function resultPlaybackText(plan:TimelinePlan,cursor:TimelineCursor):string|null {
+export function resultPlaybackText(plan:TimelinePlan,cursor:TimelineCursor,locale='ko'):string|null {
   const playback=plan.resultPlayback;if(!playback)return null;
   const lines=playback.rows.map((row,index)=>{
     const progress=cursor.completed||cursor.clipIndex>index+1?1:cursor.clipIndex===index+1?Math.min(1,cursor.elapsedMs/plan.clips[index+1]!.durationMs):0;
     const delta=Math.trunc((row.after-row.before)*progress),value=row.before+delta;
     return `${row.label}  ${row.before} → ${value}  (${delta>=0?'+':''}${delta})`;
   });
-  return [playback.title,...(lines.length?lines:['능력 변화 없음'])].join('\n');
+  const title=playback.title+(playback.outcome?' · '+activityResultWords(locale)[playback.outcome]:'');
+  return [title,...(lines.length?lines:[locale.startsWith('en')?'No stat changes':locale.startsWith('ja')?'能力値の変化なし':'능력 변화 없음'])].join('\n');
 }
 
 export function createTimelineCursor(plan:TimelinePlan):TimelineCursor {

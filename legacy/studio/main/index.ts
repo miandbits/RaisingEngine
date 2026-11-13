@@ -157,7 +157,8 @@ void app.whenReady().then(async () => {
     player.content = result.snapshot; player.root = editor.root; player.session = null; player.generation++;
     return editor.reply(null, '현재 초안으로 미리보기를 시작합니다.');
   });
-  handle('preview:view', () => player.reply());
+  handle('preview:forecast-phase', (ids: unknown, version: unknown) => player.forecastPhase(ids, version));
+handle('preview:view', () => player.reply());
   handle('preview:new', (version: unknown, userValues?: Record<string, string>) => player.newRun(version, userValues));
   handle('preview:act', (action: unknown, version: unknown) => player.act(action, version));
   handle('preview:save', async (version: unknown) => {

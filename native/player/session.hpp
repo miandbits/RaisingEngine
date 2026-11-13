@@ -1,5 +1,6 @@
 #pragma once
 #include "raising/runtime.hpp"
+#include "raising/json-calendar.hpp"
 #include "raising/relationship-history.hpp"
 #include "json.hpp"
 #include <filesystem>
@@ -29,6 +30,9 @@ public:
   std::string inspection_session;
   Json inspection_baseline=nullptr;
   std::map<fs::path,Json> inspection_saves;
+  // Presentation-only notification: validation has accepted a replacement state.
+  // Notify at the accepted boundary, before host presentation hooks run.
+  std::function<void(const std::string&)> accepted_replacement;
   std::function<Json()> planner_state;
   std::function<void(const Json&)> planner_restore;
   GalleryProfile gallery;
@@ -36,6 +40,8 @@ public:
   Json gallery_pending=Json::array();
   std::function<Json()> gallery_content;
   bool gallery_recording=true;
+  // Staged restores evaluate capture/unlock rules without touching profile storage.
+  bool gallery_persistence=true;
   Json gallery_manifest=nullptr;
   void queue_gallery(Json record) {
     if(!gallery_recording||record.is_null()||!content.at("project").contains("gallery"))return;
@@ -57,7 +63,11 @@ public:
   void flush_gallery() {
     if(!gallery_recording||!content.at("project").contains("gallery"))return;
     while(!gallery_pending.empty()){
-      try{gallery.unlock(content.at("project").at("gallery"),gallery_pending.front());gallery_pending.erase(gallery_pending.begin());}
+      try{
+        if(gallery_persistence)gallery.unlock(content.at("project").at("gallery"),gallery_pending.front());
+        else gallery.stage_unlock(content.at("project").at("gallery"),gallery_pending.front());
+        gallery_pending.erase(gallery_pending.begin());
+      }
       catch(const std::exception& e){gallery.error=e.what();message=std::string("컬렉션 저장 실패: ")+e.what();return;}
     }
   }
@@ -85,6 +95,7 @@ public:
       return state["flags"].value(flow["intermission"].value("completionFlagId",""),false)?"acknowledgeResult":"";
     }
     if(phase=="ready")return "executeActivity";
+    if(phase=="activity-result"&&content.at("project").value("visual",Json::object()).value("activityTimelineCompletion","")=="reveal-result")return "";
     if(phase=="activity-result"&&(!timeline_active()||timeline_cursor.value("completed",false)))return "acknowledgeResult";
     return "";
   }
@@ -138,6 +149,7 @@ public:
     relationship_changes=Json::object();
     choice_feedback=nullptr;
     state = call({{"operation", "create"}, {"seed", seed}, {"options", {{"mode", "full"},{"userValues",userValues}}}}).at("state");
+    if(accepted_replacement)accepted_replacement("new-run");
     if(!inspection_session.empty())inspection_baseline=state;
     commands = Json::array(); message.clear(); sound_cues.clear(); battle_selection=nullptr;refresh(); sync_timeline();
     origin = {{"seed",seed},{"mode","full"},{"initialOverrides",{{"attributes",Json::object()},{"flags",Json::object()},{"relationships",Json::object()}}}};
@@ -233,7 +245,15 @@ public:
     GalleryCapture restored_capture;
     Json restored_changes=Json::object();
     Json restored_choice=nullptr;
-    for (const auto& command : saved.at("commands")) {
+    // Reuse the core's verified batch replay for ordinary saves. Sending the
+    // complete immutable content for every command made long campaigns spend
+    // most load time parsing the same story. Gallery capture still needs each
+    // intermediate view, and isolated previews retain their session baseline.
+    if(!isolated&&!content.at("project").contains("gallery")) {
+      const auto result=call({{"operation","replay"},{"origin",savedOrigin},{"commands",saved.at("commands")},
+                              {"includeRelationshipChanges",true},{"includeChoiceFeedback",true}});
+      replay=result.at("state");restored_changes=result.at("relationshipChanges");restored_choice=result.at("choiceFeedback");
+    } else for (const auto& command : saved.at("commands")) {
       const auto result=call({{"operation", "command"}, {"state", replay}, {"command", command}, {"expectedRevision", replay.at("stateRevision")}});
       const auto next=result.at("state");
       track_choice_feedback(restored_choice,content,replay,command,result);
@@ -282,11 +302,27 @@ public:
       // Keep only opaque presentation state; content and game snapshots come from verified replay.
       for(size_t i=0;i<capture.at("replayFrames").size();i++)restored_capture.pending["replayFrames"][i]["extensions"]=capture.at("replayFrames").at(i).value("extensions",Json());
     }
+    // Validate all deterministic automatic work before replacing the live run.
+    // The isolated candidate has no host callbacks and cannot write the gallery.
+    // After this succeeds, the existing live path delivers each observer/gallery
+    // effect once in its original step order. Arbitrary host callbacks are not
+    // reversible; they run only after the restore has been accepted.
+    GameSession candidate;
+    candidate.content=content;candidate.gallery_recording=gallery_recording;candidate.gallery_persistence=false;
+    candidate.gallery.data=gallery.data;candidate.gallery_capture=restored_capture;
+    candidate.gallery_pending=gallery_pending;candidate.gallery_manifest=gallery_manifest;
+    candidate.state=replay;candidate.commands=saved.at("commands");candidate.origin=savedOrigin;
+    candidate.seed=savedOrigin.at("seed").get<uint32_t>();
+    candidate.relationship_changes=restored_changes;candidate.choice_feedback=restored_choice;
+    candidate.schedule_speed=restored_speed;candidate.timeline_plan=restored_plan;
+    candidate.timeline_cursor=restored_cursor;candidate.battle_selection=restored_battle;
+    candidate.loaded_extensions=restored_extensions;candidate.direction_cursor=restored_direction;
+    candidate.refresh();candidate.settle();candidate.collect_gallery_media();
     if(isolated)inspection_baseline=inspection_saves.at(file);
     gallery_capture=std::move(restored_capture);
     relationship_changes=std::move(restored_changes);
     choice_feedback=std::move(restored_choice);
-    schedule_speed=restored_speed;state = replay; commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;loaded_extensions=restored_extensions;direction_cursor=restored_direction;refresh(); settle();
+    schedule_speed=restored_speed;state = replay;if(accepted_replacement)accepted_replacement("restored"); commands = saved.at("commands"); origin = saved.at("origin"); seed = origin.at("seed").get<uint32_t>(); sound_cues.clear(); timeline_plan=restored_plan;timeline_cursor=restored_cursor;battle_selection=restored_battle;loaded_extensions=restored_extensions;direction_cursor=restored_direction;refresh(); settle();
     collect_gallery_media();
     if(planner_restore)planner_restore(restored_draft);
     message = "저장한 지점에서 이어갑니다.";

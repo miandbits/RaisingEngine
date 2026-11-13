@@ -1,0 +1,28 @@
+{
+  "formatVersion": "0.1.0",
+  "id": "walk",
+  "label": "Garden walk",
+  "description": "Recover 5 energy and meet Mira.",
+  "requirements": {
+    "op": "always"
+  },
+  "costs": [],
+  "baseEffects": [
+    {
+      "op": "add",
+      "target": {
+        "kind": "attribute",
+        "attributeId": "stamina"
+      },
+      "value": {
+        "op": "literal",
+        "value": 5
+      }
+    },
+    {
+      "op": "setFlag",
+      "flagId": "garden-visited",
+      "value": true
+    }
+  ]
+}

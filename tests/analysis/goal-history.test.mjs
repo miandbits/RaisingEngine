@@ -6,6 +6,7 @@ import {QtStudioService} from '../../apps/qt-studio/service.mjs';
 import {saveGoalRoute} from '../../apps/qt-studio/goal-routes.mjs';
 import {readGoalBaseline,saveGoalBaseline} from '../../apps/qt-studio/goal-baselines.mjs';
 import {captureGoalBaseline,compareGoalBaseline,historicalStep} from '../../dist/packages/analysis-service/goal-history.js';
+import {checkGoalImpacts} from '../../apps/qt-studio/goal-impact.mjs';
 
 async function setup(){const root=await mkdtemp(path.resolve('.cache/goal-history-'));await cp(path.resolve('examples/starlight-three-months'),root,{recursive:true,filter:s=>!s.split(path.sep).includes('.studio')});const service=new QtStudioService();await service.handle({method:'open',params:{root}});const call=(method,params={})=>service.handle({method,params:{revision:service.editor.revision,root,...params}});return {root,service,call};}
 test('persisted historical states survive restart; same commands pinpoint costs, effects and conditions',{timeout:120000},async()=>{
@@ -51,4 +52,30 @@ test('clamped equal states still expose changed effect checks; active activity c
  const study={...base,checkpoints:[],commands:[{type:'navigate',screenId:'schedule'},{type:'setSchedule',activityIds:['study','rest','rest']},{type:'executeActivity'}]};const activityBaseline=await captureGoalBaseline(content,study,'study','same');
  const activity=service.editor.documents.find(d=>d.kind==='activity'&&d.data.id==='study'),costChanged=structuredClone(activity.data);costChanged.costs[0].amount+=1;await call('edit',{edit:{type:'replace',file:activity.file,data:costChanged}});content=await service.debugSnapshot(service.editor.revision);
  const costPair=await compareGoalBaseline(content,activityBaseline,'same');assert.equal(costPair.firstStateDifference,3);assert.ok(historicalStep(costPair,3,3).history.relatedChanges.some(c=>c.category==='비용'&&c.path.startsWith('/activities/study/costs')));
+});
+
+test('comparison timeout reports the supplied budget instead of a hardcoded sixty seconds',{timeout:30000},async t=>{
+ const {root,service}=await setup();t.after(async()=>{await service.goalRouteBatches.close();await service.editor.close();});
+ const content=await service.debugSnapshot(service.editor.revision),route=JSON.parse(await readFile(path.join(root,'playtests/routes/ordinary.json'),'utf8'));
+ const baseline=await captureGoalBaseline(content,route,'Deadline message witness','same');
+ const slow={...route,commands:Array.from({length:10000},()=>({type:'setSchedule',activityIds:['study','study','rest']})),checkpoints:[],checkpointEvery:1000};
+ await assert.rejects(compareGoalBaseline(content,baseline,'same',slow,1),error=>{assert.equal(error.code,'TIMEOUT');assert.equal(error.timeoutMs,1);assert.match(error.message,/\(1ms\)/);assert.doesNotMatch(error.message,/60초/);return true;});
+ const result=await compareGoalBaseline(content,baseline,'same',undefined,10000);assert.equal(result.firstStateDifference,null);assert.equal(result.firstCheckDifference,null);
+});
+
+test('baseline comparison obeys each route budget independently of the longer overall budget',{timeout:30000},async t=>{
+ const {root,service,call}=await setup();t.after(async()=>{await service.goalRouteBatches.close();await service.editor.close();});
+ const routes=(await call('goalRoutesList')).goalRoutes;
+ for(const entry of routes)await call('goalBaselineSave',{routeId:entry.route.id,name:'Per-route budget · '+entry.route.name});
+ const content=await service.debugSnapshot(service.editor.revision),progress=[];
+ const bounded=await checkGoalImpacts(root,content,service.editor.revision,{timeoutMs:10000,routeTimeoutMs:1,onRoute:index=>progress.push(index)});
+ assert.equal(bounded.complete,false);assert.ok(bounded.counts.incomplete>0);assert.equal(bounded.rows.length,routes.length);assert.deepEqual(progress,routes.flatMap((_,index)=>[index,null]));
+ for(const row of bounded.rows.filter(r=>r.status==='incomplete')){assert.equal(row.timeoutMs,1);assert.match(row.error,/\(1ms\)/);assert.doesNotMatch(row.error,/60초/);}
+ const zeroProgress=[];
+ const zero=await checkGoalImpacts(root,content,service.editor.revision,{timeoutMs:10000,routeTimeoutMs:0,onRoute:index=>zeroProgress.push(index)});
+ assert.equal(zero.complete,false);assert.equal(zero.ok,false);assert.equal(zero.counts.incomplete,routes.length);assert.deepEqual(zeroProgress,[],'An exhausted per-route budget must not start any replay.');
+ for(const row of zero.rows){assert.equal(row.timeoutMs,0);assert.match(row.error,/\(0ms\)/);}
+ await assert.rejects(checkGoalImpacts(root,content,service.editor.revision,{timeoutMs:-1}));
+ await assert.rejects(checkGoalImpacts(root,content,service.editor.revision,{routeTimeoutMs:-1}));
+ const enough=await checkGoalImpacts(root,content,service.editor.revision,{timeoutMs:10000,routeTimeoutMs:3000});assert.equal(enough.complete,true);assert.equal(enough.ok,true);assert.equal(enough.counts.unchanged,routes.length);
 });

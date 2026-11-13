@@ -1,0 +1,78 @@
+#include "studio.hpp"
+#include "canvas-state.hpp"
+#include "editor-language.hpp"
+#include "existing-file-identity.hpp"
+#include <QtTest>
+#include <QtWidgets>
+
+class PresentationUpdateTest:public QObject {
+ Q_OBJECT
+ QString engine,capture;QTemporaryDir temp;QJsonObject paths;
+ QByteArray read(const QString& path){QFile file(path);if(!file.open(QIODevice::ReadOnly))return {};return file.readAll();}
+ QList<QJsonObject> calls(const QString& method){QList<QJsonObject> result;for(auto line:read(capture).trimmed().split('\n')){const auto value=QJsonDocument::fromJson(line).object();if(value["method"]==method)result.push_back(value);}return result;}
+ void open(StudioWindow& w,QString path={}){w.show();w.openProject(path.isEmpty()?paths["to"].toString():path);QTRY_VERIFY_WITH_TIMEOUT(!w.busy()&&!w.projectData().isEmpty(),30000);QVERIFY2(w.lastError.isEmpty(),qPrintable(w.lastError));w.findChild<CanvasStateBar*>("canvasStateBar")->showAllElements();QTest::qWait(200);QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),30000);}
+ void unchanged(StudioWindow& w,const QJsonObject& before){for(auto key:{"revision","documents","dirty","undo","redo"})QCOMPARE(w.currentView()[key],before[key]);}
+ void review(QDialog* outer,std::function<void(QDialog*)> action){
+  bool visited=false;QTimer::singleShot(50,outer,[&]{auto d=outer->findChild<QDialog*>("presentationUpdateDialog");QVERIFY(d);QTimer::singleShot(30000,d,&QDialog::reject);action(d);visited=true;if(d->isVisible())d->reject();});outer->findChild<QPushButton*>("exportPresentationReview")->click();QVERIFY(visited);
+ }
+ void check(StudioWindow& w,QDialog* d,bool sample=true){
+  d->findChild<QLineEdit*>("presentationPreviousBundle")->setText(paths["previousBundle"].toString());d->findChild<QLineEdit*>("presentationSampleSave")->setText(sample?paths["save"].toString():QString());
+  auto button=d->findChild<QPushButton*>("presentationCheck");button->click();QTRY_VERIFY_WITH_TIMEOUT(button->isEnabled()&&!w.busy(),30000);
+ }
+ void captureDialog(QDialog* d,QString name){d->resize(700,560);QTest::qWait(50);auto apply=d->findChild<QPushButton*>("presentationApply");QVERIFY(d->rect().contains(QRect(apply->mapTo(d,QPoint()),apply->size())));QVERIFY(d->grab().save(engine+"/.cache/qt-presentation-update/"+name+"-"+editorLanguage()+".png"));}
+private slots:
+ void initTestCase(){
+  QVERIFY(temp.isValid());engine=qEnvironmentVariable("RAISING_ENGINE_ROOT",QDir::currentPath());qputenv("RAISING_EDITOR_SETTINGS",(temp.path()+"/settings.ini").toUtf8());qputenv("RAISING_PROJECT_HISTORY",(temp.path()+"/history.ini").toUtf8());QVERIFY(installEditorLanguage(*qApp,qEnvironmentVariable("RAISING_TEST_EDITOR_LOCALE","en")));QVERIFY(QDir().mkpath(engine+"/.cache/qt-presentation-update"));
+  QProcess fixture;fixture.setWorkingDirectory(engine);fixture.start(qEnvironmentVariable("RAISING_NODE","node"),{engine+"/tests/qt-studio/presentation-update-fixture.mjs",temp.path()});QVERIFY(fixture.waitForFinished(30000));QVERIFY2(fixture.exitCode()==0,fixture.readAllStandardError().constData());paths=QJsonDocument::fromJson(fixture.readAllStandardOutput()).object();QVERIFY(paths.contains("previousBundle"));capture=temp.path()+"/requests.jsonl";
+  qputenv("NODE_OPTIONS",qgetenv("NODE_OPTIONS")+" --import="+QUrl::fromLocalFile(engine+"/tests/qt-studio/capture-presentation-export.mjs").toEncoded());qputenv("RAISING_TEST_PRESENTATION_CAPTURE",capture.toUtf8());
+ }
+ void existingFileIdentityAcceptsPlatformSpellings(){
+  const auto selected=QFileInfo(paths["previousBundle"].toString()).canonicalFilePath();QVERIFY(!selected.isEmpty());
+  const auto native=QDir::toNativeSeparators(selected);QVERIFY(StudioPaths::sameExistingFile(selected,native));QVERIFY(StudioPaths::sameExistingFile(native,selected));
+#ifdef Q_OS_WIN
+  QVERIFY(native.contains('\\'));QVERIFY(selected.contains('/'));QVERIFY(native!=selected);
+#else
+  QCOMPARE(native,selected);
+  // These two actual Unix files must stay distinct; replacing all backslashes
+  // with slashes would incorrectly identify them as the same selected file.
+  const auto literal=temp.path()+"/literal\\name.json",nested=temp.path()+"/literal/name.json";QVERIFY(QDir().mkpath(QFileInfo(nested).path()));
+  for(const auto& name:{literal,nested}){QFile file(name);QVERIFY(file.open(QIODevice::WriteOnly));QCOMPARE(file.write("same bytes"),qint64(10));}
+  QVERIFY(StudioPaths::sameExistingFile(literal,literal));QVERIFY(!StudioPaths::sameExistingFile(literal,nested));
+#endif
+  const auto alias=QFileInfo(selected).path()+"/./"+QFileInfo(selected).fileName();QVERIFY(QFileInfo(alias).isFile());QVERIFY(StudioPaths::sameExistingFile(selected,alias));
+ }
+ void existingFileIdentityRejectsDifferentAndInvalidFiles(){
+  const auto selected=QFileInfo(paths["previousBundle"].toString()).canonicalFilePath(),different=temp.path()+"/different-bundle.json";QVERIFY(QFile::copy(selected,different));QCOMPARE(read(different),read(selected));QVERIFY(!StudioPaths::sameExistingFile(selected,different));
+  // Hosted Windows may keep the checkout and system temp on different drives.
+  // Place this fixture on the working-directory volume so it is truly relative.
+  QTemporaryDir local(QDir::currentPath()+"/.cache/qt-presentation-update/relative-XXXXXX");QVERIFY(local.isValid());const auto localFile=local.path()+"/existing-bundle.json";QVERIFY(QFile::copy(selected,localFile));
+  const auto relative=QDir::current().relativeFilePath(localFile),missing=temp.path()+"/missing-bundle.json";QVERIFY(QFileInfo(relative).isFile());QVERIFY(!QDir::isAbsolutePath(relative));QVERIFY(!QFileInfo::exists(missing));
+  for(const auto& invalid:{QString(),relative,missing,temp.path()}){QVERIFY(!StudioPaths::sameExistingFile(selected,invalid));QVERIFY(!StudioPaths::sameExistingFile(invalid,selected));QVERIFY(!StudioPaths::sameExistingFile(invalid,invalid));}
+  QVERIFY(QFile::remove(different));QVERIFY(!StudioPaths::sameExistingFile(different,different));
+ }
+ void explicitReviewAndCancelledAlternativePreserveAcceptedToken(){
+  StudioWindow w(engine);open(w);const auto before=w.currentView();const auto save=read(paths["save"].toString()),base=read(paths["previousBundle"].toString());QString accepted;bool visited=false;
+  QTimer::singleShot(50,&w,[&]{auto d=w.findChild<QDialog*>("exportGameDialog");QVERIFY(d);QTimer::singleShot(60000,d,&QDialog::reject);d->findChild<QComboBox*>("exportTarget")->setCurrentIndex(d->findChild<QComboBox*>("exportTarget")->findData("web"));auto clear=d->findChild<QPushButton*>("exportPresentationClear");QVERIFY(!clear->isEnabled());
+   review(d,[&](QDialog* r){check(w,r);auto opt=r->findChild<QCheckBox*>("presentationOptIn");auto apply=r->findChild<QPushButton*>("presentationApply");QVERIFY2(opt->isEnabled(),qPrintable(r->findChild<QLabel*>("presentationStatus")->text()));QVERIFY(!opt->isChecked());QVERIFY(!apply->isEnabled());const auto report=QJsonDocument::fromJson(r->findChild<QPlainTextEdit*>("presentationDetails")->toPlainText().toUtf8()).object();QCOMPARE(report["classification"].toString(),QString("presentation-only"));QVERIFY(report["sample"].toObject()["valid"].toBool());accepted=report["checkId"].toString();QVERIFY(!accepted.isEmpty());QVERIFY(r->findChild<QPlainTextEdit*>("presentationDetails")->isHidden());captureDialog(r,"review");QTest::mouseClick(opt,Qt::LeftButton,Qt::NoModifier,QPoint(9,opt->height()/2));QVERIFY(apply->isEnabled());apply->click();});
+   QVERIFY(clear->isEnabled());const auto summary=d->findChild<QLabel*>("exportPresentationSummary")->text();review(d,[&](QDialog* r){check(w,r,false);QVERIFY(r->findChild<QCheckBox*>("presentationOptIn")->isEnabled());const auto report=QJsonDocument::fromJson(r->findChild<QPlainTextEdit*>("presentationDetails")->toPlainText().toUtf8()).object();QVERIFY(report["checkId"].toString()!=accepted);QVERIFY(!report.contains("sample"));r->reject();});QVERIFY(clear->isEnabled());QCOMPARE(d->findChild<QLabel*>("exportPresentationSummary")->text(),summary);
+   d->findChild<QLineEdit*>("exportParent")->setText(temp.path());d->findChild<QLineEdit*>("exportFolderName")->setText("captured-export");auto start=d->findChild<QPushButton*>("exportStart");start->click();QTRY_VERIFY_WITH_TIMEOUT(start->isEnabled()&&!w.busy(),30000);const auto exported=calls("export");QCOMPARE(exported.size(),1);const auto params=exported.last()["params"].toObject();QCOMPARE(params["presentationCheck"].toString(),accepted);QVERIFY(!params.contains("updateCheck"));QCOMPARE(params["target"].toString(),QString("web"));QCOMPARE(params["revision"],before["revision"]);clear->click();QVERIFY(!clear->isEnabled());d->findChild<QLineEdit*>("exportFolderName")->setText("ordinary-export");start->click();QTRY_VERIFY_WITH_TIMEOUT(start->isEnabled()&&!w.busy(),30000);const auto ordinary=calls("export");QCOMPARE(ordinary.size(),2);QVERIFY(!ordinary.last()["params"].toObject().contains("presentationCheck"));QVERIFY(!ordinary.last()["params"].toObject().contains("updateCheck"));visited=true;d->reject();});
+  w.findChild<QAction*>("exportGame")->trigger();QVERIFY(visited);unchanged(w,before);QCOMPARE(read(paths["save"].toString()),save);QCOMPARE(read(paths["previousBundle"].toString()),base);
+ }
+ void inputChangesAndLateRepliesCannotEnableOptIn(){
+  StudioWindow w(engine);open(w);const auto before=w.currentView();bool visited=false;
+  QTimer::singleShot(50,&w,[&]{auto d=w.findChild<QDialog*>("exportGameDialog");QVERIFY(d);QTimer::singleShot(60000,d,&QDialog::reject);auto target=d->findChild<QComboBox*>("exportTarget");target->setCurrentIndex(target->findData("web"));
+   review(d,[&](QDialog* r){check(w,r);auto opt=r->findChild<QCheckBox*>("presentationOptIn");QVERIFY(opt->isEnabled());opt->setChecked(true);auto sample=r->findChild<QLineEdit*>("presentationSampleSave");sample->setText(paths["invalidSave"].toString());QVERIFY(!opt->isEnabled()&&!opt->isChecked());QVERIFY(!r->findChild<QPushButton*>("presentationApply")->isEnabled());auto button=r->findChild<QPushButton*>("presentationCheck");button->click();QTRY_VERIFY_WITH_TIMEOUT(button->isEnabled()&&!w.busy(),30000);QVERIFY(!opt->isEnabled());QVERIFY(r->findChild<QLabel*>("presentationStatus")->text().contains("PRESENTATION_SAVE_INVALID"));QVERIFY(r->findChild<QLabel*>("presentationStatus")->text().startsWith(QObject::tr("예시 저장을 이전 내보내기에서 검증할 수 없습니다. 해당 버전의 올바른 원본 저장을 선택하세요.")));QVERIFY(r->findChild<QPlainTextEdit*>("presentationDetails")->toPlainText().contains("PRESENTATION_SAVE_INVALID"));sample->setText(paths["save"].toString());button->click();QVERIFY(!button->isEnabled());sample->setText("");QTRY_VERIFY_WITH_TIMEOUT(button->isEnabled()&&!w.busy(),30000);QVERIFY(!opt->isEnabled());QVERIFY(r->findChild<QPlainTextEdit*>("presentationDetails")->toPlainText().isEmpty());
+    check(w,r,false);QVERIFY(opt->isEnabled());opt->setChecked(true);r->findChild<QPushButton*>("presentationApply")->click();});
+   auto clear=d->findChild<QPushButton*>("exportPresentationClear");QVERIFY(clear->isEnabled());target->setCurrentIndex(target->findData("windows"));QVERIFY(!clear->isEnabled());
+   review(d,[&](QDialog* r){check(w,r,false);QVERIFY(r->findChild<QCheckBox*>("presentationOptIn")->isEnabled());r->findChild<QPushButton*>("presentationCheck")->click();QVERIFY(w.busy());r->reject();});QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),30000);QVERIFY(!clear->isEnabled());visited=true;d->reject();});
+  w.findChild<QAction*>("exportGame")->trigger();QVERIFY(visited);unchanged(w,before);
+ }
+ void rulesAndUnsavedDraftsAreRejectedWithoutChangingFiles(){
+  StudioWindow w(engine);open(w,paths["functional"].toString());const auto original=read(paths["functional"].toString()+"/project.json");bool visited=false;
+  QTimer::singleShot(50,&w,[&]{auto d=w.findChild<QDialog*>("exportGameDialog");QVERIFY(d);QTimer::singleShot(30000,d,&QDialog::reject);review(d,[&](QDialog* r){check(w,r,false);QVERIFY(!r->findChild<QCheckBox*>("presentationOptIn")->isEnabled());QVERIFY(r->findChild<QLabel*>("presentationStatus")->text().contains("PRESENTATION_CONTENT_CHANGED"));QVERIFY(r->findChild<QLabel*>("presentationStatus")->text().startsWith(QObject::tr("규칙·이야기 또는 보호된 내용이 바뀌었습니다. 기존 저장 호환성 검사와 이전 도구를 사용하세요.")));QVERIFY(r->findChild<QPlainTextEdit*>("presentationDetails")->toPlainText().contains("PRESENTATION_CONTENT_CHANGED"));captureDialog(r,"rejected");r->reject();});visited=true;d->reject();});w.findChild<QAction*>("exportGame")->trigger();QVERIFY(visited);
+  QTimer::singleShot(50,&w,[&]{auto d=w.findChild<QDialog*>("projectSettingsDialog");QVERIFY(d);d->findChild<QLineEdit*>("projectTitle")->setText("Unsaved presentation review");d->findChild<QDialogButtonBox*>("projectSettingsButtons")->button(QDialogButtonBox::Ok)->click();});w.findChild<QAction*>("projectSettings")->trigger();QTRY_VERIFY_WITH_TIMEOUT(!w.busy(),30000);QVERIFY(w.currentView()["dirty"].toBool());const auto before=w.currentView();const int count=calls("presentationUpdateCheck").size();visited=false;
+  QTimer::singleShot(50,&w,[&]{auto d=w.findChild<QDialog*>("exportGameDialog");QVERIFY(d);QTimer::singleShot(10000,d,&QDialog::reject);review(d,[&](QDialog* r){check(w,r,false);QVERIFY(!r->findChild<QCheckBox*>("presentationOptIn")->isEnabled());QCOMPARE(r->findChild<QLabel*>("presentationStatus")->text(),QObject::tr("현재 프로젝트를 먼저 저장한 뒤 다시 확인하세요. 초안을 자동 저장하지 않습니다."));r->reject();});visited=true;d->reject();});w.findChild<QAction*>("exportGame")->trigger();QVERIFY(visited);QCOMPARE(calls("presentationUpdateCheck").size(),count);unchanged(w,before);QCOMPARE(read(paths["functional"].toString()+"/project.json"),original);
+ }
+};
+QTEST_MAIN(PresentationUpdateTest)
+#include "presentation-update-test.moc"
