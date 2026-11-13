@@ -2,6 +2,8 @@ name: Goal route regression
 
 on:
   push:
+    branches-ignore:
+      - codex/macos-named-playtests-diagnostic
   pull_request:
   workflow_dispatch:
 
