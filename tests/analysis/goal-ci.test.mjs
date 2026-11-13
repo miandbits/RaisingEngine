@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp, cp, mkdir, readFile, writeFile, copyFile, appendFile} from 'node:fs/promises';
 import path from 'node:path';
+import {appendFileSync, writeFileSync} from 'node:fs';
 import {QtStudioService} from '../../apps/qt-studio/service.mjs';
 import {runGoalRegression} from '../../apps/qt-studio/goal-regression.mjs';
 import {writeGoalReports} from '../../scripts/goal-regression-report.mjs';
@@ -9,12 +10,24 @@ import {nativeExecutable} from '../../dist/packages/native-bridge/index.js';
 
 test('CI report stays immutable while local graph approval, restore and revalidation use fresh trusted results', {timeout: 180000}, async () => {
   await mkdir('.cache', {recursive: true});
+  // Keep the last started operation available even if the test runner times out.
+  // Diagnostics must never change the test outcome or initialize native transport.
+  const diagnostic = path.resolve('.cache/goal-ci-diagnostic.jsonl');
+  const enabled = process.env.RAISING_GOAL_CI_DIAGNOSTIC === '1';
+  const runId = `${process.pid}-${Date.now()}`, started = performance.now();
+  const mark = (stage, event) => { if (enabled) try { appendFileSync(diagnostic, JSON.stringify({runId, stage, event, at: Date.now(), elapsedMs: performance.now() - started}) + '\n'); } catch {} };
+  const requested = process.env.RAISING_NATIVE_TRANSPORT ?? 'auto';
+  if (enabled) try { writeFileSync(diagnostic, JSON.stringify({runId, event: 'start', at: Date.now(), pid: process.pid, nativeTransportRequested: ['auto', 'process'].includes(requested) ? requested : 'other', nativeTransportActual: 'unknown'}) + '\n'); } catch {}
+  mark('fixture', 'start');
   const root = await mkdtemp(path.resolve('.cache/goal-ci-'));
   await cp(path.resolve('examples/starlight-three-months'), root, {recursive: true, filter: s => !s.split(path.sep).includes('.studio')});
   const projectFile = path.join(root, 'project.json'), project = JSON.parse(await readFile(projectFile, 'utf8'));
   project.initialState.attributes.money += 1;
   await writeFile(projectFile, JSON.stringify(project, null, 2));
+  mark('fixture', 'end'); mark('initial-regression', 'start');
   const ci = await runGoalRegression(root, {runtimePolicy: 'verify-replay'});
+  mark('initial-regression', 'end');
+  mark('report-import', 'start');
   assert.equal(ci.exitCode, 1);
   await writeGoalReports(path.join(root, 'reports'), ci);
   const file = path.join(root, 'reports/report.json'), bytes = await readFile(file);
@@ -22,28 +35,48 @@ test('CI report stays immutable while local graph approval, restore and revalida
   const call = (method, params = {}) => service.handle({method, params: {revision: service.editor.revision, ...params}});
   const imported = (await call('goalCiOpen', {file})).goalCi;
   assert.equal(imported.source.id, ci.id);
+  mark('report-import', 'end');
+  mark('initial-recheck', 'start');
   let response = await call('goalCiRecheck', {id: imported.id}), report = response.goalImpact;
+  mark('initial-recheck', 'end');
   assert.equal(response.goalCi.matches, true); assert.notEqual(report.id, ci.id);
   const row = () => report.rows.find(r => r.routeId === 'ordinary');
   const params = () => ({impactReportId: report.id, impactRow: report.rows.findIndex(r => r.routeId === 'ordinary')});
+  mark('invalid-graph-open', 'start');
   await assert.rejects(call('goalCompareOpen', {impactReportId: ci.id, impactRow: 1}));
+  mark('invalid-graph-open', 'end');
+  mark('initial-graph-open', 'start');
   let graph = (await call('goalCompareOpen', params())).goalComparison;
+  mark('initial-graph-open', 'end');
   assert.equal(graph.jumpStep, 0);
+  mark('graph-step', 'start');
   let step = (await call('goalCompareStep', {comparisonId: graph.id, leftStep: 0, rightStep: 0})).goalComparisonStep;
+  mark('graph-step', 'end');
   assert.equal(step.stale, false);
   const money = step.review.rows.find(r => r.path === '/attributes/money'); assert.equal(money.status, 'regression');
   assert.equal(money.current, money.original + 1);
   const originalBaseline = row().baselineId;
+  mark('partial-approval', 'start');
   report = (await call('goalBaselineApprovePartial', {...params(), itemIds: [money.id], note: 'CI review: intentional initial money'})).goalImpact;
+  mark('partial-approval', 'end');
   assert.equal(row().status, 'unchanged'); assert.ok(row().replay.ok); assert.ok(row().approvedChangeCount > 0);
+  mark('stale-graph-step', 'start');
   assert.equal((await call('goalCompareStep', {comparisonId: graph.id, leftStep: 0, rightStep: 0})).goalComparisonStep.stale, true);
+  mark('stale-graph-step', 'end');
+  mark('post-approval-recheck', 'start');
   response = await call('goalCiRecheck', {id: imported.id}); report = response.goalImpact;
+  mark('post-approval-recheck', 'end');
   assert.equal(response.goalCi.matches, false); assert.ok(response.goalCi.reasons.some(s => s.includes('승인')));
   assert.equal(response.goalCi.source.rows.find(r => r.routeId === 'ordinary').status, 'changed');
+  mark('restore', 'start');
   report = (await call('goalBaselineRestore', {...params(), baselineId: originalBaseline, note: 'restore original'})).goalImpact;
+  mark('restore', 'end');
   assert.equal(row().status, 'changed'); assert.equal(row().approvedChangeCount, 0); assert.ok(row().replay.ok);
+  mark('restored-graph-open', 'start');
   graph = (await call('goalCompareOpen', params())).goalComparison;
+  mark('restored-graph-open', 'end');
   assert.equal(graph.jumpStep, 0);
+  mark('dirty-and-hostile-setup', 'start');
   assert.deepEqual(await readFile(file), bytes);
   // Dirty content cannot silently validate the saved project instead.
   const doc = service.editor.documents.find(d => d.kind === 'project');
@@ -55,7 +88,11 @@ test('CI report stays immutable while local graph approval, restore and revalida
   await writeFile(file, JSON.stringify(hostile));
   const next = (await call('goalCiOpen', {file})).goalCi;
   await assert.rejects(call('goalCiRecheck', {id: imported.id}), /만료/);
+  mark('dirty-and-hostile-setup', 'end');
+  mark('hostile-report-recheck', 'start');
   response = await call('goalCiRecheck', {id: next.id});
+  mark('hostile-report-recheck', 'end');
+  mark('invalid-report-and-fixture', 'start');
   assert.ok(response.goalImpact.rows.find(r => r.routeId === 'ordinary').changeItems.length > 0);
   const invalid = path.join(root, 'invalid.json');
   await writeFile(invalid, JSON.stringify({...ci, rows: [ci.rows[0], ci.rows[0]]}));
@@ -66,6 +103,8 @@ test('CI report stays immutable while local graph approval, restore and revalida
   // Return a clean fixture with original baseline active for real Qt interactions.
   await call('goalCiOpen', {file});
   await writeFile(path.resolve('.cache/goal-ci-fixture.txt'), root);
+  mark('invalid-report-and-fixture', 'end');
+  mark('test', 'end');
 });
 
 test('portable CI graph approvals use the verified baseline context across runtime hashes', {timeout: 120000}, async () => {

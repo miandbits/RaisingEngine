@@ -315,7 +315,7 @@ jobs:
             cmp "$source" "$MACOS_STUDIO_OUT/Contents/Resources/engine/$source"
             shasum -a 256 "$source"
           done | tee .cache/build-provenance/macos-ios-source.sha256
-          npm run test:creator-smoke -- --web --desktop --package "$MACOS_STUDIO_OUT"
+          RAISING_GOAL_CI_DIAGNOSTIC=1 npm run test:creator-smoke -- --web --desktop --package "$MACOS_STUDIO_OUT"
           npm run benchmark:creator
       - name: Verify the macOS archive and record its provenance
         shell: bash
@@ -337,6 +337,7 @@ jobs:
         with:
           name: macos-creator-evidence
           path: |
+            .cache/goal-ci-diagnostic.jsonl
             .cache/build-provenance/
             .cache/creator-smoke/
             .cache/native-portable-host/
