@@ -49,7 +49,9 @@ test('a real per-route timeout is distinct from failure and later routes can sti
 });
 test('batch-wide deadline leaves unstarted routes not-run and linked storage is refused',{timeout:60000},async t=>{
  const {s,root,call}=await fixture(t);const entries=(await call('goalRoutesList')).goalRoutes;const long={...entries.find(e=>e.route.id==='success').route,id:'a-long',name:'Deadline witness',commands:Array.from({length:10000},()=>({type:'setSchedule',activityIds:['study','study','rest']})),checkpointEvery:1,checkpoints:[]};await call('goalRouteSave',{route:long,expectedRevision:null});
- const result=await finished(call,root,(await call('goalRouteBatchStart',{limits:{routeTimeoutMs:60000,batchTimeoutMs:1000}})).goalRouteBatch.id);assert.equal(result.status,'timed-out');assert.equal(result.ok,false);assert.ok(result.reports.some(r=>r.status==='not-run'));assert.ok(result.reports.some(r=>['passed','timed-out'].includes(r.status)));
+ const result=await finished(call,root,(await call('goalRouteBatchStart',{limits:{routeTimeoutMs:60000,batchTimeoutMs:1000}})).goalRouteBatch.id);
+ if(result.status!=='timed-out')try{const dir=path.resolve('.cache/route-deadline-diagnostic');await mkdir(dir,{recursive:true});await writeFile(path.join(dir,'batch-report.json'),JSON.stringify(result,null,2),{flag:'wx'});}catch(error){console.error('Could not save deadline diagnostic report:',error.message);}
+ assert.equal(result.status,'timed-out',JSON.stringify(result));assert.equal(result.ok,false);assert.ok(result.reports.some(r=>r.status==='not-run'));assert.ok(result.reports.some(r=>['passed','timed-out'].includes(r.status)));
  const external=await mkdtemp(path.resolve('.cache/route-batches/external-'));const linked=await mkdtemp(path.resolve('.cache/route-batches/linked-'));await cp(fixturePath,linked,{recursive:true,filter:p=>!p.split(path.sep).includes('.studio')});await symlink(external,path.join(linked,'.studio'),'dir');const content=await s.debugSnapshot(s.editor.revision);await assert.rejects(new GoalRouteBatches().start(linked,content,'test',1),/inside the project/);assert.deepEqual(await readdir(external),[]);
 });
 
