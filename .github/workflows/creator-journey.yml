@@ -197,6 +197,10 @@ jobs:
       - name: Test the creator journey on Windows
         # npm.ps1 can consume the argument separator in PowerShell.
         run: node scripts/smoke-creator.mjs --web --desktop
+      - name: Check Chromium screenshot helper controls
+        env:
+          RAISING_VERIFY_WINDOWS_SCREENSHOT_BROWSER: '0'
+        run: node --test tests/helpers/chromium-screenshot.test.mjs
       - name: Publish Windows evidence
         if: always()
         uses: actions/upload-artifact@v4
