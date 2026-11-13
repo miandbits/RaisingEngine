@@ -2,6 +2,7 @@ name: Goal route regression
 
 on:
   push:
+    branches-ignore: [codex/ios-app-build-comparison]
   pull_request:
   workflow_dispatch:
 

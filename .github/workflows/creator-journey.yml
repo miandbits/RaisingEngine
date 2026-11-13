@@ -1,6 +1,7 @@
 name: Creator journey
 on:
   push:
+    branches-ignore: [codex/ios-app-build-comparison]
   pull_request:
   workflow_dispatch:
   release:

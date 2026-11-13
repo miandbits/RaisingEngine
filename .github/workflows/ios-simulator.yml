@@ -1,6 +1,7 @@
 name: iOS export and Simulator Files
 on:
   push:
+    branches-ignore: [codex/ios-app-build-comparison]
     paths: &ios-paths
       - '.github/workflows/ios-simulator.yml'
       - 'apps/qt-studio/**'

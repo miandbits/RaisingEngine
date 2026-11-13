@@ -1,0 +1,76 @@
+name: Isolated original iOS Files consumer
+on:
+  workflow_call:
+    inputs:
+      observation:
+        required: true
+        type: string
+      arm:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  public-starter-files:
+    if: github.run_attempt == 1 && github.ref == 'refs/heads/codex/ios-app-build-comparison'
+    name: Actual Files ${{ inputs.observation }} (build ${{ inputs.arm }})
+    runs-on: macos-26
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      RAISING_IOS_SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17e
+      RAISING_IOS_SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-5
+      BUILD_ARM: ${{ inputs.arm }}
+      OBSERVATION: ${{ inputs.observation }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-comparison-app-${{ inputs.arm }}
+          path: .cache/ios-app-build-comparison/transfer
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-comparison-verified-pair
+          path: .cache/ios-app-build-comparison/verified-pair
+      - name: Verify selected build and the original Files toolchain
+        run: bash .github/diagnostics/ios-app-build-comparison/consume.sh
+      - run: npm ci
+      - name: Build the project service used by the public Files fixture
+        run: |
+          node scripts/generate-types.mjs
+          npx --no-install tsc -p tsconfig.json
+          node scripts/copy-schemas.mjs
+      - name: Test export and import through the actual Files picker
+        run: |
+          node scripts/test-ios-system-ui.mjs .cache/ios-app-build-comparison/consumer \
+            --project examples/my-first-raising-game --family iphone --test files-roundtrip --text-scale 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-comparison-files-evidence-${{ inputs.observation }}
+          path: |
+            .cache/ios-app-build-comparison/files-environment.txt
+            .cache/ios-app-build-comparison/consumer-app-manifest.json
+            .cache/ios-app-build-comparison/transfer/*.txt
+            .cache/ios-app-build-comparison/transfer/*.sha
+            .cache/ios-app-build-comparison/transfer/*.sha256
+            .cache/ios-app-build-comparison/verified-pair/pair.json
+            .cache/ios-system-ui/latest.json
+            .cache/ios-system-ui/run-*/result.json
+            .cache/ios-system-ui/run-*/files-export-checkpoint.json
+            .cache/ios-system-ui/run-*/*-staging.json
+            .cache/ios-system-ui/run-*/*.log
+            .cache/ios-system-ui/run-*/*.stdout
+            .cache/ios-system-ui/run-*/*.stderr
+            .cache/ios-system-ui/run-*/*.xcresult
+          include-hidden-files: true
+          retention-days: 14

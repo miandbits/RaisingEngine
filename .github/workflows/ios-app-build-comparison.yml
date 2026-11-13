@@ -1,0 +1,183 @@
+name: Isolated iOS app-build toolchain comparison
+on:
+  push:
+    branches: [codex/ios-app-build-comparison]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-app-build-comparison-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.run_attempt == 1
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      BUILD_JOBS: '3'
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      RAISING_NATIVE_TRANSPORT: process
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run build:headless
+      - run: npm run build:player
+      - name: Export once and archive only common build inputs
+        run: bash .github/diagnostics/ios-app-build-comparison/prepare.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-comparison-prepared-source
+          path: .cache/ios-app-build-comparison/common/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-comparison-export-evidence
+          path: |
+            .cache/ios-app-build-comparison/export-configure.log
+            .cache/ios-app-build-comparison/prepared/xcode-configure.log
+          include-hidden-files: true
+          retention-days: 14
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arm: A
+            runner: xcode-27
+            xcode: '27.2'
+            xcodeBuild: 27B52
+            sdk: '27.2'
+          - arm: B
+            runner: macos-26
+            xcode: '26.6'
+            xcodeBuild: 17F113
+            sdk: '26.5'
+    name: Build variant ${{ matrix.arm }} with Xcode ${{ matrix.xcode }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    env:
+      BUILD_ARM: ${{ matrix.arm }}
+      BUILD_JOBS: '3'
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
+      EXPECTED_XCODE: ${{ matrix.xcode }}
+      EXPECTED_XCODE_BUILD: ${{ matrix.xcodeBuild }}
+      EXPECTED_SDK: ${{ matrix.sdk }}
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-comparison-prepared-source
+          path: .cache/ios-app-build-comparison/common
+      - run: npm ci
+      - name: Build repository tooling used by the exported iOS project
+        run: |
+          node scripts/generate-types.mjs
+          npx --no-install tsc -p tsconfig.json
+          node scripts/copy-schemas.mjs
+      - name: Build the exact common export in a fresh Xcode project
+        run: bash .github/diagnostics/ios-app-build-comparison/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-comparison-app-${{ matrix.arm }}
+          path: |
+            .cache/ios-app-build-comparison/built/*.txt
+            .cache/ios-app-build-comparison/built/*.sha
+            .cache/ios-app-build-comparison/built/*.sha256
+            .cache/ios-app-build-comparison/built/*.json
+            .cache/ios-app-build-comparison/built/starter-app.tar
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-comparison-build-evidence-${{ matrix.arm }}
+          path: |
+            .cache/ios-app-build-comparison/built/*.txt
+            .cache/ios-app-build-comparison/built/*.log
+            .cache/ios-app-build-comparison/built/*.json
+            .cache/ios-app-build-comparison/prepared/ios-build.json
+            .cache/ios-app-build-comparison/prepared/xcode-*.log
+            .cache/ios-keyboard-patch/run-*/*-bounds.log
+          include-hidden-files: true
+          retention-days: 14
+
+  verify-pair:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-comparison-app-A
+          path: .cache/ios-app-build-comparison/A
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-comparison-app-B
+          path: .cache/ios-app-build-comparison/B
+      - name: Verify the prepared inputs and bundle resources match
+        run: |
+          work=.cache/ios-app-build-comparison
+          for arm in A B; do
+            (cd "$work/$arm" && shasum -a 256 -c transfer.sha256)
+          done
+          mkdir -p "$work/verified-pair"
+          python3 .github/diagnostics/ios-app-build-comparison/verify-pair.py | tee "$work/verified-pair/pair.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-comparison-verified-pair
+          path: .cache/ios-app-build-comparison/verified-pair/pair.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  A1:
+    needs: verify-pair
+    uses: ./.github/workflows/ios-app-build-comparison-files.yml
+    with:
+      observation: A1
+      arm: A
+  B1:
+    needs: [verify-pair, A1]
+    if: ${{ !cancelled() && needs.verify-pair.result == 'success' }}
+    uses: ./.github/workflows/ios-app-build-comparison-files.yml
+    with:
+      observation: B1
+      arm: B
+  B2:
+    needs: verify-pair
+    uses: ./.github/workflows/ios-app-build-comparison-files.yml
+    with:
+      observation: B2
+      arm: B
+  A2:
+    needs: [verify-pair, B2]
+    if: ${{ !cancelled() && needs.verify-pair.result == 'success' }}
+    uses: ./.github/workflows/ios-app-build-comparison-files.yml
+    with:
+      observation: A2
+      arm: A
