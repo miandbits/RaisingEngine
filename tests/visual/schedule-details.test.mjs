@@ -118,12 +118,19 @@ test('End scroll remains observable when animation-frame callbacks stall',{timeo
       await page.addInitScript(()=>{const real=requestAnimationFrame.bind(window);window.requestAnimationFrame=callback=>window.__stallFrames?1:real(callback);});
       await page.goto('data:text/html,<div id="root"></div>');await page.addStyleTag({content:await readFile('apps/player/renderer/visual.css','utf8')});await page.addScriptTag({content:bundle.outputFiles[0].text});
       const details=page.getByRole('region',{name:'Selected period details'});await details.waitFor();
-      await page.evaluate(mode=>{const pane=document.querySelector('.schedule-detail-pane');window.__scheduleScrollProbe={polls:0};window.__keyEvents=[];document.addEventListener('keydown',e=>{if(e.key==='End'){window.__keyEvents.push(e);if(mode==='prevented')e.preventDefault();}},true);if(mode==='capped')pane.addEventListener('scroll',()=>{if(pane.scrollTop>100)pane.scrollTop=100;});window.__stallFrames=true;},mode);
+      await page.evaluate(mode=>{const pane=document.querySelector('.schedule-detail-pane');window.__scheduleScrollProbe={polls:0};window.__keyEvents=[];document.addEventListener('keydown',e=>{if(e.key==='End'){window.__keyEvents.push(e);if(mode==='prevented')e.preventDefault();}},true);if(mode==='capped'){window.__capSettled=false;pane.addEventListener('scroll',()=>{if(pane.scrollTop>100)pane.scrollTop=100;});pane.addEventListener('scrollend',()=>{if(pane.scrollTop===100)window.__capSettled=true;});}window.__stallFrames=true;},mode);
       await details.focus();assert.equal(await details.evaluate(e=>e===document.activeElement),true);await page.keyboard.press('End');
+      // The browser may reach the bottom before its scroll event clamps it.
+      // Start the negative assertion only once the capped scroll has settled.
+      if(mode==='capped'){
+        await page.waitForFunction(()=>window.__capSettled,null,{timeout:5000,polling:50});
+        const state=await details.evaluate(e=>({top:e.scrollTop,remaining:e.scrollHeight-e.clientHeight-e.scrollTop}));
+        assert.ok(state.top===100&&state.remaining>1,'capped settlement: '+JSON.stringify(state));
+      }
       if(mode==='complete'){
         await waitForDetailsEnd(page);assert.equal(await details.evaluate(finalClauseVisible),true);
       }else{
-        await assert.rejects(waitForDetailsEnd(page),/Timeout 5000ms exceeded/);
+        await assert.rejects(waitForDetailsEnd(page),/Timeout 5000ms exceeded/,mode+' scroll must remain above the bottom');
         const state=await details.evaluate(e=>({top:e.scrollTop,remaining:e.scrollHeight-e.clientHeight-e.scrollTop}));
         assert.ok(state.remaining>1,JSON.stringify(state));assert.equal(state.top,mode==='prevented'?0:100);
       }
